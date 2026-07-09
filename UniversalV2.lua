@@ -7,7 +7,7 @@
     - Utilities (Anti-AFK, Rejoin Game, Dynamic Theme Swapping)
     
     Loadstring to execute:
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/Universal.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"))()
 ]]
 
 local Players = game:GetService("Players")
@@ -34,7 +34,7 @@ end
 
 -- Load the Tungsten Hub UI Library from GitHub (with cache buster)
 local success, TungstenHub = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHub.lua?t=" .. tostring(os.time())))()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua?t=" .. tostring(os.time())))()
 end)
 
 if not success or not TungstenHub then
