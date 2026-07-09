@@ -65,11 +65,21 @@ local function multiply32(a, b)
     return bit32.band(mid * 65536 + a_lo * b_lo, 0xFFFFFFFF)
 end
 
+local function getHashedHWID()
+    local raw = getHardwareID()
+    local hash = 2166136261
+    for i = 1, #raw do
+        hash = bit32.bxor(hash, string.byte(raw, i))
+        hash = multiply32(hash, 16777619)
+    end
+    return string.format("%X", hash)
+end
+
 local function getDailyHWIDKey()
-    local hwid = getHardwareID()
-    local dateStr = os.date("%d%m%Y")
+    local hashedHwid = getHashedHWID()
+    local dateStr = os.date("!%d%m%Y") -- Forced UTC date string to align with browser
     local salt = "TungstenSaltKey"
-    local input = hwid .. "_" .. salt .. "_" .. dateStr
+    local input = hashedHwid .. "_" .. salt .. "_" .. dateStr
     
     local hash = 2166136261
     for i = 1, #input do
@@ -89,7 +99,7 @@ local Window = TungstenHub:CreateWindow({
         Note = "Enter your secure HWID-locked key. (For testing, your key today is: " .. getDailyHWIDKey() .. ")",
         SaveKey = true,
         Key = getDailyHWIDKey(),
-        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid=" .. getHardwareID()
+        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid=" .. getHashedHWID()
     }
 })
 

@@ -687,7 +687,7 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
             end)
             
             VerifyBtn.MouseButton1Click:Connect(function()
-                local entered = KeyInput.Text
+                local entered = KeyInput.Text:gsub("%s+", ""):gsub("%c+", "")
                 if validateKey(entered) then
                     if keySettings.SaveKey then
                         saveKey(entered)

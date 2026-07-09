@@ -219,9 +219,10 @@
             // Sanitize: strip out control characters and whitespace
             const cleanHwid = hwid.replace(/\s+/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '');
             const date = new Date();
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
+            // Force UTC date to ensure perfect timezone synchronization!
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+            const year = date.getUTCFullYear();
             const dateStr = `${day}${month}${year}`;
             const salt = "TungstenSaltKey";
             const input = `${cleanHwid}_${salt}_${dateStr}`;
