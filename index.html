@@ -203,21 +203,33 @@
     </div>
 
     <script>
+        // Helper for precise 32-bit unsigned multiplication matching Lua bit32 behavior
+        function multiply32(a, b) {
+            const a_hi = (a >>> 16) & 0xFFFF;
+            const a_lo = a & 0xFFFF;
+            const b_hi = (b >>> 16) & 0xFFFF;
+            const b_lo = b & 0xFFFF;
+            
+            const mid = (a_hi * b_lo + a_lo * b_hi) & 0xFFFF;
+            return ((mid * 65536) + a_lo * b_lo) >>> 0;
+        }
+
         // FNV-1a Hashing Algorithm matching Lua FNV-1a
         function generateDailyHWIDKey(hwid) {
+            // Sanitize: strip out control characters and whitespace
+            const cleanHwid = hwid.replace(/\s+/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '');
             const date = new Date();
-            // Match Lua's local os.date("%d%m%Y") perfectly by using local date methods!
             const day = String(date.getDate()).padStart(2, '0');
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const year = date.getFullYear();
             const dateStr = `${day}${month}${year}`;
             const salt = "TungstenSaltKey";
-            const input = `${hwid}_${salt}_${dateStr}`;
+            const input = `${cleanHwid}_${salt}_${dateStr}`;
             
             let hash = 2166136261;
             for (let i = 0; i < input.length; i++) {
                 hash ^= input.charCodeAt(i);
-                hash = (hash * 16777619) >>> 0; // Unsigned 32-bit integer
+                hash = multiply32(hash, 16777619);
             }
             return "Tungsten_" + hash.toString(16).toUpperCase();
         }

@@ -1771,13 +1771,25 @@ end
 
 -- HWID-based dynamic daily key generation (prevents key sharing)
 local function getHardwareID()
+    local hwid = tostring(LocalPlayer.UserId)
     if gethwid then 
-        local hwid = gethwid()
-        if type(hwid) == "string" and #hwid > 0 then
-            return hwid
+        local success, result = pcall(gethwid)
+        if success and type(result) == "string" and #result > 0 then
+            hwid = result
         end
     end
-    return tostring(LocalPlayer.UserId)
+    -- Sanitize HWID: remove all whitespace and control characters to ensure consistency
+    return hwid:gsub("%s+", ""):gsub("%c+", "")
+end
+
+local function multiply32(a, b)
+    local a_hi = bit32.rshift(a, 16)
+    local a_lo = bit32.band(a, 0xFFFF)
+    local b_hi = bit32.rshift(b, 16)
+    local b_lo = bit32.band(b, 0xFFFF)
+    
+    local mid = bit32.band(a_hi * b_lo + a_lo * b_hi, 0xFFFF)
+    return bit32.band(mid * 65536 + a_lo * b_lo, 0xFFFFFFFF)
 end
 
 local function getDailyHWIDKey()
@@ -1789,7 +1801,7 @@ local function getDailyHWIDKey()
     local hash = 2166136261
     for i = 1, #input do
         hash = bit32.bxor(hash, string.byte(input, i))
-        hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
+        hash = multiply32(hash, 16777619)
     end
     return "Tungsten_" .. string.format("%X", hash)
 end
