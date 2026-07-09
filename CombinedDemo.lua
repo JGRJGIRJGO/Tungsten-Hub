@@ -27,6 +27,7 @@ if Parent:FindFirstChild("TungstenHub") then
 end
 
 local TungstenHub = {}
+TungstenHub.ToggleKey = Enum.KeyCode.RightShift
 TungstenHub.Theme = {
     Background = Color3.fromRGB(15, 15, 18),
     Header = Color3.fromRGB(22, 22, 26),
@@ -290,6 +291,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
     })
     fadeIn:Play()
 
+    local toggleKey = TungstenHub.ToggleKey or Enum.KeyCode.RightShift
     local isVisible = true
     local function toggleUI()
         if not MainFrame or not MainFrame.Parent then return end
@@ -297,11 +299,11 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         MainFrame.Visible = isVisible
     end
 
-    -- Toggle with Right Shift Key
+    -- Toggle with Key
     local toggleConnection
     toggleConnection = UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
-        if input.KeyCode == Enum.KeyCode.RightShift then
+        if input.KeyCode == toggleKey then
             toggleUI()
         end
     end)
@@ -394,6 +396,12 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         ActiveTab = nil,
         ToggleConnection = toggleConnection,
     }
+
+    function Window:SetToggleKey(newKey)
+        if typeof(newKey) == "EnumItem" and newKey.EnumType == Enum.KeyCode then
+            toggleKey = newKey
+        end
+    end
 
     function Window:CreateTab(tabName)
         tabName = tabName or "Tab"
