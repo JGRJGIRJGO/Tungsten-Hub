@@ -290,10 +290,109 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
     })
     fadeIn:Play()
 
+    local isVisible = true
+    local function toggleUI()
+        if not MainFrame or not MainFrame.Parent then return end
+        isVisible = not isVisible
+        MainFrame.Visible = isVisible
+    end
+
+    -- Toggle with Right Shift Key
+    local toggleConnection
+    toggleConnection = UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            toggleUI()
+        end
+    end)
+
+    -- Clean up key connection when GUI is destroyed
+    ScreenGui.Destroying:Connect(function()
+        if toggleConnection then
+            toggleConnection:Disconnect()
+            toggleConnection = nil
+        end
+    end)
+
+    -- Mobile Draggable Toggle Button (only created if touch is enabled)
+    if UserInputService.TouchEnabled then
+        local MobileButton = makeElement("ImageButton", {
+            Name = "MobileToggle",
+            Size = UDim2.new(0, 45, 0, 45),
+            Position = UDim2.new(0.05, 0, 0.15, 0),
+            BackgroundColor3 = TungstenHub.Theme.Header,
+            BorderSizePixel = 0,
+            ZIndex = 10,
+            Parent = ScreenGui
+        })
+        
+        local ButtonCorner = makeElement("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = MobileButton
+        })
+        
+        local ButtonStroke = makeElement("UIStroke", {
+            Color = TungstenHub.Theme.AccentGrad1,
+            Thickness = 1.5,
+            Parent = MobileButton
+        })
+        
+        local ButtonLabel = makeElement("TextLabel", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "T",
+            TextColor3 = TungstenHub.Theme.TextMain,
+            TextSize = 18,
+            Font = Enum.Font.GothamBold,
+            Parent = MobileButton
+        })
+        
+        local ButtonGrad = makeElement("UIGradient", {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, TungstenHub.Theme.AccentGrad1),
+                ColorSequenceKeypoint.new(1, TungstenHub.Theme.AccentGrad2)
+            }),
+            Parent = ButtonStroke
+        })
+        
+        MobileButton.MouseButton1Click:Connect(toggleUI)
+        
+        -- Make the mobile button draggable
+        local dragStart, startPos
+        local dragging = false
+        
+        MobileButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                dragStart = input.Position
+                startPos = MobileButton.Position
+                
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+                local delta = input.Position - dragStart
+                MobileButton.Position = UDim2.new(
+                    startPos.X.Scale, 
+                    startPos.X.Offset + delta.X, 
+                    startPos.Y.Scale, 
+                    startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+
     -- Window Object Definition
     local Window = {
         Tabs = {},
         ActiveTab = nil,
+        ToggleConnection = toggleConnection,
     }
 
     function Window:CreateTab(tabName)
