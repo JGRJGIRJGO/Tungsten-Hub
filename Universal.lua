@@ -34,7 +34,7 @@ end
 
 -- Load the Tungsten Hub UI Library from GitHub
 local success, TungstenHub = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHub.lua"))()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHub.lua?t=" .. tostring(os.time())))()
 end)
 
 if not success or not TungstenHub then
