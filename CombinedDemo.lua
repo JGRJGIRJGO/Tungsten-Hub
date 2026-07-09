@@ -1769,6 +1769,31 @@ end
 -- DEMO ASSEMBLY START
 -- =====================================================================
 
+-- HWID-based dynamic daily key generation (prevents key sharing)
+local function getHardwareID()
+    if gethwid then 
+        local hwid = gethwid()
+        if type(hwid) == "string" and #hwid > 0 then
+            return hwid
+        end
+    end
+    return tostring(LocalPlayer.UserId)
+end
+
+local function getDailyHWIDKey()
+    local hwid = getHardwareID()
+    local dateStr = os.date("%d%m%Y")
+    local salt = "TungstenSaltKey"
+    local input = hwid .. "_" .. salt .. "_" .. dateStr
+    
+    local hash = 2166136261
+    for i = 1, #input do
+        hash = bit32.bxor(hash, string.byte(input, i))
+        hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
+    end
+    return "Tungsten_" .. string.format("%X", hash)
+end
+
 -- Create Window with Key System config
 local Window = TungstenHub:CreateWindow({
     Name = "Tungsten Hub",
@@ -1776,10 +1801,10 @@ local Window = TungstenHub:CreateWindow({
     KeySettings = {
         Title = "Tungsten Key Verification",
         Subtitle = "Tungsten Hub",
-        Note = "The key is: demo_key_123 (Get Key copies git URL)",
+        Note = "Enter your secure HWID-locked key. (For testing, your key today is: " .. getDailyHWIDKey() .. ")",
         SaveKey = true,
-        Key = "demo_key_123",
-        Url = "https://github.com/JGRJGIRJGO/Tungsten-Hub"
+        Key = getDailyHWIDKey(),
+        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid=" .. getHardwareID()
     }
 })
 

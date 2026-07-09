@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tungsten Hub - Key System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0d0f;
+            --container-bg: rgba(20, 20, 24, 0.7);
+            --stroke-color: rgba(255, 255, 255, 0.08);
+            --accent-1: #0096ff;
+            --accent-2: #00ccff;
+            --text-main: #f5f5fa;
+            --text-dark: #a0a0a5;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(0, 150, 255, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 204, 255, 0.08) 0%, transparent 40%);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Frosted Glass Container */
+        .glass-panel {
+            background: var(--container-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--stroke-color);
+            border-radius: 12px;
+            padding: 30px;
+            width: 90%;
+            max-width: 440px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            position: relative;
+            transform: scale(0.9);
+            opacity: 0;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes popIn {
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Top metallic accent line */
+        .glass-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-1));
+            border-radius: 12px 12px 0 0;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ffffff 30%, var(--text-dark) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: var(--accent-2);
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 25px;
+        }
+
+        /* Verification Screen */
+        .status-area {
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.05);
+            border-top: 3px solid var(--accent-1);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-text {
+            font-size: 15px;
+            color: var(--text-dark);
+            margin-bottom: 10px;
+        }
+
+        /* Key Box */
+        .key-display-box {
+            display: none;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px dashed var(--stroke-color);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-main);
+            letter-spacing: 0.5px;
+            margin: 20px 0;
+            text-transform: none;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .key-display-box:hover {
+            border-color: var(--accent-1);
+            background: rgba(0, 150, 255, 0.03);
+        }
+
+        /* Button controls */
+        .action-btn {
+            display: none;
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 150, 255, 0.3);
+        }
+
+        .action-btn:hover {
+            opacity: 0.9;
+        }
+
+        .action-btn:active {
+            transform: scale(0.98);
+        }
+
+        .error-message {
+            display: none;
+            color: #ff4b4b;
+            font-size: 13px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="glass-panel">
+        <div class="header">
+            <h1>Tungsten Hub</h1>
+            <p>Key System Gate</p>
+        </div>
+
+        <div class="status-area" id="status-area">
+            <div class="spinner" id="spinner"></div>
+            <p class="status-text" id="status-text">Bypassing local handshakes...</p>
+        </div>
+
+        <div class="error-message" id="error-box">
+            No Hardware ID (HWID) detected. Please run the script in Roblox to generate your key URL.
+        </div>
+
+        <div class="key-display-box" id="key-box">
+            Tungsten_GENERATING...
+        </div>
+
+        <button class="action-btn" id="action-btn">Copy Secure Key</button>
+    </div>
+
+    <script>
+        // FNV-1a Hashing Algorithm matching Lua FNV-1a
+        function generateDailyHWIDKey(hwid) {
+            const date = new Date();
+            // Match Lua's local os.date("%d%m%Y") perfectly by using local date methods!
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const dateStr = `${day}${month}${year}`;
+            const salt = "TungstenSaltKey";
+            const input = `${hwid}_${salt}_${dateStr}`;
+            
+            let hash = 2166136261;
+            for (let i = 0; i < input.length; i++) {
+                hash ^= input.charCodeAt(i);
+                hash = (hash * 16777619) >>> 0; // Unsigned 32-bit integer
+            }
+            return "Tungsten_" + hash.toString(16).toUpperCase();
+        }
+
+        // Get HWID from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const hwid = urlParams.get('hwid');
+
+        const spinner = document.getElementById('spinner');
+        const statusText = document.getElementById('status-text');
+        const errorBox = document.getElementById('error-box');
+        const keyBox = document.getElementById('key-box');
+        const actionBtn = document.getElementById('action-btn');
+
+        if (!hwid || hwid.trim() === "") {
+            // No HWID error
+            spinner.style.display = 'none';
+            statusText.style.display = 'none';
+            errorBox.style.display = 'block';
+        } else {
+            // Simulated validation sequence
+            setTimeout(() => {
+                statusText.innerText = "Generating HWID-locked key...";
+                setTimeout(() => {
+                    const generatedKey = generateDailyHWIDKey(hwid);
+                    
+                    // Display Key
+                    spinner.style.display = 'none';
+                    statusText.innerText = "Key generated successfully! Proceed to copy.";
+                    keyBox.innerText = generatedKey;
+                    keyBox.style.display = 'block';
+                    actionBtn.style.display = 'block';
+                }, 1000);
+            }, 1200);
+        }
+
+        // Clipboard Copy Logic
+        function copyKey() {
+            const keyText = keyBox.innerText;
+            navigator.clipboard.writeText(keyText).then(() => {
+                actionBtn.innerText = "Key Copied!";
+                actionBtn.style.background = "linear-gradient(135deg, #2ecc71, #27ae60)";
+                actionBtn.style.boxShadow = "0 4px 15px rgba(46, 204, 113, 0.3)";
+                setTimeout(() => {
+                    actionBtn.innerText = "Copy Secure Key";
+                    actionBtn.style.background = "linear-gradient(135deg, var(--accent-1), var(--accent-2))";
+                    actionBtn.style.boxShadow = "0 4px 15px rgba(0, 150, 255, 0.3)";
+                }, 2000);
+            }).catch(err => {
+                alert("Failed to copy key automatically. Please select and copy manually.");
+            });
+        }
+
+        actionBtn.addEventListener('click', copyKey);
+        keyBox.addEventListener('click', copyKey);
+    </script>
+</body>
+</html>
