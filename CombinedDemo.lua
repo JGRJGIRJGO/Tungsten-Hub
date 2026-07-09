@@ -152,10 +152,17 @@ local function makeDraggable(dragFrame, parentFrame)
     end)
 end
 
--- Top-level Window builder
-function TungstenHub:CreateWindow(titleText, subtitleText)
-    titleText = titleText or "Tungsten Hub"
-    subtitleText = subtitleText or "Roblox Edition"
+-- Top-level Window builder supporting dynamic configs and Key System
+function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
+    local titleText, subText, keySettings
+    if type(titleTextOrConfig) == "table" then
+        titleText = titleTextOrConfig.Name or "Tungsten Hub"
+        subText = titleTextOrConfig.Subtitle or "Roblox Edition"
+        keySettings = titleTextOrConfig.KeySettings
+    else
+        titleText = titleTextOrConfig or "Tungsten Hub"
+        subText = subtitleText or "Roblox Edition"
+    end
 
     -- Registry of instances to update dynamically on theme change
     local themeObjects = {
@@ -286,7 +293,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Size = UDim2.new(1, 0, 0, 15),
         Position = UDim2.new(0, 5, 0, 22),
         BackgroundTransparency = 1,
-        Text = subtitleText,
+        Text = subText,
         TextColor3 = TungstenHub.Theme.TextDark,
         TextSize = 11,
         Font = Enum.Font.GothamMedium,
@@ -307,14 +314,14 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Parent = Sidebar
     })
 
-    local SidebarLayout = makeElement("UIListLayout", {
+    local SidebarScrollLayout = makeElement("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
         Padding = UDim.new(0, 3),
         Parent = SidebarScroll
     })
 
-    SidebarLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, SidebarLayout.AbsoluteContentSize.Y)
+    SidebarScrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, SidebarScrollLayout.AbsoluteContentSize.Y)
     end)
 
     -- Header Panel (Thin drag bar next to sidebar)
@@ -327,7 +334,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Parent = MainFrame
     })
 
-    -- Window Controls Container
+    -- Window Controls Container (Minimize & Close buttons)
     local WindowControls = makeElement("Frame", {
         Name = "Controls",
         Size = UDim2.new(0, 65, 1, 0),
@@ -392,14 +399,322 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Parent = MainFrame
     })
 
-    -- Entrance Animation
+    -- Entrance Animation Definition
     MainContainer.Size = UDim2.new(0, 560, 0, 0)
     MainContainer.Position = UDim2.new(0.5, -280, 0.5, 0)
     local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         Size = UDim2.new(0, 560, 0, 390),
         Position = UDim2.new(0.5, -280, 0.5, -195),
     })
-    fadeIn:Play()
+
+    -- Helper functions for local Key caching
+    local keyFileName = titleText:lower():gsub("%s+", "_") .. "_key.txt"
+
+    local function saveKey(keyVal)
+        if writefile then
+            pcall(function()
+                writefile(keyFileName, keyVal)
+            end)
+        end
+    end
+
+    local function loadSavedKey()
+        if readfile then
+            local successLoad, content = pcall(function()
+                return readfile(keyFileName)
+            end)
+            if successLoad then
+                return content:gsub("%s+", "")
+            end
+        end
+        return nil
+    end
+
+    local function setClipboard(text)
+        if setclipboard then
+            setclipboard(text)
+        elseif toclipboard then
+            toclipboard(text)
+        end
+    end
+
+    local function startMainUI()
+        MainContainer.Visible = true
+        fadeIn:Play()
+    end
+
+    -- Run Key System if enabled
+    if keySettings and keySettings.Key then
+        local savedKey = loadSavedKey()
+        
+        local function validateKey(entered)
+            if type(keySettings.Key) == "string" then
+                return entered == keySettings.Key
+            elseif type(keySettings.Key) == "table" then
+                for _, k in ipairs(keySettings.Key) do
+                    if entered == k then return true end
+                end
+            elseif type(keySettings.Key) == "function" then
+                local successCheck, checkResult = pcall(keySettings.Key, entered)
+                return successCheck and checkResult
+            end
+            return false
+        end
+
+        if savedKey and validateKey(savedKey) then
+            startMainUI()
+        else
+            -- Hide main UI window during key verification
+            MainContainer.Visible = false
+            
+            -- Key Verification Window Container
+            local KeyContainer = makeElement("Frame", {
+                Name = "KeyContainer",
+                Size = UDim2.new(0, 320, 0, 210),
+                Position = UDim2.new(0.5, -160, 0.5, -105),
+                BackgroundTransparency = 1,
+                Parent = ScreenGui
+            })
+            
+            local KeyShadow = makeElement("ImageLabel", {
+                Name = "Shadow",
+                Size = UDim2.new(1, 40, 1, 40),
+                Position = UDim2.new(0, -20, 0, -20),
+                BackgroundTransparency = 1,
+                Image = "rbxassetid://6014261993",
+                ImageColor3 = Color3.fromRGB(0, 0, 0),
+                ImageTransparency = 0.5,
+                ScaleType = Enum.ScaleType.Slice,
+                SliceCenter = Rect.new(10, 10, 20, 20),
+                ZIndex = 0,
+                Parent = KeyContainer
+            })
+            
+            local KeyFrame = makeElement("Frame", {
+                Name = "KeyFrame",
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundColor3 = TungstenHub.Theme.Background,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                ZIndex = 1,
+                Parent = KeyContainer
+            })
+            
+            local KeyCorner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 8),
+                Parent = KeyFrame
+            })
+            
+            local KeyStroke = makeElement("UIStroke", {
+                Color = TungstenHub.Theme.CardStroke,
+                Thickness = 1,
+                Parent = KeyFrame
+            })
+            
+            makeDraggable(KeyFrame, KeyContainer)
+            
+            -- Header title
+            local KeyHeader = makeElement("Frame", {
+                Size = UDim2.new(1, 0, 0, 35),
+                BackgroundTransparency = 1,
+                Parent = KeyFrame
+            })
+            
+            local KeyTitle = makeElement("TextLabel", {
+                Size = UDim2.new(1, -60, 1, 0),
+                Position = UDim2.new(0, 15, 0, 0),
+                BackgroundTransparency = 1,
+                Text = keySettings.Title or "Key Verification",
+                TextColor3 = TungstenHub.Theme.TextMain,
+                TextSize = 13.5,
+                Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = KeyHeader
+            })
+            
+            local KeyClose = makeElement("TextButton", {
+                Size = UDim2.new(0, 25, 0, 25),
+                Position = UDim2.new(1, -35, 0.5, -12.5),
+                BackgroundTransparency = 1,
+                Text = "×",
+                TextColor3 = TungstenHub.Theme.TextDark,
+                TextSize = 18,
+                Font = Enum.Font.GothamMedium,
+                Parent = KeyHeader
+            })
+            
+            KeyClose.MouseButton1Click:Connect(function()
+                ScreenGui:Destroy()
+            end)
+            
+            -- Developer Custom Note
+            local KeyNote = makeElement("TextLabel", {
+                Size = UDim2.new(1, -30, 0, 35),
+                Position = UDim2.new(0, 15, 0, 42),
+                BackgroundTransparency = 1,
+                Text = keySettings.Note or "Please enter key to unlock features.",
+                TextColor3 = TungstenHub.Theme.TextDark,
+                TextSize = 11,
+                Font = Enum.Font.GothamMedium,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top,
+                Parent = KeyFrame
+            })
+            
+            -- TextBox Outline
+            local BoxFrame = makeElement("Frame", {
+                Size = UDim2.new(1, -30, 0, 34),
+                Position = UDim2.new(0, 15, 0, 85),
+                BackgroundColor3 = TungstenHub.Theme.Card,
+                BorderSizePixel = 0,
+                Parent = KeyFrame
+            })
+            
+            local BoxCorner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 5),
+                Parent = BoxFrame
+            })
+            
+            local BoxStroke = makeElement("UIStroke", {
+                Color = TungstenHub.Theme.CardStroke,
+                Thickness = 1,
+                Parent = BoxFrame
+            })
+            
+            local KeyInput = makeElement("TextBox", {
+                Size = UDim2.new(1, -20, 1, 0),
+                Position = UDim2.new(0, 10, 0, 0),
+                BackgroundTransparency = 1,
+                Text = "",
+                PlaceholderText = "Enter key here...",
+                PlaceholderColor3 = TungstenHub.Theme.TextDark,
+                TextColor3 = TungstenHub.Theme.TextMain,
+                TextSize = 12,
+                Font = Enum.Font.GothamMedium,
+                ClearTextOnFocus = false,
+                Parent = BoxFrame
+            })
+            
+            KeyInput.Focused:Connect(function()
+                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = TungstenHub.Theme.AccentGrad1}):Play()
+            end)
+            KeyInput.FocusLost:Connect(function()
+                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = TungstenHub.Theme.CardStroke}):Play()
+            end)
+            
+            -- Actions (Verify / Get Key Link)
+            local ActionHolder = makeElement("Frame", {
+                Size = UDim2.new(1, -30, 0, 34),
+                Position = UDim2.new(0, 15, 0, 135),
+                BackgroundTransparency = 1,
+                Parent = KeyFrame
+            })
+            
+            local ActionLayout = makeElement("UIListLayout", {
+                FillDirection = Enum.FillDirection.Horizontal,
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding = UDim.new(0, 8),
+                Parent = ActionHolder
+            })
+            
+            -- Submit button (accent background)
+            local VerifyBtnFrame = makeElement("Frame", {
+                Size = UDim2.new(0.5, -4, 1, 0),
+                BackgroundColor3 = TungstenHub.Theme.AccentGrad1,
+                BorderSizePixel = 0,
+                Parent = ActionHolder
+            })
+            
+            local VerifyCorner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 5),
+                Parent = VerifyBtnFrame
+            })
+            
+            local VerifyBtn = makeElement("TextButton", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = "Verify Key",
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+                TextSize = 12,
+                Font = Enum.Font.GothamBold,
+                Parent = VerifyBtnFrame
+            })
+            
+            -- Copy Key Link button (card background)
+            local GetBtnFrame = makeElement("Frame", {
+                Size = UDim2.new(0.5, -4, 1, 0),
+                BackgroundColor3 = TungstenHub.Theme.Card,
+                BorderSizePixel = 0,
+                Parent = ActionHolder
+            })
+            
+            local GetCorner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 5),
+                Parent = GetBtnFrame
+            })
+            
+            local GetStroke = makeElement("UIStroke", {
+                Color = TungstenHub.Theme.CardStroke,
+                Thickness = 1,
+                Parent = GetBtnFrame
+            })
+            
+            local GetBtn = makeElement("TextButton", {
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = "Get Key Link",
+                TextColor3 = TungstenHub.Theme.TextMain,
+                TextSize = 12,
+                Font = Enum.Font.GothamMedium,
+                Parent = GetBtnFrame
+            })
+            
+            GetBtn.MouseEnter:Connect(function()
+                TweenService:Create(GetStroke, TweenInfo.new(0.15), {Color = TungstenHub.Theme.AccentGrad1}):Play()
+            end)
+            GetBtn.MouseLeave:Connect(function()
+                TweenService:Create(GetStroke, TweenInfo.new(0.15), {Color = TungstenHub.Theme.CardStroke}):Play()
+            end)
+            
+            GetBtn.MouseButton1Click:Connect(function()
+                if keySettings.Url then
+                    setClipboard(keySettings.Url)
+                    GetBtn.Text = "Link Copied!"
+                    task.wait(1.5)
+                    GetBtn.Text = "Get Key Link"
+                end
+            end)
+            
+            VerifyBtn.MouseButton1Click:Connect(function()
+                local entered = KeyInput.Text
+                if validateKey(entered) then
+                    if keySettings.SaveKey then
+                        saveKey(entered)
+                    end
+                    VerifyBtn.Text = "Success!"
+                    
+                    local slideOut = TweenService:Create(KeyContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                        Size = UDim2.new(0, 320, 0, 0),
+                        Position = UDim2.new(0.5, -160, 0.5, 0),
+                    })
+                    slideOut:Play()
+                    slideOut.Completed:Connect(function()
+                        KeyContainer:Destroy()
+                        startMainUI()
+                    end)
+                else
+                    VerifyBtn.Text = "Invalid Key!"
+                    TweenService:Create(BoxStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(255, 75, 75)}):Play()
+                    task.wait(1.5)
+                    VerifyBtn.Text = "Verify Key"
+                    TweenService:Create(BoxStroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.CardStroke}):Play()
+                end
+            end)
+        end
+    else
+        startMainUI()
+    end
 
     local isVisible = true
     local function toggleUI()
@@ -1454,8 +1769,19 @@ end
 -- DEMO ASSEMBLY START
 -- =====================================================================
 
--- Create Window
-local Window = TungstenHub:CreateWindow("Tungsten Hub", "Universal")
+-- Create Window with Key System config
+local Window = TungstenHub:CreateWindow({
+    Name = "Tungsten Hub",
+    Subtitle = "Universal",
+    KeySettings = {
+        Title = "Tungsten Key Verification",
+        Subtitle = "Tungsten Hub",
+        Note = "The key is: demo_key_123 (Get Key copies git URL)",
+        SaveKey = true,
+        Key = "demo_key_123",
+        Url = "https://github.com/JGRJGIRJGO/Tungsten-Hub"
+    }
+})
 
 -- Create Tabs
 local MainTab = Window:CreateTab("Main")

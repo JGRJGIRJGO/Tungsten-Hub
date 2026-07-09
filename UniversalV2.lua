@@ -43,7 +43,21 @@ if not success or not TungstenHub then
 end
 
 -- Create Window
-local Window = TungstenHub:CreateWindow("Tungsten Hub", "Universal")
+local Window = TungstenHub:CreateWindow({
+    Name = "Tungsten Hub",
+    Subtitle = "Universal",
+    -- Optional Key System configuration:
+    --[[
+    KeySettings = {
+        Title = "Key Verification",
+        Subtitle = "Tungsten Hub",
+        Note = "Get the key from our key link!",
+        SaveKey = true,
+        Key = "my_secret_key_123",
+        Url = "https://linkvertise.com/..."
+    }
+    ]]
+})
 
 -- Create Tabs
 local PlayerTab = Window:CreateTab("Player")
