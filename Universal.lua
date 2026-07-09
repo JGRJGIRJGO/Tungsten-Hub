@@ -16,16 +16,21 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- Keep track of Character changes
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    Humanoid = char:WaitForChild("Humanoid")
-    RootPart = char:WaitForChild("HumanoidRootPart")
-end)
+-- Helper functions to dynamically fetch player character references safely (fixes nil indexing bugs)
+local function getChar()
+    return LocalPlayer.Character
+end
+
+local function getHum()
+    local char = getChar()
+    return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot()
+    local char = getChar()
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
 
 -- Load the Tungsten Hub UI Library from GitHub
 local success, TungstenHub = pcall(function()
@@ -54,16 +59,18 @@ PlayerTab:CreateLabel("Movement Enhancements")
 
 -- WalkSpeed Slider
 PlayerTab:CreateSlider("WalkSpeed Booster", 16, 250, 16, function(value)
-    if Humanoid then
-        Humanoid.WalkSpeed = value
+    local hum = getHum()
+    if hum then
+        hum.WalkSpeed = value
     end
 end)
 
 -- JumpPower Slider
 PlayerTab:CreateSlider("JumpPower Booster", 50, 400, 50, function(value)
-    if Humanoid then
-        Humanoid.UseJumpPower = true
-        Humanoid.JumpPower = value
+    local hum = getHum()
+    if hum then
+        hum.UseJumpPower = true
+        hum.JumpPower = value
     end
 end)
 
@@ -92,8 +99,9 @@ PlayerTab:CreateToggle("Noclip (Walk Through Walls)", false, function(state)
             if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
             return
         end
-        if Character then
-            for _, part in ipairs(Character:GetDescendants()) do
+        local char = getChar()
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
@@ -116,8 +124,9 @@ PlayerTab:CreateToggle("Infinite Jump", false, function(state)
     end
     
     infJumpConnection = UserInputService.JumpRequest:Connect(function()
-        if infJumpToggle and Humanoid then
-            Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        local hum = getHum()
+        if infJumpToggle and hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     end)
 end)
@@ -128,35 +137,41 @@ local flySpeed = 50
 local flyConnection
 
 local function updateFlyState()
+    local hum = getHum()
+    local root = getRoot()
+
     if not flyToggle then
         if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-        if Humanoid then Humanoid.PlatformStand = false end
-        if RootPart then
-            local bv = RootPart:FindFirstChild("FlyVelocity")
-            local bg = RootPart:FindFirstChild("FlyGyro")
+        if hum then hum.PlatformStand = false end
+        if root then
+            local bv = root:FindFirstChild("FlyVelocity")
+            local bg = root:FindFirstChild("FlyGyro")
             if bv then bv:Destroy() end
             if bg then bg:Destroy() end
         end
         return
     end
 
-    if not RootPart or not Humanoid then return end
-    Humanoid.PlatformStand = true
+    if not root or not hum then return end
+    hum.PlatformStand = true
     
-    local bv = RootPart:FindFirstChild("FlyVelocity") or Instance.new("BodyVelocity")
+    local bv = root:FindFirstChild("FlyVelocity") or Instance.new("BodyVelocity")
     bv.Name = "FlyVelocity"
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Parent = RootPart
+    bv.Parent = root
 
-    local bg = RootPart:FindFirstChild("FlyGyro") or Instance.new("BodyGyro")
+    local bg = root:FindFirstChild("FlyGyro") or Instance.new("BodyGyro")
     bg.Name = "FlyGyro"
     bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.Parent = RootPart
+    bg.Parent = root
 
     local camera = workspace.CurrentCamera
     
     flyConnection = RunService.RenderStepped:Connect(function()
-        if not flyToggle or not RootPart.Parent or not Humanoid.Parent then
+        local currentHum = getHum()
+        local currentRoot = getRoot()
+
+        if not flyToggle or not currentRoot or not currentRoot.Parent or not currentHum or not currentHum.Parent then
             if flyConnection then flyConnection:Disconnect() flyConnection = nil end
             return
         end
@@ -272,8 +287,9 @@ TeleportTab:CreateToggle("Click Teleport (CTRL + Click)", false, function(state)
     local mouse = LocalPlayer:GetMouse()
     clickTPConnection = mouse.Button1Down:Connect(function()
         if clickTPToggle and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            if RootPart and mouse.Target then
-                RootPart.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+            local root = getRoot()
+            if root and mouse.Target then
+                root.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
                 Window:Notify("Teleported", "Moved to target position.", 1.5)
             end
         end
@@ -298,9 +314,10 @@ end
 
 local playerDropdown = TeleportTab:CreateDropdown("Select Player", getPlayerNames(), nil, function(name)
     local target = Players:FindFirstChild(name)
+    local root = getRoot()
     if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-        if RootPart then
-            RootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+        if root then
+            root.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
             Window:Notify("Teleported", "Teleported to " .. name, 2)
         end
     else
