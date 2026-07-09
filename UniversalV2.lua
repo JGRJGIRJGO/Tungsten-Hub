@@ -42,21 +42,43 @@ if not success or not TungstenHub then
     error("Tungsten Hub: Library load failed. Make sure you are connected to the internet.")
 end
 
--- Create Window
+-- HWID-based dynamic daily key generation (prevents key sharing)
+local function getHardwareID()
+    if gethwid then 
+        local hwid = gethwid()
+        if type(hwid) == "string" and #hwid > 0 then
+            return hwid
+        end
+    end
+    return tostring(LocalPlayer.UserId)
+end
+
+local function getDailyHWIDKey()
+    local hwid = getHardwareID()
+    local dateStr = os.date("%d%m%Y")
+    local salt = "TungstenSaltKey"
+    local input = hwid .. "_" .. salt .. "_" .. dateStr
+    
+    local hash = 2166136261
+    for i = 1, #input do
+        hash = bit32.bxor(hash, string.byte(input, i))
+        hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
+    end
+    return "Tungsten_" .. string.format("%X", hash)
+end
+
+-- Create Window with Secure HWID Key System
 local Window = TungstenHub:CreateWindow({
     Name = "Tungsten Hub",
     Subtitle = "Universal",
-    -- Optional Key System configuration:
-    --[[
     KeySettings = {
-        Title = "Key Verification",
+        Title = "Tungsten Key Verification",
         Subtitle = "Tungsten Hub",
-        Note = "Get the key from our key link!",
+        Note = "Enter your secure HWID-locked key. (For testing, your key today is: " .. getDailyHWIDKey() .. ")",
         SaveKey = true,
-        Key = "my_secret_key_123",
-        Url = "https://linkvertise.com/..."
+        Key = getDailyHWIDKey(),
+        Url = "https://jgrjgirjgo.github.io/key?hwid=" .. getHardwareID()
     }
-    ]]
 })
 
 -- Create Tabs
