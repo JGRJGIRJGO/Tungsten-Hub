@@ -1225,6 +1225,40 @@ SettingsTab:CreateDropdown("Theme Color Palette", {"Dark Steel", "Neon Cyan", "A
     Window:Notify("Theme Changed", "Applied " .. option .. " style.", 2)
 end)
 
+-- Toggle Keybind Changer
+local currentToggleKey = Enum.KeyCode.RightShift
+local listeningForKeybind = false
+local keybindButton
+
+keybindButton = SettingsTab:CreateButton("Toggle Keybind: " .. currentToggleKey.Name, function()
+    if listeningForKeybind then return end
+    listeningForKeybind = true
+    keybindButton.UpdateButtonText("Toggle Keybind: Press any key...")
+    
+    local connection
+    connection = UserInputService.InputBegan:Connect(function(input, processed)
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            local pressedKey = input.KeyCode
+            
+            -- Ignore Escape so they can cancel the keybind selection
+            if pressedKey == Enum.KeyCode.Escape then
+                listeningForKeybind = false
+                keybindButton.UpdateButtonText("Toggle Keybind: " .. currentToggleKey.Name)
+                connection:Disconnect()
+                return
+            end
+            
+            currentToggleKey = pressedKey
+            Window:SetToggleKey(pressedKey)
+            keybindButton.UpdateButtonText("Toggle Keybind: " .. pressedKey.Name)
+            Window:Notify("Keybind Updated", "Toggle key set to: " .. pressedKey.Name, 2)
+            
+            listeningForKeybind = false
+            connection:Disconnect()
+        end
+    end)
+end)
+
 SettingsTab:CreateButton("Destroy UI", function()
     local existing = game:GetService("CoreGui"):FindFirstChild("TungstenHub") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("TungstenHub")
     if existing then
