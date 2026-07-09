@@ -224,7 +224,7 @@
             const month = String(date.getUTCMonth() + 1).padStart(2, '0');
             const year = date.getUTCFullYear();
             const dateStr = `${day}${month}${year}`;
-            const salt = "TungstenSaltKey";
+            const salt = "TungstenSecureKeySystem_V3_Reset_8F2D";
             const input = `${cleanHwid}_${salt}_${dateStr}`;
             
             let hash = 2166136261;

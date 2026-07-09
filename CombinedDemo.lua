@@ -1805,7 +1805,7 @@ end
 local function getDailyHWIDKey()
     local hashedHwid = getHashedHWID()
     local dateStr = os.date("!%d%m%Y") -- Forced UTC date string to align with browser
-    local salt = "TungstenSaltKey"
+    local salt = "TungstenSecureKeySystem_V3_Reset_8F2D"
     local input = hashedHwid .. "_" .. salt .. "_" .. dateStr
     
     local hash = 2166136261
@@ -1823,7 +1823,7 @@ local Window = TungstenHub:CreateWindow({
     KeySettings = {
         Title = "Tungsten Key Verification",
         Subtitle = "Tungsten Hub",
-        Note = "Enter your secure HWID-locked key. (For testing, your key today is: " .. getDailyHWIDKey() .. ")",
+        Note = "Please enter your secure HWID-locked key to unlock features.",
         SaveKey = true,
         Key = getDailyHWIDKey(),
         Url = "https://aged-hall-3742.raidingstreamers7.workers.dev/?hwid=" .. getHashedHWID()
