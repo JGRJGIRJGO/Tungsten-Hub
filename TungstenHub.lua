@@ -1,32 +1,7 @@
 --[[
     Tungsten Hub UI Library
     A premium, modern, and draggable dark-themed UI library for Roblox.
-    Designed with smooth tweens, metallic accents, and a modular framework.
-    
-    API Usage Example:
-    ------------------------------------------------------------------------
-    local TungstenHub = loadstring(game:HttpGet("https://raw.githubusercontent.com/.../TungstenHub.lua"))()
-    
-    local Window = TungstenHub:CreateWindow("Tungsten Hub", "V1.0.0")
-    local MainTab = Window:CreateTab("Main")
-    local SettingsTab = Window:CreateTab("Settings")
-    
-    MainTab:CreateButton("Click Me!", function()
-        print("Button Clicked!")
-    end)
-    
-    MainTab:CreateToggle("Auto Farm", false, function(state)
-        print("Toggle set to:", state)
-    end)
-    
-    MainTab:CreateSlider("Speed Boost", 16, 100, 16, function(value)
-        print("Slider value:", value)
-    end)
-    
-    MainTab:CreateDropdown("Teleport Location", {"Spawn", "Shop", "Dungeon"}, "Spawn", function(selection)
-        print("Selected:", selection)
-    end)
-    ------------------------------------------------------------------------
+    Designed with smooth tweens, metallic accents, and a modular theme engine.
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -52,19 +27,68 @@ if Parent:FindFirstChild("TungstenHub") then
 end
 
 local TungstenHub = {}
-TungstenHub.ToggleKey = Enum.KeyCode.RightShift
-TungstenHub.Theme = {
-    Background = Color3.fromRGB(15, 15, 18),
-    Header = Color3.fromRGB(22, 22, 26),
-    Sidebar = Color3.fromRGB(18, 18, 22),
-    Card = Color3.fromRGB(25, 25, 30),
-    CardStroke = Color3.fromRGB(40, 40, 45),
-    AccentGrad1 = Color3.fromRGB(0, 180, 216),    -- Glowing metallic cyan
-    AccentGrad2 = Color3.fromRGB(72, 202, 228),    -- Metallic blue-silver
-    TextMain = Color3.fromRGB(240, 240, 245),
-    TextDark = Color3.fromRGB(150, 150, 160),
-    AccentGlow = Color3.fromRGB(0, 180, 216),
+
+-- Pre-defined UI Themes
+TungstenHub.Themes = {
+    Tungsten = {
+        Background = Color3.fromRGB(15, 15, 18),
+        Header = Color3.fromRGB(22, 22, 26),
+        Sidebar = Color3.fromRGB(18, 18, 22),
+        Card = Color3.fromRGB(25, 25, 30),
+        CardStroke = Color3.fromRGB(40, 40, 45),
+        AccentGrad1 = Color3.fromRGB(0, 180, 216),    -- Glowing metallic cyan
+        AccentGrad2 = Color3.fromRGB(72, 202, 228),    -- Metallic blue-silver
+        TextMain = Color3.fromRGB(240, 240, 245),
+        TextDark = Color3.fromRGB(150, 150, 160),
+    },
+    Nebula = {
+        Background = Color3.fromRGB(10, 8, 18),
+        Header = Color3.fromRGB(15, 12, 26),
+        Sidebar = Color3.fromRGB(12, 10, 20),
+        Card = Color3.fromRGB(18, 15, 30),
+        CardStroke = Color3.fromRGB(45, 30, 70),
+        AccentGrad1 = Color3.fromRGB(138, 43, 226), -- Violet / Purple
+        AccentGrad2 = Color3.fromRGB(218, 112, 214), -- Orchid Pink
+        TextMain = Color3.fromRGB(245, 240, 255),
+        TextDark = Color3.fromRGB(160, 140, 180),
+    },
+    BloodMoon = {
+        Background = Color3.fromRGB(16, 8, 8),
+        Header = Color3.fromRGB(24, 12, 12),
+        Sidebar = Color3.fromRGB(20, 10, 10),
+        Card = Color3.fromRGB(30, 16, 16),
+        CardStroke = Color3.fromRGB(60, 25, 25),
+        AccentGrad1 = Color3.fromRGB(220, 20, 60), -- Crimson Red
+        AccentGrad2 = Color3.fromRGB(255, 69, 0), -- Orange
+        TextMain = Color3.fromRGB(255, 240, 240),
+        TextDark = Color3.fromRGB(180, 130, 130),
+    },
+    Emerald = {
+        Background = Color3.fromRGB(8, 15, 12),
+        Header = Color3.fromRGB(12, 24, 18),
+        Sidebar = Color3.fromRGB(10, 20, 15),
+        Card = Color3.fromRGB(16, 32, 24),
+        CardStroke = Color3.fromRGB(30, 60, 45),
+        AccentGrad1 = Color3.fromRGB(46, 204, 113), -- Emerald Green
+        AccentGrad2 = Color3.fromRGB(26, 188, 156), -- Sea Green
+        TextMain = Color3.fromRGB(240, 255, 245),
+        TextDark = Color3.fromRGB(140, 180, 155),
+    },
+    Midnight = {
+        Background = Color3.fromRGB(8, 10, 15),
+        Header = Color3.fromRGB(12, 15, 22),
+        Sidebar = Color3.fromRGB(10, 12, 18),
+        Card = Color3.fromRGB(16, 20, 28),
+        CardStroke = Color3.fromRGB(30, 38, 54),
+        AccentGrad1 = Color3.fromRGB(41, 128, 185), -- Cobalt Blue
+        AccentGrad2 = Color3.fromRGB(52, 152, 219), -- Sky Blue
+        TextMain = Color3.fromRGB(240, 245, 255),
+        TextDark = Color3.fromRGB(150, 160, 185),
+    }
 }
+
+TungstenHub.Theme = TungstenHub.Themes.Tungsten
+TungstenHub.ToggleKey = Enum.KeyCode.RightShift
 
 -- Utility function for creating UI elements smoothly
 local function makeElement(className, properties, children)
@@ -133,6 +157,19 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
     titleText = titleText or "Tungsten Hub"
     subtitleText = subtitleText or "Roblox Edition"
 
+    -- Registry of instances to update dynamically on theme change
+    local themeObjects = {
+        Backgrounds = {},
+        Headers = {},
+        Sidebars = {},
+        Cards = {},
+        Strokes = {},
+        MainText = {},
+        DarkText = {},
+        Gradients = {},
+        Updaters = {},
+    }
+
     local ScreenGui = makeElement("ScreenGui", {
         Name = "TungstenHub",
         Parent = Parent,
@@ -140,35 +177,76 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     })
 
-    -- Main Container
-    local MainFrame = makeElement("Frame", {
-        Name = "MainFrame",
+    -- Main Container (handles non-clipped shadow drawing)
+    local MainContainer = makeElement("Frame", {
+        Name = "MainContainer",
         Size = UDim2.new(0, 520, 0, 360),
         Position = UDim2.new(0.5, -260, 0.5, -180),
-        BackgroundColor3 = TungstenHub.Theme.Background,
-        BorderSizePixel = 0,
-        ClipsDescendants = true,
+        BackgroundTransparency = 1,
+        ClipsDescendants = false,
         Parent = ScreenGui
     })
 
+    -- Premium Glow/Drop Shadow Decal
+    local Shadow = makeElement("ImageLabel", {
+        Name = "Shadow",
+        Size = UDim2.new(1, 30, 1, 30),
+        Position = UDim2.new(0, -15, 0, -15),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://6014261993",
+        ImageColor3 = Color3.fromRGB(0, 0, 0),
+        ImageTransparency = 0.45,
+        ScaleType = Enum.ScaleType.Slice,
+        SliceCenter = Rect.new(10, 10, 20, 20),
+        ZIndex = 0,
+        Parent = MainContainer
+    })
+
+    -- Main Content Frame (Clips children)
+    local MainFrame = makeElement("Frame", {
+        Name = "MainFrame",
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = TungstenHub.Theme.Background,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = 1,
+        Parent = MainContainer
+    })
+    table.insert(themeObjects.Backgrounds, MainFrame)
+
     local MainCorner = makeElement("UICorner", {
-        CornerRadius = UDim.new(0, 10),
+        CornerRadius = UDim.new(0, 12),
         Parent = MainFrame
     })
 
+    -- Glow/Gradient Border Outline
     local MainStroke = makeElement("UIStroke", {
-        Color = TungstenHub.Theme.CardStroke,
-        Thickness = 1,
+        Color = Color3.fromRGB(255, 255, 255),
+        Thickness = 1.25,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         Parent = MainFrame
     })
+    table.insert(themeObjects.Strokes, MainStroke)
 
-    -- Top Gradient Line (Premium metallic feel)
+    local MainStrokeGrad = makeElement("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, TungstenHub.Theme.AccentGrad1),
+            ColorSequenceKeypoint.new(0.5, TungstenHub.Theme.CardStroke),
+            ColorSequenceKeypoint.new(1, TungstenHub.Theme.AccentGrad2)
+        }),
+        Rotation = 45,
+        Parent = MainStroke
+    })
+    table.insert(themeObjects.Gradients, MainStrokeGrad)
+
+    -- Top Accent Line
     local BrandLine = makeElement("Frame", {
         Name = "BrandLine",
-        Size = UDim2.new(1, 0, 0, 3),
+        Size = UDim2.new(1, 0, 0, 2.5),
         Position = UDim2.new(0, 0, 0, 0),
         BorderSizePixel = 0,
+        ZIndex = 3,
         Parent = MainFrame
     })
 
@@ -180,16 +258,19 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         }),
         Parent = BrandLine
     })
+    table.insert(themeObjects.Gradients, BrandGrad)
 
     -- Header Panel
     local Header = makeElement("Frame", {
         Name = "Header",
         Size = UDim2.new(1, 0, 0, 42),
-        Position = UDim2.new(0, 0, 0, 3),
+        Position = UDim2.new(0, 0, 0, 2.5),
         BackgroundColor3 = TungstenHub.Theme.Header,
         BorderSizePixel = 0,
+        ZIndex = 2,
         Parent = MainFrame
     })
+    table.insert(themeObjects.Headers, Header)
 
     local TitleLabel = makeElement("TextLabel", {
         Name = "Title",
@@ -198,11 +279,12 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         BackgroundTransparency = 1,
         Text = titleText,
         TextColor3 = TungstenHub.Theme.TextMain,
-        TextSize = 16,
+        TextSize = 15,
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = Header
     })
+    table.insert(themeObjects.MainText, TitleLabel)
 
     local SubtitleLabel = makeElement("TextLabel", {
         Name = "Subtitle",
@@ -216,8 +298,8 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = Header
     })
+    table.insert(themeObjects.DarkText, SubtitleLabel)
 
-    -- Update subtitle position dynamically based on title length
     TitleLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
         SubtitleLabel.Position = UDim2.new(0, TitleLabel.TextBounds.X + 25, 0, 0)
     end)
@@ -234,6 +316,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Font = Enum.Font.GothamMedium,
         Parent = Header
     })
+    table.insert(themeObjects.DarkText, CloseBtn)
 
     CloseBtn.MouseEnter:Connect(function()
         TweenService:Create(CloseBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 75, 75)}):Play()
@@ -242,8 +325,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         TweenService:Create(CloseBtn, TweenInfo.new(0.2), {TextColor3 = TungstenHub.Theme.TextDark}):Play()
     end)
     CloseBtn.MouseButton1Click:Connect(function()
-        -- Smooth closing animation
-        local fadeOut = TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        local fadeOut = TweenService:Create(MainContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Size = UDim2.new(0, 520, 0, 0),
             Position = UDim2.new(0.5, -260, 0.5, 0),
         })
@@ -253,20 +335,19 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         end)
     end)
 
-    -- Enable Dragging on Header
-    makeDraggable(Header, MainFrame)
+    makeDraggable(Header, MainContainer)
 
     -- Sidebar (Tabs list)
     local Sidebar = makeElement("Frame", {
         Name = "Sidebar",
-        Size = UDim2.new(0, 140, 1, -45),
-        Position = UDim2.new(0, 0, 0, 45),
+        Size = UDim2.new(0, 140, 1, -44.5),
+        Position = UDim2.new(0, 0, 0, 44.5),
         BackgroundColor3 = TungstenHub.Theme.Sidebar,
         BorderSizePixel = 0,
         Parent = MainFrame
     })
+    table.insert(themeObjects.Sidebars, Sidebar)
 
-    -- Subtle border separator between Sidebar and Content
     local Separator = makeElement("Frame", {
         Name = "Separator",
         Size = UDim2.new(0, 1, 1, 0),
@@ -275,6 +356,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         BorderSizePixel = 0,
         Parent = Sidebar
     })
+    table.insert(themeObjects.Strokes, Separator)
 
     local SidebarScroll = makeElement("ScrollingFrame", {
         Name = "TabsList",
@@ -282,8 +364,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         Position = UDim2.new(0, 5, 0, 5),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ScrollBarThickness = 2,
-        ScrollBarImageColor3 = TungstenHub.Theme.CardStroke,
+        ScrollBarThickness = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         Parent = Sidebar
     })
@@ -308,23 +389,23 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
     })
 
     -- Entrance Animation
-    MainFrame.Size = UDim2.new(0, 520, 0, 0)
-    MainFrame.Position = UDim2.new(0.5, -260, 0.5, 0)
-    local fadeIn = TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    MainContainer.Size = UDim2.new(0, 520, 0, 0)
+    MainContainer.Position = UDim2.new(0.5, -260, 0.5, 0)
+    local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         Size = UDim2.new(0, 520, 0, 360),
         Position = UDim2.new(0.5, -260, 0.5, -180),
     })
     fadeIn:Play()
 
-    local toggleKey = TungstenHub.ToggleKey or Enum.KeyCode.RightShift
     local isVisible = true
     local function toggleUI()
-        if not MainFrame or not MainFrame.Parent then return end
+        if not MainContainer or not MainContainer.Parent then return end
         isVisible = not isVisible
-        MainFrame.Visible = isVisible
+        MainContainer.Visible = isVisible
     end
 
     -- Toggle with Key
+    local toggleKey = TungstenHub.ToggleKey or Enum.KeyCode.RightShift
     local toggleConnection
     toggleConnection = UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
@@ -333,7 +414,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         end
     end)
 
-    -- Clean up key connection when GUI is destroyed
     ScreenGui.Destroying:Connect(function()
         if toggleConnection then
             toggleConnection:Disconnect()
@@ -341,7 +421,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         end
     end)
 
-    -- Mobile Draggable Toggle Button (only created if touch is enabled)
+    -- Mobile Draggable Toggle Button
     if UserInputService.TouchEnabled then
         local MobileButton = makeElement("ImageButton", {
             Name = "MobileToggle",
@@ -352,6 +432,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             ZIndex = 10,
             Parent = ScreenGui
         })
+        table.insert(themeObjects.Headers, MobileButton)
         
         local ButtonCorner = makeElement("UICorner", {
             CornerRadius = UDim.new(1, 0),
@@ -363,6 +444,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             Thickness = 1.5,
             Parent = MobileButton
         })
+        table.insert(themeObjects.Strokes, ButtonStroke)
         
         local ButtonLabel = makeElement("TextLabel", {
             Size = UDim2.new(1, 0, 1, 0),
@@ -373,6 +455,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             Font = Enum.Font.GothamBold,
             Parent = MobileButton
         })
+        table.insert(themeObjects.MainText, ButtonLabel)
         
         local ButtonGrad = makeElement("UIGradient", {
             Color = ColorSequence.new({
@@ -381,10 +464,10 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             }),
             Parent = ButtonStroke
         })
+        table.insert(themeObjects.Gradients, ButtonGrad)
         
         MobileButton.MouseButton1Click:Connect(toggleUI)
         
-        -- Make the mobile button draggable
         local dragStart, startPos
         local dragging = false
         
@@ -422,6 +505,29 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         ToggleConnection = toggleConnection,
     }
 
+    -- Set dynamic theme updating
+    function Window:SetTheme(themeTable)
+        TungstenHub.Theme = themeTable
+        
+        for _, bg in ipairs(themeObjects.Backgrounds) do bg.BackgroundColor3 = themeTable.Background end
+        for _, hd in ipairs(themeObjects.Headers) do hd.BackgroundColor3 = themeTable.Header end
+        for _, sb in ipairs(themeObjects.Sidebars) do sb.BackgroundColor3 = themeTable.Sidebar end
+        for _, cd in ipairs(themeObjects.Cards) do cd.BackgroundColor3 = themeTable.Card end
+        for _, str in ipairs(themeObjects.Strokes) do str.Color = themeTable.CardStroke end
+        for _, txt in ipairs(themeObjects.MainText) do txt.TextColor3 = themeTable.TextMain end
+        for _, txt in ipairs(themeObjects.DarkText) do txt.TextColor3 = themeTable.TextDark end
+        for _, grad in ipairs(themeObjects.Gradients) do
+            grad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, themeTable.AccentGrad1),
+                ColorSequenceKeypoint.new(0.5, themeTable.CardStroke),
+                ColorSequenceKeypoint.new(1, themeTable.AccentGrad2)
+            })
+        end
+        for _, updateFn in ipairs(themeObjects.Updaters) do
+            pcall(updateFn, themeTable)
+        end
+    end
+
     function Window:SetToggleKey(newKey)
         if typeof(newKey) == "EnumItem" and newKey.EnumType == Enum.KeyCode then
             toggleKey = newKey
@@ -446,7 +552,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             Parent = TabButton
         })
 
-        -- Glow indicator inside tab
         local ActiveIndicator = makeElement("Frame", {
             Name = "Indicator",
             Size = UDim2.new(0, 3, 0.6, 0),
@@ -456,6 +561,16 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             BorderSizePixel = 0,
             Parent = TabButton
         })
+        table.insert(themeObjects.Backgrounds, ActiveIndicator) -- Uses background color logic
+        
+        local ActiveIndicatorGrad = makeElement("UIGradient", {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, TungstenHub.Theme.AccentGrad1),
+                ColorSequenceKeypoint.new(1, TungstenHub.Theme.AccentGrad2)
+            }),
+            Parent = ActiveIndicator
+        })
+        table.insert(themeObjects.Gradients, ActiveIndicatorGrad)
 
         local IndicatorCorner = makeElement("UICorner", {
             CornerRadius = UDim.new(0, 2),
@@ -474,8 +589,9 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = TabButton
         })
+        table.insert(themeObjects.DarkText, TabLabel)
 
-        -- Tab Content Frame
+        -- Tab Content Page
         local TabPage = makeElement("ScrollingFrame", {
             Name = tabName .. "_Page",
             Size = UDim2.new(1, -10, 1, -10),
@@ -483,7 +599,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Visible = false,
-            ScrollBarThickness = 4,
+            ScrollBarThickness = 3,
             ScrollBarImageColor3 = TungstenHub.Theme.CardStroke,
             CanvasSize = UDim2.new(0, 0, 0, 0),
             Parent = PageContainer
@@ -499,7 +615,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             TabPage.CanvasSize = UDim2.new(0, 0, 0, TabPageLayout.AbsoluteContentSize.Y)
         end)
 
-        -- Tab Object Definition
         local Tab = {
             Button = TabButton,
             Page = TabPage
@@ -508,7 +623,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
         local function selectTab()
             if Window.ActiveTab == Tab then return end
 
-            -- Deactivate previous tab
             if Window.ActiveTab then
                 TweenService:Create(Window.ActiveTab.Button.Label, TweenInfo.new(0.2), {TextColor3 = TungstenHub.Theme.TextDark}):Play()
                 TweenService:Create(Window.ActiveTab.Button.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
@@ -516,39 +630,37 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Window.ActiveTab.Page.Visible = false
             end
 
-            -- Activate new tab
             Window.ActiveTab = Tab
-            TweenService:Create(TabButton.Label, TweenInfo.new(0.2), {TextColor3 = TungstenHub.Theme.TextMain}):Play()
+            TweenService:Create(TabLabel, TweenInfo.new(0.2), {TextColor3 = TungstenHub.Theme.TextMain}):Play()
             TweenService:Create(ActiveIndicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
-            TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
-            
-            -- Show tab content
+            TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.88}):Play()
             TabPage.Visible = true
         end
 
         TabButton.MouseButton1Click:Connect(selectTab)
 
-        -- Tab Button Hover Effects
         TabButton.MouseEnter:Connect(function()
             if Window.ActiveTab ~= Tab then
-                TweenService:Create(TabButton.Label, TweenInfo.new(0.15), {TextColor3 = TungstenHub.Theme.TextMain}):Play()
-                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.92}):Play()
+                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = TungstenHub.Theme.TextMain}):Play()
+                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.94}):Play()
             end
         end)
 
         TabButton.MouseLeave:Connect(function()
             if Window.ActiveTab ~= Tab then
-                TweenService:Create(TabButton.Label, TweenInfo.new(0.15), {TextColor3 = TungstenHub.Theme.TextDark}):Play()
+                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = TungstenHub.Theme.TextDark}):Play()
                 TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
             end
         end)
 
-        -- Auto-select the first tab created
         if not Window.ActiveTab then
             selectTab()
         end
 
-        -- Component factories for this Tab
+        -- =====================================================================
+        -- COMPONENT CREATORS
+        -- =====================================================================
+
         function Tab:CreateLabel(textString)
             local LabelFrame = makeElement("Frame", {
                 Name = "LabelFrame",
@@ -563,11 +675,12 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 BackgroundTransparency = 1,
                 Text = textString,
                 TextColor3 = TungstenHub.Theme.TextMain,
-                TextSize = 13,
+                TextSize = 12.5,
                 Font = Enum.Font.GothamMedium,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = LabelFrame
             })
+            table.insert(themeObjects.MainText, TextLabel)
 
             return {
                 UpdateText = function(newText)
@@ -586,6 +699,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
+            table.insert(themeObjects.Cards, BtnFrame)
 
             local Corner = makeElement("UICorner", {
                 CornerRadius = UDim.new(0, 6),
@@ -597,6 +711,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Thickness = 1,
                 Parent = BtnFrame
             })
+            table.insert(themeObjects.Strokes, Stroke)
 
             local Button = makeElement("TextButton", {
                 Size = UDim2.new(1, 0, 1, 0),
@@ -608,8 +723,8 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 AutoButtonColor = false,
                 Parent = BtnFrame
             })
+            table.insert(themeObjects.MainText, Button)
 
-            -- Hover & Press Animations
             Button.MouseEnter:Connect(function()
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
                 TweenService:Create(BtnFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 36)}):Play()
@@ -648,6 +763,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
+            table.insert(themeObjects.Cards, ToggleFrame)
 
             local Corner = makeElement("UICorner", {
                 CornerRadius = UDim.new(0, 6),
@@ -659,6 +775,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Thickness = 1,
                 Parent = ToggleFrame
             })
+            table.insert(themeObjects.Strokes, Stroke)
 
             local Label = makeElement("TextLabel", {
                 Size = UDim2.new(1, -60, 1, 0),
@@ -671,8 +788,9 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = ToggleFrame
             })
+            table.insert(themeObjects.MainText, Label)
 
-            -- Toggle Box (Switch Outer Container)
+            -- Switch Frame (Slider switch)
             local Switch = makeElement("Frame", {
                 Name = "Switch",
                 Size = UDim2.new(0, 38, 0, 20),
@@ -693,12 +811,12 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Parent = Switch
             })
 
-            -- Inside Circle
+            -- Circular Knob
             local Circle = makeElement("Frame", {
                 Name = "Circle",
                 Size = UDim2.new(0, 14, 0, 14),
                 Position = UDim2.new(0, 3, 0.5, -7),
-                BackgroundColor3 = Color3.fromRGB(220, 220, 225),
+                BackgroundColor3 = Color3.fromRGB(200, 200, 205),
                 BorderSizePixel = 0,
                 Parent = Switch
             })
@@ -708,7 +826,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Parent = Circle
             })
 
-            -- Invisible button overlays
             local ToggleBtn = makeElement("TextButton", {
                 Size = UDim2.new(1, 0, 1, 0),
                 BackgroundTransparency = 1,
@@ -722,18 +839,18 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 local targetColor = state and TungstenHub.Theme.AccentGrad1 or Color3.fromRGB(45, 45, 50)
                 local targetCircleColor = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 205)
 
-                TweenService:Create(Circle, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetPos, BackgroundColor3 = targetCircleColor}):Play()
-                TweenService:Create(Switch, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetColor}):Play()
+                -- Premium bouncy easing style for the knob
+                local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                TweenService:Create(Circle, tweenInfo, {Position = targetPos, BackgroundColor3 = targetCircleColor}):Play()
+                TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
                 
                 task.spawn(callback, toggled)
             end
 
-            -- Click event
             ToggleBtn.MouseButton1Click:Connect(function()
                 updateToggle(not toggled)
             end)
 
-            -- Hover animations
             ToggleBtn.MouseEnter:Connect(function()
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
             end)
@@ -742,8 +859,14 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.CardStroke}):Play()
             end)
 
-            -- Initialize
             updateToggle(default)
+
+            -- Theme Switcher Support
+            table.insert(themeObjects.Updaters, function(newTheme)
+                local targetColor = toggled and newTheme.AccentGrad1 or Color3.fromRGB(45, 45, 50)
+                Switch.BackgroundColor3 = targetColor
+                SwitchStroke.Color = newTheme.CardStroke
+            end)
 
             return {
                 SetToggle = function(state)
@@ -767,6 +890,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
+            table.insert(themeObjects.Cards, SliderFrame)
 
             local Corner = makeElement("UICorner", {
                 CornerRadius = UDim.new(0, 6),
@@ -778,6 +902,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Thickness = 1,
                 Parent = SliderFrame
             })
+            table.insert(themeObjects.Strokes, Stroke)
 
             local Label = makeElement("TextLabel", {
                 Size = UDim2.new(1, -100, 0, 24),
@@ -790,6 +915,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = SliderFrame
             })
+            table.insert(themeObjects.MainText, Label)
 
             local ValueLabel = makeElement("TextLabel", {
                 Size = UDim2.new(0, 80, 0, 24),
@@ -802,13 +928,14 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TextXAlignment = Enum.TextXAlignment.Right,
                 Parent = SliderFrame
             })
+            table.insert(themeObjects.DarkText, ValueLabel)
 
-            -- Slider Track Bar
+            -- Track Bar
             local Track = makeElement("Frame", {
                 Name = "Track",
-                Size = UDim2.new(1, -24, 0, 6),
-                Position = UDim2.new(0, 12, 1, -14),
-                BackgroundColor3 = Color3.fromRGB(40, 40, 45),
+                Size = UDim2.new(1, -24, 0, 5),
+                Position = UDim2.new(0, 12, 1, -13),
+                BackgroundColor3 = Color3.fromRGB(38, 38, 42),
                 BorderSizePixel = 0,
                 Parent = SliderFrame
             })
@@ -818,7 +945,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Parent = Track
             })
 
-            -- Filled Progress portion
+            -- Glowing Progress Bar
             local Progress = makeElement("Frame", {
                 Name = "Progress",
                 Size = UDim2.new(0, 0, 1, 0),
@@ -826,18 +953,19 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 BorderSizePixel = 0,
                 Parent = Track
             })
+            table.insert(themeObjects.Backgrounds, Progress)
 
             local ProgressCorner = makeElement("UICorner", {
                 CornerRadius = UDim.new(1, 0),
                 Parent = Progress
             })
 
-            -- Drag Handle (circle)
+            -- Circular Handle
             local Handle = makeElement("Frame", {
                 Name = "Handle",
-                Size = UDim2.new(0, 12, 0, 12),
-                Position = UDim2.new(0, -6, 0.5, -6),
-                BackgroundColor3 = Color3.fromRGB(240, 240, 245),
+                Size = UDim2.new(0, 11, 0, 11),
+                Position = UDim2.new(0, -5, 0.5, -5.5),
+                BackgroundColor3 = Color3.fromRGB(245, 245, 250),
                 BorderSizePixel = 0,
                 Parent = Progress
             })
@@ -854,11 +982,11 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Parent = SliderFrame
             })
 
-            -- Value setting and movement tracking
             local isDragging = false
             
             local function moveSlider(input)
                 local trackSize = Track.AbsoluteSize.X
+                if trackSize == 0 then return end
                 local relativeMouseX = math.clamp(input.Position.X - Track.AbsolutePosition.X, 0, trackSize)
                 local percent = relativeMouseX / trackSize
                 
@@ -868,7 +996,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 value = roundedValue
                 ValueLabel.Text = tostring(value)
                 
-                -- Smooth visual update
                 TweenService:Create(Progress, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Size = UDim2.new(percent, 0, 1, 0)
                 }):Play()
@@ -880,12 +1007,16 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = true
                     moveSlider(input)
+                    -- Smoothly scale up handle size on click
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(0, -7, 0.5, -7)}):Play()
                 end
             end)
 
             SlidingTrigger.InputEnded:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = false
+                    -- Scale back handle size
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 11, 0, 11), Position = UDim2.new(0, -5, 0.5, -5.5)}):Play()
                 end
             end)
 
@@ -895,7 +1026,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 end
             end)
 
-            -- Hover border effect
             SlidingTrigger.MouseEnter:Connect(function()
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
             end)
@@ -904,9 +1034,13 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.CardStroke}):Play()
             end)
 
-            -- Initial layout setup based on default value
             local initialPercent = math.clamp((default - min) / (max - min), 0, 1)
             Progress.Size = UDim2.new(initialPercent, 0, 1, 0)
+
+            -- Theme Switcher Support
+            table.insert(themeObjects.Updaters, function(newTheme)
+                Progress.BackgroundColor3 = newTheme.AccentGrad1
+            end)
 
             return {
                 SetValue = function(newValue)
@@ -936,6 +1070,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 ClipsDescendants = true,
                 Parent = TabPage
             })
+            table.insert(themeObjects.Cards, DropdownFrame)
 
             local Corner = makeElement("UICorner", {
                 CornerRadius = UDim.new(0, 6),
@@ -947,6 +1082,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Thickness = 1,
                 Parent = DropdownFrame
             })
+            table.insert(themeObjects.Strokes, Stroke)
 
             local TopArea = makeElement("Frame", {
                 Name = "TopArea",
@@ -966,6 +1102,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = TopArea
             })
+            table.insert(themeObjects.MainText, Label)
 
             local SelectionLabel = makeElement("TextLabel", {
                 Size = UDim2.new(0, 100, 1, 0),
@@ -978,6 +1115,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 TextXAlignment = Enum.TextXAlignment.Right,
                 Parent = TopArea
             })
+            table.insert(themeObjects.DarkText, SelectionLabel) -- Updates dynamically with theme updaters
 
             local Arrow = makeElement("TextLabel", {
                 Size = UDim2.new(0, 30, 1, 0),
@@ -989,6 +1127,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Font = Enum.Font.GothamMedium,
                 Parent = TopArea
             })
+            table.insert(themeObjects.DarkText, Arrow)
 
             local ClickButton = makeElement("TextButton", {
                 Size = UDim2.new(1, 0, 1, 0),
@@ -997,7 +1136,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 Parent = TopArea
             })
 
-            -- Dropdown Options Frame
             local OptionsHolder = makeElement("Frame", {
                 Name = "OptionsHolder",
                 Size = UDim2.new(1, -20, 0, 0),
@@ -1029,7 +1167,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 toggleDropdown(not dropdownOpen)
             end)
 
-            -- Build the dropdown buttons dynamically
             local function refreshList()
                 for _, btn in ipairs(optionButtons) do
                     btn:Destroy()
@@ -1037,15 +1174,17 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 optionButtons = {}
 
                 for index, optionText in ipairs(list) do
+                    local isSelected = (optionText == activeOption)
+                    
                     local OptButton = makeElement("TextButton", {
                         Name = optionText .. "_Opt",
                         Size = UDim2.new(1, 0, 0, 28),
                         BackgroundColor3 = Color3.fromRGB(32, 32, 38),
                         BorderSizePixel = 0,
                         Text = optionText,
-                        TextColor3 = (optionText == activeOption) and TungstenHub.Theme.TextMain or TungstenHub.Theme.TextDark,
+                        TextColor3 = isSelected and TungstenHub.Theme.TextMain or TungstenHub.Theme.TextDark,
                         TextSize = 12,
-                        Font = (optionText == activeOption) and Enum.Font.GothamBold or Enum.Font.GothamMedium,
+                        Font = isSelected and Enum.Font.GothamBold or Enum.Font.GothamMedium,
                         AutoButtonColor = false,
                         Parent = OptionsHolder
                     })
@@ -1056,7 +1195,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                     })
 
                     local OptStroke = makeElement("UIStroke", {
-                        Color = (optionText == activeOption) and TungstenHub.Theme.AccentGrad1 or TungstenHub.Theme.CardStroke,
+                        Color = isSelected and TungstenHub.Theme.AccentGrad1 or TungstenHub.Theme.CardStroke,
                         Thickness = 1,
                         Parent = OptButton
                     })
@@ -1080,7 +1219,6 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                 end
             end
 
-            -- Hover border effect
             ClickButton.MouseEnter:Connect(function()
                 TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
             end)
@@ -1090,6 +1228,12 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             end)
 
             refreshList()
+
+            -- Theme Switcher Support
+            table.insert(themeObjects.Updaters, function(newTheme)
+                SelectionLabel.TextColor3 = newTheme.AccentGrad2
+                refreshList()
+            end)
 
             return {
                 Select = function(newSelection)
@@ -1104,6 +1248,110 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
                     if dropdownOpen then
                         toggleDropdown(true)
                     end
+                end
+            }
+        end
+
+        function Tab:CreateTextbox(boxText, placeholderText, callback)
+            placeholderText = placeholderText or "Type here..."
+            callback = callback or function() end
+
+            local BoxFrame = makeElement("Frame", {
+                Name = "BoxFrame",
+                Size = UDim2.new(1, -6, 0, 42),
+                BackgroundColor3 = TungstenHub.Theme.Card,
+                BorderSizePixel = 0,
+                Parent = TabPage
+            })
+            table.insert(themeObjects.Cards, BoxFrame)
+
+            local Corner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 6),
+                Parent = BoxFrame
+            })
+
+            local Stroke = makeElement("UIStroke", {
+                Color = TungstenHub.Theme.CardStroke,
+                Thickness = 1,
+                Parent = BoxFrame
+            })
+            table.insert(themeObjects.Strokes, Stroke)
+
+            local Label = makeElement("TextLabel", {
+                Size = UDim2.new(1, -160, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
+                BackgroundTransparency = 1,
+                Text = boxText,
+                TextColor3 = TungstenHub.Theme.TextMain,
+                TextSize = 13,
+                Font = Enum.Font.GothamMedium,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = BoxFrame
+            })
+            table.insert(themeObjects.MainText, Label)
+
+            -- Input Box Container
+            local InputContainer = makeElement("Frame", {
+                Name = "InputContainer",
+                Size = UDim2.new(0, 130, 0, 26),
+                Position = UDim2.new(1, -142, 0.5, -13),
+                BackgroundColor3 = Color3.fromRGB(30, 30, 35),
+                BorderSizePixel = 0,
+                Parent = BoxFrame
+            })
+
+            local InputCorner = makeElement("UICorner", {
+                CornerRadius = UDim.new(0, 4),
+                Parent = InputContainer
+            })
+
+            local InputStroke = makeElement("UIStroke", {
+                Color = TungstenHub.Theme.CardStroke,
+                Thickness = 1,
+                Parent = InputContainer
+            })
+            table.insert(themeObjects.Strokes, InputStroke)
+
+            local TextBox = makeElement("TextBox", {
+                Size = UDim2.new(1, -10, 1, 0),
+                Position = UDim2.new(0, 5, 0, 0),
+                BackgroundTransparency = 1,
+                Text = "",
+                PlaceholderText = placeholderText,
+                PlaceholderColor3 = TungstenHub.Theme.TextDark,
+                TextColor3 = TungstenHub.Theme.TextMain,
+                TextSize = 12,
+                Font = Enum.Font.GothamMedium,
+                ClipsDescendants = true,
+                ClearTextOnFocus = false,
+                Parent = InputContainer
+            })
+            table.insert(themeObjects.MainText, TextBox)
+
+            -- Animations
+            TextBox.Focused:Connect(function()
+                TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
+            end)
+
+            TextBox.FocusLost:Connect(function(enterPressed)
+                TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.CardStroke}):Play()
+                task.spawn(callback, TextBox.Text, enterPressed)
+            end)
+
+            BoxFrame.MouseEnter:Connect(function()
+                TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.AccentGrad1}):Play()
+            end)
+
+            BoxFrame.MouseLeave:Connect(function()
+                TweenService:Create(Stroke, TweenInfo.new(0.2), {Color = TungstenHub.Theme.CardStroke}):Play()
+            end)
+
+            return {
+                SetText = function(newText)
+                    TextBox.Text = newText
+                end,
+                GetText = function()
+                    return TextBox.Text
                 end
             }
         end
@@ -1125,6 +1373,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             BorderSizePixel = 0,
             Parent = ScreenGui
         })
+        table.insert(themeObjects.Headers, NotifyFrame)
 
         local NotifyCorner = makeElement("UICorner", {
             CornerRadius = UDim.new(0, 6),
@@ -1136,6 +1385,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             Thickness = 1,
             Parent = NotifyFrame
         })
+        table.insert(themeObjects.Strokes, NotifyStroke)
 
         local LeftSideLine = makeElement("Frame", {
             Size = UDim2.new(0, 4, 1, 0),
@@ -1143,6 +1393,16 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             BorderSizePixel = 0,
             Parent = NotifyFrame
         })
+        table.insert(themeObjects.Backgrounds, LeftSideLine)
+        
+        local LeftSideLineGrad = makeElement("UIGradient", {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, TungstenHub.Theme.AccentGrad1),
+                ColorSequenceKeypoint.new(1, TungstenHub.Theme.AccentGrad2)
+            }),
+            Parent = LeftSideLine
+        })
+        table.insert(themeObjects.Gradients, LeftSideLineGrad)
 
         local LineCorner = makeElement("UICorner", {
             CornerRadius = UDim.new(0, 2),
@@ -1160,6 +1420,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = NotifyFrame
         })
+        table.insert(themeObjects.MainText, NotifyTitle)
 
         local NotifyDesc = makeElement("TextLabel", {
             Size = UDim2.new(1, -20, 1, -26),
@@ -1174,6 +1435,7 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             TextYAlignment = Enum.TextYAlignment.Top,
             Parent = NotifyFrame
         })
+        table.insert(themeObjects.DarkText, NotifyDesc)
 
         -- Slide notification in
         TweenService:Create(NotifyFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {

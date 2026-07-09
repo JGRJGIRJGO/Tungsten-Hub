@@ -4,7 +4,7 @@
     - Player Movement (WalkSpeed, JumpPower, Gravity, Fly, Noclip, Infinite Jump)
     - Visuals (ESP Highlighting using Roblox Highlights)
     - Teleports (Teleport to Players, Click-to-Teleport with CTRL+Click)
-    - Utilities (Anti-AFK, Rejoin Game)
+    - Utilities (Anti-AFK, Rejoin Game, Dynamic Theme Swapping)
     
     Loadstring to execute:
     loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/Universal.lua"))()
@@ -32,7 +32,7 @@ local function getRoot()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- Load the Tungsten Hub UI Library from GitHub
+-- Load the Tungsten Hub UI Library from GitHub (with cache buster)
 local success, TungstenHub = pcall(function()
     return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHub.lua?t=" .. tostring(os.time())))()
 end)
@@ -62,6 +62,20 @@ PlayerTab:CreateSlider("WalkSpeed Booster", 16, 250, 16, function(value)
     local hum = getHum()
     if hum then
         hum.WalkSpeed = value
+    end
+end)
+
+-- Custom Walkspeed Textbox
+PlayerTab:CreateTextbox("Set Custom WalkSpeed", "Type speed and press Enter...", function(text)
+    local num = tonumber(text)
+    if num then
+        local hum = getHum()
+        if hum then
+            hum.WalkSpeed = num
+            Window:Notify("Speed Updated", "WalkSpeed set to: " .. tostring(num), 2)
+        end
+    else
+        Window:Notify("Error", "Please enter a valid number", 2)
     end
 end)
 
@@ -153,7 +167,8 @@ local function updateFlyState()
     end
 
     if not root or not hum then return end
-    hum.PlatformStand = true
+    humanoid = hum
+    humanoid.PlatformStand = true
     
     local bv = root:FindFirstChild("FlyVelocity") or Instance.new("BodyVelocity")
     bv.Name = "FlyVelocity"
@@ -356,6 +371,15 @@ SettingsTab:CreateButton("Rejoin Game", function()
 end)
 
 SettingsTab:CreateLabel("Tungsten Hub Control")
+
+-- Theme Color Palette Selector
+SettingsTab:CreateDropdown("UI Theme Palette", {"Tungsten", "Nebula", "BloodMoon", "Emerald", "Midnight"}, "Tungsten", function(themeName)
+    local themeTable = TungstenHub.Themes[themeName]
+    if themeTable then
+        Window:SetTheme(themeTable)
+        Window:Notify("Theme Loaded", "Applied the " .. themeName .. " theme palette.", 2)
+    end
+end)
 
 -- Toggle Keybind Changer
 local currentToggleKey = Enum.KeyCode.RightShift
