@@ -390,10 +390,8 @@ function TungstenHub:CreateWindow(titleText, subtitleText)
             TweenService:Create(ActiveIndicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
             TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
             
-            -- Simple fade in for content
+            -- Show tab content
             TabPage.Visible = true
-            TabPage.GroupTransparency = 1
-            TweenService:Create(TabPage, TweenInfo.new(0.25), {GroupTransparency = 0}):Play()
         end
 
         TabButton.MouseButton1Click:Connect(selectTab)
