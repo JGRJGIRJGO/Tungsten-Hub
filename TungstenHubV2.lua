@@ -377,13 +377,64 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
     CloseBtn.MouseLeave:Connect(function()
         TweenService:Create(CloseBtn, TweenInfo.new(0.2), {TextColor3 = TungstenHub.Theme.TextDark}):Play()
     end)
-    CloseBtn.MouseButton1Click:Connect(function()
-        local fadeOut = TweenService:Create(MainContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+    -- Animation state tracking
+    local isAnimating = false
+    local lastPosition = MainContainer.Position
+
+    local function animateCollapse(callback)
+        if isAnimating then return end
+        isAnimating = true
+        lastPosition = MainContainer.Position
+        
+        local targetPos = UDim2.new(
+            lastPosition.X.Scale,
+            lastPosition.X.Offset,
+            lastPosition.Y.Scale,
+            lastPosition.Y.Offset + 195
+        )
+        
+        local tween = TweenService:Create(MainContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Size = UDim2.new(0, 560, 0, 0),
-            Position = UDim2.new(0.5, -280, 0.5, 0),
+            Position = targetPos
         })
-        fadeOut:Play()
-        fadeOut.Completed:Connect(function()
+        
+        tween:Play()
+        tween.Completed:Connect(function()
+            MainContainer.Visible = false
+            isAnimating = false
+            if callback then callback() end
+        end)
+    end
+
+    local function animateExpand()
+        if isAnimating then return end
+        isAnimating = true
+        
+        local targetPos = lastPosition
+        local startPos = UDim2.new(
+            targetPos.X.Scale,
+            targetPos.X.Offset,
+            targetPos.Y.Scale,
+            targetPos.Y.Offset + 195
+        )
+        
+        MainContainer.Size = UDim2.new(0, 560, 0, 0)
+        MainContainer.Position = startPos
+        MainContainer.Visible = true
+        
+        local tween = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 560, 0, 390),
+            Position = targetPos
+        })
+        
+        tween:Play()
+        tween.Completed:Connect(function()
+            isAnimating = false
+        end)
+    end
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        animateCollapse(function()
             ScreenGui:Destroy()
         end)
     end)
@@ -402,7 +453,7 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
     -- Entrance Animation Definition
     MainContainer.Size = UDim2.new(0, 560, 0, 0)
     MainContainer.Position = UDim2.new(0.5, -280, 0.5, 0)
-    local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Size = UDim2.new(0, 560, 0, 390),
         Position = UDim2.new(0.5, -280, 0.5, -195),
     })
@@ -718,9 +769,15 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
 
     local isVisible = true
     local function toggleUI()
-        if not MainContainer or not MainContainer.Parent then return end
-        isVisible = not isVisible
-        MainContainer.Visible = isVisible
+        if not MainContainer or not MainContainer.Parent or isAnimating then return end
+        if isVisible then
+            animateCollapse(function()
+                isVisible = false
+            end)
+        else
+            animateExpand()
+            isVisible = true
+        end
     end
 
     -- Minimize connection
