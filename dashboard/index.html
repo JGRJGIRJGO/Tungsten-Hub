@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tungsten Hub — Developer Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #08080a;
+            --sidebar-bg: #0f0f12;
+            --container-bg: rgba(20, 20, 24, 0.65);
+            --card-bg: rgba(28, 28, 34, 0.4);
+            --stroke-color: rgba(255, 255, 255, 0.08);
+            --accent-1: #0096ff;
+            --accent-2: #00ccff;
+            --accent-glow: rgba(0, 150, 255, 0.2);
+            --text-main: #f5f5fa;
+            --text-dark: #8c8c9e;
+            --text-muted: #4e4e5d;
+            --code-bg: #0a0a0c;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 5% 10%, rgba(0, 150, 255, 0.05) 0%, transparent 35%),
+                radial-gradient(circle at 95% 90%, rgba(0, 204, 255, 0.05) 0%, transparent 35%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            overflow-x: hidden;
+        }
+
+        /* --- Login Screen --- */
+        .login-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-color);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+
+        .login-screen.hidden {
+            opacity: 0;
+            transform: scale(0.95);
+            pointer-events: none;
+        }
+
+        .login-card {
+            background: var(--container-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--stroke-color);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            position: relative;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 3px;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+            border-radius: 16px 16px 0 0;
+        }
+
+        .login-card h2 {
+            font-size: 26px;
+            font-weight: 800;
+            margin-bottom: 5px;
+            background: linear-gradient(135deg, #ffffff 40%, var(--text-dark) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .login-card p {
+            color: var(--text-dark);
+            font-size: 13px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-field {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--stroke-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-1);
+            box-shadow: 0 0 10px rgba(0, 150, 255, 0.1);
+        }
+
+        .login-btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 13px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0, 150, 255, 0.25);
+            transition: transform 0.1s, opacity 0.2s;
+            margin-top: 10px;
+        }
+
+        .login-btn:hover { opacity: 0.95; }
+        .login-btn:active { transform: scale(0.98); }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin: 25px 0;
+            gap: 15px;
+        }
+
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--stroke-color);
+        }
+
+        .google-btn {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--stroke-color);
+            color: var(--text-main);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+
+        .google-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .google-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* --- Dashboard Layout --- */
+        .dashboard-wrapper {
+            display: flex;
+            width: 100%;
+            min-height: 100vh;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .dashboard-wrapper.visible {
+            opacity: 1;
+        }
+
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--stroke-color);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0; bottom: 0; left: 0;
+            z-index: 100;
+            padding: 30px 20px;
+        }
+
+        .main-content {
+            margin-left: 260px;
+            flex: 1;
+            padding: 40px 5%;
+            max-width: 1300px;
+            min-height: 100vh;
+        }
+
+        /* --- Brand Section --- */
+        .brand {
+            margin-bottom: 40px;
+            padding-left: 15px;
+            position: relative;
+        }
+
+        .brand::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0; width: 3px;
+            background: linear-gradient(to bottom, var(--accent-1), var(--accent-2));
+            border-radius: 2px;
+            box-shadow: 0 0 10px var(--accent-1);
+        }
+
+        .brand h1 {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .brand p {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--accent-2);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 2px;
+        }
+
+        /* --- Navigation --- */
+        .nav-menu {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            color: var(--text-dark);
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 14.5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .nav-item:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .nav-item.active {
+            color: var(--text-main);
+            background: rgba(0, 150, 255, 0.08);
+            border-color: rgba(0, 150, 255, 0.15);
+            font-weight: 600;
+        }
+
+        /* --- Main Panels --- */
+        .panel {
+            display: none;
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .panel-header {
+            margin-bottom: 30px;
+        }
+
+        .panel-header h2 {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+
+        .panel-header p {
+            font-size: 14px;
+            color: var(--text-dark);
+            margin-top: 3px;
+        }
+
+        /* --- Analytics Cards --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 35px;
+        }
+
+        .stat-card {
+            background: var(--container-bg);
+            border: 1px solid var(--stroke-color);
+            border-radius: 12px;
+            padding: 20px 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card .stat-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 30px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+        }
+
+        .stat-card .stat-trend {
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .stat-trend.up { color: var(--success); }
+        .stat-trend.down { color: var(--danger); }
+
+        /* --- Graphs / Visuals --- */
+        .graph-card {
+            background: var(--container-bg);
+            border: 1px solid var(--stroke-color);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        .graph-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+
+        .mock-chart {
+            width: 100%;
+            height: 200px;
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+            padding-top: 20px;
+            border-bottom: 1px solid var(--stroke-color);
+        }
+
+        .chart-bar-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            height: 100%;
+            justify-content: flex-end;
+        }
+
+        .chart-bar {
+            width: 100%;
+            background: linear-gradient(to top, var(--accent-1), var(--accent-2));
+            border-radius: 4px 4px 0 0;
+            transition: height 1s ease;
+            max-width: 45px;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .chart-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        /* --- Settings Forms --- */
+        .settings-card {
+            background: var(--container-bg);
+            border: 1px solid var(--stroke-color);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            margin-bottom: 30px;
+        }
+
+        .settings-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 25px;
+            border-bottom: 1px solid var(--stroke-color);
+            padding-bottom: 10px;
+        }
+
+        .row-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 25px;
+        }
+
+        /* Select Switch Button Styling */
+        .pill-select {
+            display: flex;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--stroke-color);
+            border-radius: 8px;
+            padding: 4px;
+            margin-top: 6px;
+        }
+
+        .pill-option {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--text-dark);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .pill-option.active {
+            background: var(--accent-1);
+            color: #ffffff;
+            box-shadow: 0 3px 10px rgba(0, 150, 255, 0.2);
+        }
+
+        /* --- Code Block Generator --- */
+        .code-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
+        .code-title h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-2);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .copy-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            color: var(--text-dark);
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+        }
+
+        .copy-btn.copied {
+            background: var(--success);
+            color: #ffffff;
+            border-color: var(--success);
+        }
+
+        .code-wrapper {
+            position: relative;
+            background: var(--code-bg);
+            border: 1px solid var(--stroke-color);
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            max-height: 400px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+        }
+
+        .code-wrapper pre {
+            margin: 0;
+        }
+
+        .code-wrapper code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #d4d4d4;
+        }
+
+        /* Syntax Color styling */
+        .c-comment { color: #6a9955; }
+        .c-string { color: #ce9178; }
+        .c-keyword { color: #569cd6; }
+        .c-function { color: #dcdcaa; }
+        .c-boolean { color: #569cd6; }
+
+        /* --- Script Manager --- */
+        .script-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .script-item {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--stroke-color);
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .script-info h4 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .script-info h4 span {
+            font-size: 11px;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            color: var(--text-dark);
+        }
+
+        .script-info p {
+            font-size: 12px;
+            color: var(--text-dark);
+            margin-top: 4px;
+        }
+
+        .script-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        .script-badge.active {
+            background: rgba(46, 204, 113, 0.08);
+            border: 1px solid rgba(46, 204, 113, 0.2);
+            color: var(--success);
+        }
+
+        .script-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-danger {
+            background: rgba(231, 76, 60, 0.08);
+            border: 1px solid rgba(231, 76, 60, 0.2);
+            color: var(--danger);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-danger:hover {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        /* --- Toast Banner --- */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--success);
+            color: #ffffff;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 10px 30px rgba(46, 204, 113, 0.3);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+            z-index: 2000;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toast Notification Banner -->
+    <div class="toast" id="toast">Toast Message</div>
+
+    <!-- Login Screen -->
+    <div class="login-screen" id="login-screen">
+        <div class="login-card">
+            <h2>Tungsten Portal</h2>
+            <p>Sign in to manage your key systems & scripts</p>
+            
+            <div class="input-group">
+                <label>Email Address</label>
+                <input type="email" class="input-field" placeholder="developer@tungsten.gg" value="developer@tungsten.gg">
+            </div>
+
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" class="input-field" placeholder="••••••••" value="password123">
+            </div>
+
+            <button class="login-btn" id="login-btn">Log In</button>
+
+            <div class="divider">or</div>
+
+            <button class="google-btn" id="google-btn">
+                <svg class="google-icon" viewBox="0 0 24 24">
+                    <path fill="#EA4335" d="M12 5.04c1.67 0 3.19.57 4.38 1.69l3.27-3.27C17.67 1.58 15.01 1 12 1 7.37 1 3.4 3.63 1.45 7.45l3.86 3C6.26 7.4 8.87 5.04 12 5.04z"/>
+                    <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.47h6.47c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-2 3.7-4.94 3.7-8.56z"/>
+                    <path fill="#FBBC05" d="M5.31 14.55c-.24-.72-.38-1.5-.38-2.3s.14-1.58.38-2.3L1.45 7.45C.52 9.27 0 11.28 0 13.43s.52 4.16 1.45 5.98l3.86-3z"/>
+                    <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.7-2.87c-1.03.69-2.34 1.1-4.26 1.1-3.13 0-5.74-2.36-6.69-5.41l-3.86 3C3.4 20.37 7.37 23 12 23z"/>
+                </</svg>
+                Continue with Google
+            </button>
+        </div>
+    </div>
+
+    <!-- Dashboard Workspace -->
+    <div class="dashboard-wrapper" id="dashboard-wrapper">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <h1>Tungsten Hub</h1>
+                <p>Developer Console</p>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li><a class="nav-item active" data-panel="analytics">📊 Analytics</a></li>
+                    <li><a class="nav-item" data-panel="scripts">📜 My Scripts</a></li>
+                    <li><a class="nav-item" data-panel="keysettings">🔑 Key Settings</a></li>
+                    <li><a class="nav-item" id="logout-btn">🚪 Sign Out</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- Analytics Panel -->
+            <section class="panel active" id="analytics-panel">
+                <div class="panel-header">
+                    <h2>Analytics Overview</h2>
+                    <p>Track your script launches and key generation checkins</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-title">Total Key Requests</div>
+                        <div class="stat-value">1,482</div>
+                        <div class="stat-trend up">▲ 14.2% this week</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-title">Completed Checkpoints</div>
+                        <div class="stat-value">1,126</div>
+                        <div class="stat-trend up">▲ 8.6% this week</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-title">Completion Rate</div>
+                        <div class="stat-value">75.9%</div>
+                        <div class="stat-trend down">▼ 0.4% this week</div>
+                    </div>
+                </div>
+
+                <div class="graph-card">
+                    <h3>Daily Verification Traffic</h3>
+                    <div class="mock-chart">
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 45%;"></div>
+                            <div class="chart-label">Mon</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 60%;"></div>
+                            <div class="chart-label">Tue</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 52%;"></div>
+                            <div class="chart-label">Wed</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 80%;"></div>
+                            <div class="chart-label">Thu</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 72%;"></div>
+                            <div class="chart-label">Fri</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 95%;"></div>
+                            <div class="chart-label">Sat</div>
+                        </div>
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar" style="height: 88%;"></div>
+                            <div class="chart-label">Sun</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Script Manager Panel -->
+            <section class="panel" id="scripts-panel">
+                <div class="panel-header">
+                    <h2>Script Manager</h2>
+                    <p>Register and coordinate security properties for your script products</p>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Add New Script</h3>
+                    <div class="row-grid">
+                        <div class="input-group">
+                            <label>Script Name</label>
+                            <input type="text" class="input-field" id="new-script-name" placeholder="e.g. Jailbreak Auto-Rob">
+                        </div>
+                        <div class="input-group">
+                            <label>Version</label>
+                            <input type="text" class="input-field" id="new-script-version" placeholder="e.g. 1.0.0" value="1.0.0">
+                        </div>
+                    </div>
+                    <button class="login-btn" id="add-script-btn" style="max-width: 180px;">Register Script</button>
+                </div>
+
+                <h3>Registered Scripts</h3>
+                <br>
+                <div class="script-list" id="script-list-container">
+                    <!-- Script items load here -->
+                </div>
+            </section>
+
+            <!-- Key Settings Panel -->
+            <section class="panel" id="keysettings-panel">
+                <div class="panel-header">
+                    <h2>Key System Settings</h2>
+                    <p>Configure checkpoints and customize the generated integration script</p>
+                </div>
+
+                <div class="settings-card">
+                    <h3>Redirection Checkpoints</h3>
+                    
+                    <div class="input-group" style="margin-bottom: 25px;">
+                        <label>Monetization Steps Count</label>
+                        <div class="pill-select">
+                            <div class="pill-option active" data-steps="1">1 Checkpoint</div>
+                            <div class="pill-option" data-steps="2">2 Checkpoints</div>
+                            <div class="pill-option" data-steps="3">3 Checkpoints</div>
+                        </div>
+                    </div>
+
+                    <div id="checkpoint-inputs-holder">
+                        <!-- Dynamic Link Inputs based on step count -->
+                        <div class="input-group">
+                            <label>Checkpoint 1 URL (e.g. LootLabs / Linkvertise link)</label>
+                            <input type="text" class="input-field chk-url" id="chk-1" placeholder="https://lootdest.org/s?DfJNgxIO" value="https://lootdest.org/s?DfJNgxIO">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3>System Configurations</h3>
+                    <div class="row-grid">
+                        <div class="input-group">
+                            <label>Local Caching Key File (in executor workspace/)</label>
+                            <input type="text" class="input-field" id="cfg-file" placeholder="tungsten_key.txt" value="tungsten_key.txt">
+                        </div>
+                        <div class="input-group">
+                            <label>Encryption Salt Key</label>
+                            <input type="text" class="input-field" id="cfg-salt" placeholder="TungstenSaltKey" value="TungstenSecureKeySystem_V3_Reset_8F2D">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="code-title">
+                    <h4>Generated Roblox Lua Integration</h4>
+                    <button class="copy-btn" id="copy-lua-btn">Copy Script</button>
+                </div>
+                
+                <div class="code-wrapper">
+                    <pre><code id="generated-lua-block"></code></pre>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // --- Navigation Controller ---
+        const navItems = document.querySelectorAll('.nav-item[data-panel]');
+        const panels = document.querySelectorAll('.panel');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navItems.forEach(i => i.classList.remove('active'));
+                panels.forEach(p => p.classList.remove('active'));
+
+                item.classList.add('active');
+                const panelId = item.getAttribute('data-panel');
+                document.getElementById(`${panelId}-panel`).classList.add('active');
+            });
+        });
+
+        // --- Auth Mock ---
+        const loginBtn = document.getElementById('login-btn');
+        const googleBtn = document.getElementById('google-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const loginScreen = document.getElementById('login-screen');
+        const dashboardWrapper = document.getElementById('dashboard-wrapper');
+
+        function showDashboard() {
+            loginScreen.classList.add('hidden');
+            dashboardWrapper.classList.add('visible');
+            showToast("Successfully logged in!");
+        }
+
+        function showLogin() {
+            dashboardWrapper.classList.remove('visible');
+            loginScreen.classList.remove('hidden');
+        }
+
+        loginBtn.addEventListener('click', showDashboard);
+        googleBtn.addEventListener('click', showDashboard);
+        logoutBtn.addEventListener('click', showLogin);
+
+        // Check if mock user already logged in previously
+        if(localStorage.getItem('tungsten_logged_in') === 'true') {
+            showDashboard();
+        }
+
+        // --- Toast Controller ---
+        const toast = document.getElementById('toast');
+        function showToast(msg, isSuccess = true) {
+            toast.innerText = msg;
+            toast.style.background = isSuccess ? 'var(--success)' : 'var(--danger)';
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // --- Scripts State Management (LocalStorage synced) ---
+        const defaultScripts = [
+            { id: 1, name: "Universal Booster", version: "2.1.0", status: "Active" },
+            { id: 2, name: "Jailbreak Coin Autofarm", version: "1.0.4", status: "Active" }
+        ];
+
+        function getScripts() {
+            const data = localStorage.getItem('tungsten_scripts');
+            if(!data) {
+                localStorage.setItem('tungsten_scripts', JSON.stringify(defaultScripts));
+                return defaultScripts;
+            }
+            return JSON.parse(data);
+        }
+
+        function saveScripts(scripts) {
+            localStorage.setItem('tungsten_scripts', JSON.stringify(scripts));
+            renderScripts();
+        }
+
+        const scriptListContainer = document.getElementById('script-list-container');
+        const newScriptName = document.getElementById('new-script-name');
+        const newScriptVersion = document.getElementById('new-script-version');
+        const addScriptBtn = document.getElementById('add-script-btn');
+
+        function renderScripts() {
+            const scripts = getScripts();
+            scriptListContainer.innerHTML = '';
+            
+            scripts.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'script-item';
+                item.innerHTML = `
+                    <div class="script-info">
+                        <h4>${s.name} <span>v${s.version}</span></h4>
+                        <p>ID: tungsten_${s.name.toLowerCase().replace(/\s+/g, '_')}</p>
+                    </div>
+                    <div class="script-actions">
+                        <span class="script-badge active">${s.status}</span>
+                        <button class="btn-danger" onclick="deleteScript(${s.id})">Delete</button>
+                    </div>
+                `;
+                scriptListContainer.appendChild(item);
+            });
+        }
+
+        addScriptBtn.addEventListener('click', () => {
+            const name = newScriptName.value.trim();
+            const version = newScriptVersion.value.trim();
+            
+            if(!name || !version) {
+                showToast("Please fill in all script fields", false);
+                return;
+            }
+
+            const scripts = getScripts();
+            const newId = scripts.length > 0 ? Math.max(...scripts.map(s => s.id)) + 1 : 1;
+            
+            scripts.push({
+                id: newId,
+                name: name,
+                version: version,
+                status: "Active"
+            });
+
+            saveScripts(scripts);
+            newScriptName.value = '';
+            showToast("Script registered successfully!");
+        });
+
+        window.deleteScript = function(id) {
+            let scripts = getScripts();
+            scripts = scripts.filter(s => s.id !== id);
+            saveScripts(scripts);
+            showToast("Script deleted successfully!");
+        };
+
+        // --- Key Settings Form & Generator Logic ---
+        const stepOptions = document.querySelectorAll('.pill-option[data-steps]');
+        const checkpointInputsHolder = document.getElementById('checkpoint-inputs-holder');
+        const cfgFile = document.getElementById('cfg-file');
+        const cfgSalt = document.getElementById('cfg-salt');
+        const generatedLuaBlock = document.getElementById('generated-lua-block');
+        const copyLuaBtn = document.getElementById('copy-lua-btn');
+
+        let activeSteps = 1;
+
+        stepOptions.forEach(opt => {
+            opt.addEventListener('click', () => {
+                stepOptions.forEach(o => o.classList.remove('active'));
+                opt.classList.add('active');
+                
+                activeSteps = parseInt(opt.getAttribute('data-steps'));
+                renderCheckpointInputs();
+                generateLuaCode();
+            });
+        });
+
+        function renderCheckpointInputs() {
+            checkpointInputsHolder.innerHTML = '';
+            for(let i = 1; i <= activeSteps; i++) {
+                const group = document.createElement('div');
+                group.className = 'input-group';
+                group.style.marginTop = i > 1 ? '15px' : '0px';
+                
+                const val = i === 1 ? 'https://lootdest.org/s?DfJNgxIO' : '';
+                group.innerHTML = `
+                    <label>Checkpoint ${i} URL (e.g. Linkvertise / LootLabs link)</label>
+                    <input type="text" class="input-field chk-url" id="chk-${i}" placeholder="Enter Link ${i} here..." value="${val}">
+                `;
+                
+                checkpointInputsHolder.appendChild(group);
+                
+                // Add change listener to regenerate code when typing URLs
+                group.querySelector('input').addEventListener('input', generateLuaCode);
+            }
+        }
+
+        cfgFile.addEventListener('input', generateLuaCode);
+        cfgSalt.addEventListener('input', generateLuaCode);
+
+        function generateLuaCode() {
+            const fileName = cfgFile.value.trim() || 'tungsten_key.txt';
+            const salt = cfgSalt.value.trim() || 'TungstenSaltKey';
+            
+            const urls = [];
+            for(let i = 1; i <= activeSteps; i++) {
+                const el = document.getElementById(`chk-${i}`);
+                urls.push(el ? el.value.trim() : '');
+            }
+
+            // Construct client redirect chain landing page base
+            let gateUrl = 'https://jgrjgirjgo.github.io/Tungsten-Hub/';
+            
+            // Build the dynamic note block to output in Lua code representing step settings
+            let stepNote = `Please complete all ${activeSteps} ad steps to get your key.`;
+
+            let code = `<span class="c-comment">-- Custom Tungsten Hub Key System Configuration</span>
+<span class="c-keyword">local</span> TungstenHub = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua"</span>))()
+
+<span class="c-comment">-- Generate HWID daily key securely matching your dashboard config</span>
+<span class="c-keyword">local function</span> <span class="c-function">getHardwareID</span>()
+    <span class="c-keyword">local</span> hwid = <span class="c-function">tostring</span>(game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.UserId)
+    <span class="c-keyword">if</span> gethwid <span class="c-keyword">then</span>
+        <span class="c-keyword">local</span> success, result = <span class="c-function">pcall</span>(gethwid)
+        <span class="c-keyword">if</span> success <span class="c-keyword">and</span> <span class="c-function">type</span>(result) == <span class="c-string">"string"</span> <span class="c-keyword">then</span> hwid = result <span class="c-keyword">end</span>
+    <span class="c-keyword">end</span>
+    <span class="c-keyword">return</span> hwid:<span class="c-function">gsub</span>(<span class="c-string">"%s+"</span>, <span class="c-string">""</span>)
+<span class="c-keyword">end</span>
+
+<span class="c-keyword">local function</span> <span class="c-function">getDailyHWIDKey</span>()
+    <span class="c-keyword">local</span> input = <span class="c-function">getHardwareID</span>() .. <span class="c-string">"_${salt}_"</span> .. <span class="c-function">os.date</span>(<span class="c-string">"!%d%m%Y"</span>)
+    <span class="c-keyword">local</span> hash = <span class="c-number">2166136261</span>
+    <span class="c-keyword">for</span> i = <span class="c-number">1</span>, #input <span class="c-keyword">do</span>
+        hash = bit32.bxor(hash, string.byte(input, i))
+        hash = bit32.band(hash * <span class="c-number">16777619</span>, <span class="c-number">0xFFFFFFFF</span>)
+    <span class="c-keyword">end</span>
+    <span class="c-keyword">return</span> <span class="c-string">"Tungsten_"</span> .. string.format(<span class="c-string">"%X"</span>, hash)
+<span class="c-keyword">end</span>
+
+<span class="c-comment">-- Initialize UI Window</span>
+<span class="c-keyword">local</span> Window = TungstenHub:<span class="c-function">CreateWindow</span>({
+    Name = <span class="c-string">"Tungsten Protected Hub"</span>,
+    Subtitle = <span class="c-string">"Roblox Cheat v1.0"</span>,
+    KeySettings = {
+        Title = <span class="c-string">"Verification Gate"</span>,
+        Subtitle = <span class="c-string">"Tungsten Hub"</span>,
+        Note = <span class="c-string">"${stepNote}"</span>,
+        SaveKey = <span class="c-boolean">true</span>,
+        Key = <span class="c-function">getDailyHWIDKey</span>(),
+        Url = <span class="c-string">"${gateUrl}?hwid="</span> .. <span class="c-function">getHardwareID</span>() .. <span class="c-string">"&steps=${activeSteps}"</span>
+    }
+})
+`;
+            // Insert dynamic parameters
+            code = code.replace('${salt}', salt)
+                       .replace('${stepNote}', stepNote)
+                       .replace('${gateUrl}', gateUrl)
+                       .replace('${activeSteps}', activeSteps.toString());
+
+            generatedLuaBlock.innerHTML = code;
+        }
+
+        // Copy button action
+        copyLuaBtn.addEventListener('click', () => {
+            const rawText = generatedLuaBlock.innerText;
+            navigator.clipboard.writeText(rawText).then(() => {
+                copyLuaBtn.innerText = "Copied!";
+                copyLuaBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyLuaBtn.innerText = "Copy Script";
+                    copyLuaBtn.classList.remove('copied');
+                }, 2000);
+            });
+        });
+
+        // Initialize lists & code on load
+        renderScripts();
+        generateLuaCode();
+    </script>
+</body>
+</html>

@@ -227,6 +227,7 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const hwidParam = urlParams.get('hwid');
+        const stepsParam = urlParams.get('steps');
 
         const spinner = document.getElementById('spinner');
         const statusText = document.getElementById('status-text');
@@ -235,36 +236,80 @@
         const actionBtn = document.getElementById('action-btn');
 
         if (hwidParam && hwidParam.trim() !== "") {
-            // Step 1: User came fresh from Roblox. Save HWID and redirect to LootLabs.
+            // Step 1: User came fresh from Roblox. Save HWID, total steps, and checkpoint links.
+            const totalSteps = parseInt(stepsParam) || 1;
             localStorage.setItem('tungsten_hwid', hwidParam.trim());
-            statusText.innerText = "Redirecting to LootLabs checkpoint...";
+            localStorage.setItem('tungsten_total_steps', totalSteps);
+            localStorage.setItem('tungsten_current_step', '0');
+            
+            // Save link parameters
+            for (let i = 1; i <= totalSteps; i++) {
+                const linkVal = urlParams.get(`link${i}`);
+                if (linkVal) {
+                    localStorage.setItem(`tungsten_link_${i}`, decodeURIComponent(linkVal));
+                } else if (i === 1) {
+                    // Fallback default link if not provided
+                    localStorage.setItem('tungsten_link_1', 'https://lootdest.org/s?DfJNgxIO');
+                }
+            }
+
+            statusText.innerText = `Redirecting to Checkpoint 1 of ${totalSteps}...`;
             
             setTimeout(() => {
-                window.location.href = "https://lootdest.org/s?DfJNgxIO";
+                const targetLink = localStorage.getItem('tungsten_link_1');
+                window.location.href = targetLink;
             }, 800);
             
         } else {
-            // Step 2: User returned from LootLabs. Check localStorage.
+            // Step 2: User returned from a checkpoint. Read localStorage state.
             const storedHwid = localStorage.getItem('tungsten_hwid');
-            
-            if (!storedHwid || storedHwid.trim() === "") {
+            const totalSteps = parseInt(localStorage.getItem('tungsten_total_steps')) || 0;
+            let currentStep = parseInt(localStorage.getItem('tungsten_current_step'));
+
+            if (!storedHwid || storedHwid.trim() === "" || isNaN(totalSteps)) {
                 spinner.style.display = 'none';
                 statusText.style.display = 'none';
                 errorBox.style.display = 'block';
             } else {
-                setTimeout(() => {
-                    statusText.innerText = "Generating HWID-locked key...";
+                // We returned from a step. Increment step counter.
+                currentStep = currentStep + 1;
+                localStorage.setItem('tungsten_current_step', currentStep);
+
+                if (currentStep < totalSteps) {
+                    // Redirect to the next checkpoint link
+                    statusText.innerText = `Checkpoint ${currentStep} completed! Redirecting to Checkpoint ${currentStep + 1} of ${totalSteps}...`;
                     setTimeout(() => {
-                        const generatedKey = generateDailyHWIDKey(storedHwid);
-                        
-                        spinner.style.display = 'none';
-                        statusText.innerText = "Key generated successfully! Proceed to copy.";
-                        keyBox.innerText = generatedKey;
-                        keyBox.style.display = 'block';
-                        actionBtn.style.display = 'block';
-                    }, 1000);
-                }, 1200);
+                        const targetLink = localStorage.getItem(`tungsten_link_${currentStep + 1}`);
+                        if (targetLink) {
+                            window.location.href = targetLink;
+                        } else {
+                            showKey();
+                        }
+                    }, 1200);
+                } else {
+                    showKey();
+                }
             }
+        }
+
+        function showKey() {
+            const storedHwid = localStorage.getItem('tungsten_hwid');
+            setTimeout(() => {
+                statusText.innerText = "Generating HWID-locked key...";
+                setTimeout(() => {
+                    const generatedKey = generateDailyHWIDKey(storedHwid);
+                    
+                    spinner.style.display = 'none';
+                    statusText.innerText = "Key generated successfully! Proceed to copy.";
+                    keyBox.innerText = generatedKey;
+                    keyBox.style.display = 'block';
+                    actionBtn.style.display = 'block';
+                    
+                    // Clear step counters
+                    localStorage.removeItem('tungsten_current_step');
+                    localStorage.removeItem('tungsten_total_steps');
+                }, 1000);
+            }, 800);
         }
 
         function copyKey() {
