@@ -3,26 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tungsten Hub — UI Library Documentation</title>
+    <title>Tungsten Hub — Key System Gate</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0b0b0d;
-            --sidebar-bg: #111114;
-            --container-bg: rgba(20, 20, 24, 0.6);
-            --card-bg: rgba(26, 26, 32, 0.4);
+            --bg-color: #0d0d0f;
+            --container-bg: rgba(20, 20, 24, 0.7);
             --stroke-color: rgba(255, 255, 255, 0.08);
             --accent-1: #0096ff;
             --accent-2: #00ccff;
-            --accent-glow: rgba(0, 150, 255, 0.15);
             --text-main: #f5f5fa;
-            --text-dark: #8c8c9e;
-            --text-muted: #5c5c6d;
-            --code-bg: #0f0f12;
-            --success: #2ecc71;
-            --active-tab-glow: rgba(0, 150, 255, 0.4);
+            --text-dark: #a0a0a5;
         }
 
         * {
@@ -30,325 +23,44 @@
             margin: 0;
             padding: 0;
             font-family: 'Outfit', sans-serif;
+            user-select: none;
         }
 
         body {
             background-color: var(--bg-color);
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(0, 150, 255, 0.04) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(0, 204, 255, 0.04) 0%, transparent 40%);
+                radial-gradient(circle at 10% 20%, rgba(0, 150, 255, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 204, 255, 0.08) 0%, transparent 40%);
             color: var(--text-main);
             display: flex;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-
-        /* --- Layout --- */
-        .sidebar {
-            width: 280px;
-            background: var(--sidebar-bg);
-            border-right: 1px solid var(--stroke-color);
-            display: flex;
-            flex-direction: column;
-            position: fixed;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            z-index: 100;
-            padding: 30px 20px;
-            transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
-        }
-
-        .main-wrapper {
-            margin-left: 280px;
-            flex: 1;
-            padding: 50px 8%;
-            max-width: 1200px;
-            min-height: 100vh;
-            position: relative;
-        }
-
-        /* --- Logo & Title --- */
-        .logo-section {
-            margin-bottom: 40px;
-            position: relative;
-            padding-left: 15px;
-        }
-
-        .logo-section::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 3px;
-            background: linear-gradient(to bottom, var(--accent-1), var(--accent-2));
-            border-radius: 2px;
-            box-shadow: 0 0 10px var(--accent-1);
-        }
-
-        .logo-section h1 {
-            font-size: 22px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #ffffff 40%, var(--text-dark) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.5px;
-        }
-
-        .logo-section p {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--accent-2);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-top: 2px;
-        }
-
-        /* --- Navigation Menu --- */
-        .nav-menu {
-            list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .nav-item {
-            display: flex;
-            align-items: center;
-            padding: 12px 16px;
-            color: var(--text-dark);
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 500;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 1px solid transparent;
-        }
-
-        .nav-item i {
-            margin-right: 12px;
-            font-size: 16px;
-        }
-
-        .nav-item:hover {
-            color: var(--text-main);
-            background: rgba(255, 255, 255, 0.03);
-            border-color: rgba(255, 255, 255, 0.02);
-        }
-
-        .nav-item.active {
-            color: var(--text-main);
-            background: rgba(0, 150, 255, 0.08);
-            border-color: rgba(0, 150, 255, 0.15);
-            font-weight: 600;
-            box-shadow: inset 0 0 8px rgba(0, 150, 255, 0.05);
-            position: relative;
-        }
-
-        .nav-item.active::after {
-            content: '';
-            position: absolute;
-            right: 12px;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--accent-2);
-            box-shadow: 0 0 8px var(--accent-2);
-        }
-
-        /* --- Documentation Styling --- */
-        .doc-section {
-            display: none;
-            animation: fadeIn 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-        }
-
-        .doc-section.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        h2 {
-            font-size: 32px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            margin-bottom: 12px;
-            background: linear-gradient(135deg, #ffffff 60%, var(--text-dark) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .doc-section p {
-            color: var(--text-dark);
-            font-size: 16px;
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }
-
-        .accent-bar {
-            width: 60px;
-            height: 4px;
-            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
-            border-radius: 2px;
-            margin-bottom: 30px;
-        }
-
-        /* --- Glass Cards --- */
-        .card {
-            background: var(--container-bg);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--stroke-color);
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            position: relative;
-        }
-
-        .card h3 {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 10px;
-            color: var(--text-main);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .card h3 span {
-            color: var(--accent-2);
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            background: rgba(0, 150, 255, 0.08);
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid rgba(0, 150, 255, 0.15);
-        }
-
-        .card p {
-            font-size: 14px;
-            margin-bottom: 15px;
-            color: var(--text-dark);
-        }
-
-        /* --- Code Syntax Styling --- */
-        .code-container {
-            position: relative;
-            background: var(--code-bg);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin: 15px 0;
-            overflow-x: auto;
-            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        pre {
-            margin: 0;
-        }
-
-        code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13.5px;
-            line-height: 1.6;
-            color: #d4d4d4;
-        }
-
-        /* Basic Syntax Colors for Lua representation */
-        .c-comment { color: #6a9955; }
-        .c-string { color: #ce9178; }
-        .c-keyword { color: #569cd6; }
-        .c-function { color: #dcdcaa; }
-        .c-boolean { color: #569cd6; }
-        .c-number { color: #b5cea8; }
-
-        .copy-btn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 5px;
-            color: var(--text-dark);
-            padding: 6px 12px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .copy-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-main);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .copy-btn.copied {
-            background: var(--success);
-            color: #ffffff;
-            border-color: var(--success);
-        }
-
-        /* --- Header Badge --- */
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            background: rgba(0, 204, 255, 0.05);
-            border: 1px solid rgba(0, 204, 255, 0.15);
-            color: var(--accent-2);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            margin-bottom: 15px;
-        }
-
-        /* --- Key System Overlay Modal --- */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(6, 6, 8, 0.85);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            z-index: 1000;
             justify-content: center;
             align-items: center;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .modal-overlay.active {
-            display: flex;
-            opacity: 1;
+            min-height: 100vh;
+            overflow: hidden;
         }
 
         .glass-panel {
-            background: rgba(20, 20, 24, 0.75);
+            background: var(--container-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--stroke-color);
-            border-radius: 16px;
-            padding: 40px 30px;
+            border-radius: 12px;
+            padding: 30px;
             width: 90%;
-            max-width: 450px;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 100px rgba(0, 150, 255, 0.05);
+            max-width: 440px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
             text-align: center;
             position: relative;
-            transform: scale(0.92);
-            transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            transform: scale(0.9);
+            opacity: 0;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
 
-        .modal-overlay.active .glass-panel {
-            transform: scale(1);
+        @keyframes popIn {
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         .glass-panel::before {
@@ -358,43 +70,43 @@
             left: 0;
             width: 100%;
             height: 3px;
-            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
-            border-radius: 16px 16px 0 0;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-1));
+            border-radius: 12px 12px 0 0;
         }
 
-        .modal-header h2 {
-            font-size: 26px;
-            background: linear-gradient(135deg, #ffffff 40%, var(--text-dark) 100%);
+        .header h1 {
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ffffff 30%, var(--text-dark) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
         }
 
-        .modal-header p {
+        .header p {
             color: var(--accent-2);
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 13px;
+            font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-bottom: 30px;
+            letter-spacing: 1.5px;
+            margin-bottom: 25px;
         }
 
         .status-area {
-            margin: 25px 0;
+            margin: 20px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
 
         .spinner {
-            width: 60px;
-            height: 60px;
-            border: 3px solid rgba(255, 255, 255, 0.03);
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.05);
             border-top: 3px solid var(--accent-1);
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-bottom: 25px;
-            box-shadow: 0 0 15px rgba(0, 150, 255, 0.1);
+            margin-bottom: 20px;
         }
 
         @keyframes spin {
@@ -405,30 +117,29 @@
         .status-text {
             font-size: 15px;
             color: var(--text-dark);
-            font-weight: 500;
+            margin-bottom: 10px;
         }
 
         .key-display-box {
             display: none;
             width: 100%;
-            background: rgba(0, 0, 0, 0.35);
-            border: 1px dashed rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 15px;
-            font-size: 17px;
-            font-weight: 700;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px dashed var(--stroke-color);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
             color: var(--text-main);
             letter-spacing: 0.5px;
-            margin: 25px 0;
+            margin: 20px 0;
+            position: relative;
             cursor: pointer;
             transition: all 0.2s;
-            text-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
         }
 
         .key-display-box:hover {
             border-color: var(--accent-1);
-            background: rgba(0, 150, 255, 0.05);
-            box-shadow: 0 0 15px rgba(0, 150, 255, 0.05);
+            background: rgba(0, 150, 255, 0.03);
         }
 
         .action-btn {
@@ -437,478 +148,56 @@
             background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
             color: #ffffff;
             border: none;
-            border-radius: 8px;
-            padding: 14px;
+            border-radius: 6px;
+            padding: 12px;
             font-size: 14px;
-            font-weight: 700;
+            font-weight: 600;
             cursor: pointer;
             transition: transform 0.1s, opacity 0.2s;
-            box-shadow: 0 6px 20px rgba(0, 150, 255, 0.25);
-            margin-bottom: 12px;
+            box-shadow: 0 4px 15px rgba(0, 150, 255, 0.3);
         }
 
         .action-btn:hover {
-            opacity: 0.95;
-            box-shadow: 0 6px 25px rgba(0, 150, 255, 0.35);
+            opacity: 0.9;
         }
 
         .action-btn:active {
             transform: scale(0.98);
         }
 
-        .close-modal-btn {
-            display: none;
-            width: 100%;
-            background: transparent;
-            color: var(--text-dark);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            padding: 14px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .close-modal-btn:hover {
-            background: rgba(255, 255, 255, 0.03);
-            color: var(--text-main);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
         .error-message {
             display: none;
             color: #ff4b4b;
-            font-size: 14px;
+            font-size: 13px;
+            margin: 20px 0;
             line-height: 1.5;
-            margin: 25px 0;
-            font-weight: 500;
-        }
-
-        /* --- Mobile Toggle --- */
-        .menu-toggle {
-            display: none;
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1010;
-            background: var(--sidebar-bg);
-            border: 1px solid var(--stroke-color);
-            border-radius: 8px;
-            width: 44px;
-            height: 44px;
-            cursor: pointer;
-            justify-content: center;
-            align-items: center;
-            color: var(--text-main);
-        }
-
-        .menu-toggle span {
-            width: 20px;
-            height: 2px;
-            background: var(--text-main);
-            display: block;
-            position: relative;
-            transition: background 0.3s;
-        }
-
-        .menu-toggle span::before, .menu-toggle span::after {
-            content: '';
-            width: 20px;
-            height: 2px;
-            background: var(--text-main);
-            display: block;
-            position: absolute;
-            transition: transform 0.3s;
-        }
-
-        .menu-toggle span::before { top: -6px; }
-        .menu-toggle span::after { bottom: -6px; }
-
-        .menu-toggle.open span { background: transparent; }
-        .menu-toggle.open span::before { transform: rotate(45deg); top: 0; }
-        .menu-toggle.open span::after { transform: rotate(-45deg); bottom: 0; }
-
-        /* --- Responsive Queries --- */
-        @media (max-width: 900px) {
-            .sidebar {
-                transform: translateX(-100%);
-            }
-            .sidebar.open {
-                transform: translateX(0);
-            }
-            .main-wrapper {
-                margin-left: 0;
-                padding: 80px 20px 40px;
-            }
-            .menu-toggle {
-                display: flex;
-            }
         }
     </style>
 </head>
 <body>
-
-    <!-- Mobile Hamburger -->
-    <button class="menu-toggle" id="menu-toggle">
-        <span></span>
-    </button>
-
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar" id="sidebar">
-        <div class="logo-section">
+    <div class="glass-panel">
+        <div class="header">
             <h1>Tungsten Hub</h1>
-            <p>UI Documentation</p>
+            <p>Key System Gate</p>
         </div>
-        <nav>
-            <ul class="nav-menu">
-                <li><a class="nav-item active" data-section="intro">🌟 Introduction</a></li>
-                <li><a class="nav-item" data-section="start">⚡ Getting Started</a></li>
-                <li><a class="nav-item" data-section="window-tab">🪟 Windows & Tabs</a></li>
-                <li><a class="nav-item" data-section="elements">🧩 UI Elements</a></li>
-                <li><a class="nav-item" data-section="themes">🎨 Themes & Styling</a></li>
-                <li><a class="nav-item" data-section="keysystem">🔑 Key System Gate</a></li>
-                <li><a class="nav-item" data-section="example">📄 Complete Example</a></li>
-            </ul>
-        </nav>
-    </aside>
 
-    <!-- Main Wrapper -->
-    <div class="main-wrapper">
-
-        <!-- Introduction Section -->
-        <section class="doc-section active" id="intro-section">
-            <span class="badge">v2.1.0 — Fluent Style</span>
-            <h2>Introduction</h2>
-            <div class="accent-bar"></div>
-            <p><strong>Tungsten Hub</strong> is a premium, high-performance UI library designed specifically for Roblox script developers. Inspired by Microsoft's Fluent Design Guidelines and Rayfield's sidebar architecture, Tungsten Hub provides a gorgeous, responsive, and incredibly smooth user interface for exploit utilities, cheat hubs, and admin systems.</p>
-            
-            <div class="card">
-                <h3>Core Philosophy</h3>
-                <p>Most Roblox libraries suffer from performance drops, blocky layouts, or outdated color palettes. Tungsten Hub addresses these issues with custom rendering utilities, built-in layout scales, dynamic themes, and a clean, responsive navigation layout.</p>
-            </div>
-            
-            <div class="card">
-                <h3>Feature Checklist</h3>
-                <p>✔ Smooth sliding animations for tabs and window transitions</p>
-                <p>✔ Comprehensive elements: Buttons, Toggles, Sliders, Dropdowns, Textboxes, and Labels</p>
-                <p>✔ Multi-theme system: Switch seamlessly between Tungsten, BloodMoon, Nebula, and Emerald palettes</p>
-                <p>✔ Dynamic Notification Engine built-in</p>
-                <p>✔ Optional FNV-1a HWID-Locked Key System with automated caching</p>
-            </div>
-        </section>
-
-        <!-- Getting Started Section -->
-        <section class="doc-section" id="start-section">
-            <h2>Getting Started</h2>
-            <div class="accent-bar"></div>
-            <p>To use Tungsten Hub in your Roblox script, import the library using the global loadstring below. This fetches the latest production build from the official GitHub repository.</p>
-            
-            <div class="card">
-                <h3>Loader Script</h3>
-                <p>Copy and paste this script directly into your Roblox executor:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> TungstenHub = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"</span>))()</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- Windows and Tabs Section -->
-        <section class="doc-section" id="window-tab-section">
-            <h2>Windows & Tabs</h2>
-            <div class="accent-bar"></div>
-            <p>Every hub begins with a Window. Windows hold the global configurations, title, subtitle, optional key verification gate, and tabs.</p>
-            
-            <div class="card">
-                <h3>Creating a Window <span>TungstenHub:CreateWindow()</span></h3>
-                <p>Use the <code>CreateWindow</code> method to configure the UI window properties. You can pass either a simple title string or a complete configuration table.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Standard configuration table</span>
-<span class="c-keyword">local</span> Window = TungstenHub:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Tungsten Hub"</span>,
-    Subtitle = <span class="c-string">"Universal Cheats"</span>
-})</code></pre>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Creating Tabs <span>Window:CreateTab()</span></h3>
-                <p>Tabs let you separate your components into categorized columns. Active tabs feature a left accent bar indicating selected state.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Create several tabs on the sidebar navigation</span>
-<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)
-<span class="c-keyword">local</span> MovementTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Movement"</span>)
-<span class="c-keyword">local</span> SettingsTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Settings"</span>)</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- UI Elements Section -->
-        <section class="doc-section" id="elements-section">
-            <h2>UI Elements</h2>
-            <div class="accent-bar"></div>
-            <p>UI Elements are interactive controls added to tabs. All elements scale automatically to fit content cleanly.</p>
-            
-            <!-- Button -->
-            <div class="card">
-                <h3>Buttons <span>Tab:CreateButton()</span></h3>
-                <p>Executes a block of code immediately upon user click.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Click Me!"</span>, <span class="c-keyword">function</span>()
-    <span class="c-comment">-- Action runs when clicked</span>
-    print(<span class="c-string">"Button clicked!"</span>)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-
-            <!-- Toggle -->
-            <div class="card">
-                <h3>Toggles <span>Tab:CreateToggle()</span></h3>
-                <p>A compact switch control that maintains an ON/OFF state. Sends a boolean state to the callback.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateToggle</span>(<span class="c-string">"Enable Autofarm"</span>, <span class="c-boolean">false</span>, <span class="c-keyword">function</span>(state)
-    <span class="c-comment">-- state is true if turned on, false if off</span>
-    print(<span class="c-string">"Autofarm active:"</span>, state)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-
-            <!-- Slider -->
-            <div class="card">
-                <h3>Sliders <span>Tab:CreateSlider()</span></h3>
-                <p>Lets users slide across a range of numbers. Perfect for walkspeed, jump power, or range sliders.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MovementTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed Booster"</span>, <span class="c-number">16</span>, <span class="c-number">200</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(value)
-    <span class="c-comment">-- value changes dynamically as user drags the slider handle</span>
-    game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = value
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-
-            <!-- Dropdown -->
-            <div class="card">
-                <h3>Dropdowns <span>Tab:CreateDropdown()</span></h3>
-                <p>Collapsible lists allowing the user to pick a single string value from an array of choices.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Choose Region"</span>, {<span class="c-string">"US-East"</span>, <span class="c-string">"EU-West"</span>, <span class="c-string">"Asia-Pacific"</span>}, <span class="c-string">"US-East"</span>, <span class="c-keyword">function</span>(selected)
-    print(<span class="c-string">"Region chosen:"</span>, selected)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-
-            <!-- Textbox -->
-            <div class="card">
-                <h3>Textboxes <span>Tab:CreateTextbox()</span></h3>
-                <p>Accepts custom text input. Fires when the user presses Enter.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MovementTab:<span class="c-function">CreateTextbox</span>(<span class="c-string">"Custom Tag"</span>, <span class="c-string">"Type here..."</span>, <span class="c-keyword">function</span>(text)
-    print(<span class="c-string">"User entered:"</span>, text)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-
-            <!-- Label -->
-            <div class="card">
-                <h3>Labels <span>Tab:CreateLabel()</span></h3>
-                <p>Static headers or notice boxes used to organize elements or list info.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Version 2.0.0 Update Changelog"</span>)</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- Themes Section -->
-        <section class="doc-section" id="themes-section">
-            <h2>Themes & Styling</h2>
-            <div class="accent-bar"></div>
-            <p>Tungsten Hub features a dynamic, run-time theme modifier. Themes update all labels, backgrounds, accent gradients, and borders in real-time without needing to redraw the UI.</p>
-            
-            <div class="card">
-                <h3>Pre-made Theme Palettes</h3>
-                <p>Tungsten Hub includes several premium themes preloaded:</p>
-                <ul>
-                    <li><code>TungstenHub.Themes.Tungsten</code> (Default Dark Acrylic Cyan)</li>
-                    <li><code>TungstenHub.Themes.Nebula</code> (Purple Galaxy Theme)</li>
-                    <li><code>TungstenHub.Themes.BloodMoon</code> (Dark Red Theme)</li>
-                    <li><code>TungstenHub.Themes.Emerald</code> (Deep Jade Green Theme)</li>
-                    <li><code>TungstenHub.Themes.Midnight</code> (Contrast Black Theme)</li>
-                </ul>
-            </div>
-
-            <div class="card">
-                <h3>Applying a Theme <span>Window:SetTheme()</span></h3>
-                <p>Use the theme changer inside your code or bind it to a theme selector dropdown:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Dynamically load and apply a different palette</span>
-Window:<span class="c-function">SetTheme</span>(TungstenHub.Themes.Nebula)</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- Key System Section -->
-        <section class="doc-section" id="keysystem-section">
-            <h2>Key System Gate</h2>
-            <div class="accent-bar"></div>
-            <p>Tungsten Hub includes an integrated FNV-1a HWID key gate. Developers can easily protect their scripts without having to purchase external hosting or database services.</p>
-            
-            <div class="card">
-                <h3>Configuration Example</h3>
-                <p>To enable the secure dynamic key verification, pass the <code>KeySettings</code> configuration block to <code>CreateWindow</code>:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> Window = TungstenHub:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Tungsten Hub"</span>,
-    Subtitle = <span class="c-string">"Premium Edition"</span>,
-    KeySettings = {
-        Title = <span class="c-string">"Secure Key Gate"</span>,
-        Subtitle = <span class="c-string">"Tungsten Protection"</span>,
-        Note = <span class="c-string">"Please pass the verification link to unlock the script."</span>,
-        SaveKey = <span class="c-boolean">true</span>,                      <span class="c-comment">-- Automatically saves key to workspace/</span>
-        Key = getDailyHWIDKey(),            <span class="c-comment">-- Validating string (can also be an array/function)</span>
-        Url = <span class="c-string">"https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid="</span> .. getHashedHWID()
-    }
-})</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- Example Section -->
-        <section class="doc-section" id="example-section">
-            <h2>Complete Example</h2>
-            <div class="accent-bar"></div>
-            <p>Here is a complete, copy-paste example showcasing initialization, multiple tabs, various interactive widgets, notifications, and theme modification controls.</p>
-            
-            <div class="card">
-                <h3>Copy-Paste Script Template</h3>
-                <p>Run this complete script in your Roblox executor to see all components working:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy Script</button>
-                    <pre><code><span class="c-keyword">local</span> TungstenHub = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"</span>))()
-
-<span class="c-comment">-- Create a window with title and subtitle</span>
-<span class="c-keyword">local</span> Window = TungstenHub:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Tungsten Hub"</span>,
-    Subtitle = <span class="c-string">"Combined Demo"</span>
-})
-
-<span class="c-comment">-- Create tabs</span>
-<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)
-<span class="c-keyword">local</span> SettingsTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Settings"</span>)
-
-<span class="c-comment">-- Add label and notification button</span>
-MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Welcome to Tungsten Hub!"</span>)
-MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Send Notification"</span>, <span class="c-keyword">function</span>()
-    Window:<span class="c-function">Notify</span>(<span class="c-string">"Notification"</span>, <span class="c-string">"Tungsten Hub UI loaded!"</span>, <span class="c-number">3</span>)
-<span class="c-keyword">end</span>)
-
-<span class="c-comment">-- Add slider</span>
-MainTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed Booster"</span>, <span class="c-number">16</span>, <span class="c-number">120</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(val)
-    game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = val
-<span class="c-keyword">end</span>)
-
-<span class="c-comment">-- Add dynamic theme selector dropdown</span>
-SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Change Theme"</span>, {<span class="c-string">"Tungsten"</span>, <span class="c-string">"Nebula"</span>, <span class="c-string">"BloodMoon"</span>, <span class="c-string">"Emerald"</span>}, <span class="c-string">"Tungsten"</span>, <span class="c-keyword">function</span>(theme)
-    <span class="c-keyword">local</span> themeTable = TungstenHub.Themes[theme]
-    <span class="c-keyword">if</span> themeTable <span class="c-keyword">then</span>
-        Window:<span class="c-function">SetTheme</span>(themeTable)
-    <span class="c-keyword">end</span>
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-            </div>
-        </section>
-
-    </div>
-
-    <!-- Key System Verification Modal (Invisible unless active HWID session) -->
-    <div class="modal-overlay" id="key-modal">
-        <div class="glass-panel">
-            <div class="modal-header">
-                <h2>Tungsten Hub</h2>
-                <p>Key System Gate</p>
-            </div>
-
-            <div class="status-area" id="status-area">
-                <div class="spinner" id="spinner"></div>
-                <p class="status-text" id="status-text">Bypassing local handshakes...</p>
-            </div>
-
-            <div class="error-message" id="error-box">
-                Failed to detect Hardware ID. Please initialize the script inside Roblox first.
-            </div>
-
-            <div class="key-display-box" id="key-box">
-                Tungsten_GENERATING...
-            </div>
-
-            <button class="action-btn" id="action-btn">Copy Secure Key</button>
-            <button class="close-modal-btn" id="close-modal-btn">Dismiss & View Docs</button>
+        <div class="status-area" id="status-area">
+            <div class="spinner" id="spinner"></div>
+            <p class="status-text" id="status-text">Bypassing local handshakes...</p>
         </div>
+
+        <div class="error-message" id="error-box">
+            No Hardware ID (HWID) detected. Please run the script in Roblox to generate your key URL.
+        </div>
+
+        <div class="key-display-box" id="key-box">
+            Tungsten_GENERATING...
+        </div>
+
+        <button class="action-btn" id="action-btn">Copy Secure Key</button>
     </div>
 
     <script>
-        // --- Sidebar Menu Nav Switching Logic ---
-        const navItems = document.querySelectorAll('.nav-item');
-        const sections = document.querySelectorAll('.doc-section');
-        const menuToggle = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-
-        navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                // Remove active classes
-                navItems.forEach(i => i.classList.remove('active'));
-                sections.forEach(s => s.classList.remove('active'));
-
-                // Add active classes
-                item.classList.add('active');
-                const sectionId = item.getAttribute('data-section');
-                document.getElementById(`${sectionId}-section`).classList.add('active');
-
-                // Close mobile menu if open
-                sidebar.classList.remove('open');
-                menuToggle.classList.remove('open');
-                
-                // Scroll back to top of the content area
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            });
-        });
-
-        // Hamburger mobile toggle
-        menuToggle.addEventListener('click', () => {
-            menuToggle.classList.toggle('open');
-            sidebar.classList.toggle('open');
-        });
-
-        // --- Copy to Clipboard Handler ---
-        const copyBtns = document.querySelectorAll('.copy-btn');
-        copyBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const codeBlock = btn.nextElementSibling.querySelector('code');
-                const rawText = codeBlock.innerText;
-                
-                navigator.clipboard.writeText(rawText).then(() => {
-                    btn.innerText = "Copied!";
-                    btn.classList.add('copied');
-                    setTimeout(() => {
-                        btn.innerText = "Copy";
-                        btn.classList.remove('copied');
-                    }, 2000);
-                }).catch(err => {
-                    alert("Unable to copy automatically. Please select the code and copy manually.");
-                });
-            });
-        });
-
-        // --- Precise FNV-1a Hashing Algorithm matching Lua ---
         function multiply32(a, b) {
             const a_hi = (a >>> 16) & 0xFFFF;
             const a_lo = a & 0xFFFF;
@@ -936,57 +225,49 @@ SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string
             return "Tungsten_" + hash.toString(16).toUpperCase();
         }
 
-        // --- Key System State Machine ---
         const urlParams = new URLSearchParams(window.location.search);
         const hwidParam = urlParams.get('hwid');
-        const keyModal = document.getElementById('key-modal');
 
         const spinner = document.getElementById('spinner');
         const statusText = document.getElementById('status-text');
         const errorBox = document.getElementById('error-box');
         const keyBox = document.getElementById('key-box');
         const actionBtn = document.getElementById('action-btn');
-        const closeModalBtn = document.getElementById('close-modal-btn');
 
-        // Check if there's a fresh HWID in the URL, or if we returned from LootLabs and have it stored
         if (hwidParam && hwidParam.trim() !== "") {
-            // Fresh URL check: Save to localStorage and redirect immediately to LootLabs
+            // Step 1: User came fresh from Roblox. Save HWID and redirect to LootLabs.
             localStorage.setItem('tungsten_hwid', hwidParam.trim());
-            keyModal.classList.add('active');
             statusText.innerText = "Redirecting to LootLabs checkpoint...";
             
             setTimeout(() => {
                 window.location.href = "https://lootdest.org/s?DfJNgxIO";
             }, 800);
-
+            
         } else {
-            // Check if user has an active stored session (meaning they returned from LootLabs)
+            // Step 2: User returned from LootLabs. Check localStorage.
             const storedHwid = localStorage.getItem('tungsten_hwid');
             
-            if (storedHwid && storedHwid.trim() !== "") {
-                // Show modal overlay
-                keyModal.classList.add('active');
-                
+            if (!storedHwid || storedHwid.trim() === "") {
+                spinner.style.display = 'none';
+                statusText.style.display = 'none';
+                errorBox.style.display = 'block';
+            } else {
                 setTimeout(() => {
                     statusText.innerText = "Generating HWID-locked key...";
-                    
                     setTimeout(() => {
-                        const key = generateDailyHWIDKey(storedHwid);
+                        const generatedKey = generateDailyHWIDKey(storedHwid);
                         
                         spinner.style.display = 'none';
-                        statusText.innerText = "Key generated successfully!";
-                        keyBox.innerText = key;
+                        statusText.innerText = "Key generated successfully! Proceed to copy.";
+                        keyBox.innerText = generatedKey;
                         keyBox.style.display = 'block';
                         actionBtn.style.display = 'block';
-                        closeModalBtn.style.display = 'block';
                     }, 1000);
                 }, 1200);
             }
-            // If no HWID Param and no Stored HWID, do nothing: just show the documentation page!
         }
 
-        // Copy Key Action inside Modal
-        function copyModalKey() {
+        function copyKey() {
             const keyText = keyBox.innerText;
             navigator.clipboard.writeText(keyText).then(() => {
                 actionBtn.innerText = "Key Copied!";
@@ -996,19 +277,12 @@ SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string
                     actionBtn.style.background = "linear-gradient(135deg, var(--accent-1), var(--accent-2))";
                 }, 2000);
             }).catch(() => {
-                alert("Failed to copy automatically. Please select text manually.");
+                alert("Failed to copy automatically. Please copy manually.");
             });
         }
 
-        actionBtn.addEventListener('click', copyModalKey);
-        keyBox.addEventListener('click', copyModalKey);
-
-        // Dismiss Modal and browse documentation
-        closeModalBtn.addEventListener('click', () => {
-            keyModal.classList.remove('active');
-            // Clean up the URL search bar to look tidy
-            window.history.replaceState({}, document.title, window.location.pathname);
-        });
+        actionBtn.addEventListener('click', copyKey);
+        keyBox.addEventListener('click', copyKey);
     </script>
 </body>
 </html>
