@@ -470,6 +470,38 @@
     Subtitle = <span class="c-string">"Universal Cheats"</span>
 })</code></pre>
                 </div>
+
+                <h4 style="color: var(--accent-2); margin-top: 20px; margin-bottom: 8px; font-size: 14px;">Window Properties Table:</h4>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; text-align: left;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--stroke-color); color: var(--text-main);">
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Property</th>
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Type</th>
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Description</th>
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Default</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Name</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">Main title displayed at the top-left of the window header.</td>
+                            <td style="padding: 8px;">"Tungsten Hub"</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Subtitle</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">Smaller caption displayed directly below the main title.</td>
+                            <td style="padding: 8px;">"Universal V2"</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">KeySettings</td>
+                            <td style="padding: 8px;">table</td>
+                            <td style="padding: 8px;">Configuration block to enable the HWID gate locks (see Key System Gate tab).</td>
+                            <td style="padding: 8px;">nil</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             <div class="card">
@@ -478,10 +510,20 @@
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code><span class="c-comment">-- Create several tabs on the sidebar navigation</span>
-<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)
-<span class="c-keyword">local</span> MovementTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Movement"</span>)
-<span class="c-keyword">local</span> SettingsTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Settings"</span>)</code></pre>
+<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)</code></pre>
                 </div>
+                <p><strong>Parameters:</strong> <code>title</code> (string) - Name of the tab shown in the sidebar menu.</p>
+                <p><strong>Returns:</strong> A Tab Object that exposes element-creation methods (CreateButton, CreateToggle, etc.).</p>
+            </div>
+
+            <div class="card">
+                <h3>Global Window Actions</h3>
+                <p>Once you have a window, you can run global management functions on it:</p>
+                <ul style="margin-left: 20px; list-style: disc; color: var(--text-dark); line-height: 1.6;">
+                    <li><strong><code>Window:Notify(title, description, duration)</code></strong> - Triggers a dynamic banner animation.</li>
+                    <li><strong><code>Window:SetToggleKey(Enum.KeyCode)</code></strong> - Binds a custom keyboard hotkey to minimize/maximize the window interface dynamically (Default: <code>RightShift</code>).</li>
+                    <li><strong><code>Window:Destroy()</code></strong> - Cleanly removes the UI elements from CoreGui/PlayerGui.</li>
+                </ul>
             </div>
         </section>
 
@@ -497,12 +539,16 @@
                 <p>Executes a block of code immediately upon user click. Features a clean card style and dynamic outline highlight transitions.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Click Me!"</span>, <span class="c-keyword">function</span>()
-    <span class="c-comment">-- Action runs when clicked</span>
+                    <pre><code><span class="c-keyword">local</span> MyButton = MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Click Me!"</span>, <span class="c-keyword">function</span>()
     print(<span class="c-string">"Button clicked!"</span>)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
-                <p><strong>Returns:</strong> A table containing <code>UpdateButtonText(newText)</code> which allows you to dynamically rename the button after load.</p>
+                <p><strong>Parameters:</strong></p>
+                <ul>
+                    <li><code>text</code> (string) - Display text.</li>
+                    <li><code>callback</code> (function) - Executed on click.</li>
+                </ul>
+                <p><strong>Returns:</strong> A table containing <code>UpdateButtonText(newText)</code> to dynamically change the text of the button.</p>
             </div>
 
             <!-- Toggle -->
@@ -511,12 +557,17 @@
                 <p>A compact switch control that maintains an ON/OFF state. Sends a boolean state to the callback. Implements a fluid sliding knob switch animation.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateToggle</span>(<span class="c-string">"Enable Autofarm"</span>, <span class="c-boolean">false</span>, <span class="c-keyword">function</span>(state)
-    <span class="c-comment">-- state is true if turned on, false if off</span>
+                    <pre><code><span class="c-keyword">local</span> MyToggle = MainTab:<span class="c-function">CreateToggle</span>(<span class="c-string">"Enable Autofarm"</span>, <span class="c-boolean">false</span>, <span class="c-keyword">function</span>(state)
     print(<span class="c-string">"Autofarm active:"</span>, state)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
-                <p><strong>Returns:</strong> A table containing <code>SetToggle(boolean)</code> to programmatically trigger changes from other functions.</p>
+                <p><strong>Parameters:</strong></p>
+                <ul>
+                    <li><code>toggleText</code> (string) - Label text.</li>
+                    <li><code>default</code> (boolean) - Initial state (true = ON, false = OFF).</li>
+                    <li><code>callback</code> (function) - Executed when state shifts, receiving the new boolean state.</li>
+                </ul>
+                <p><strong>Returns:</strong> A table containing <code>SetToggle(boolean)</code> to programmatically trigger toggling.</p>
             </div>
 
             <!-- Slider -->
@@ -525,12 +576,19 @@
                 <p>Lets users slide across a range of numbers. Perfect for walkspeed, jump power, or range sliders. Includes a sliding pointer handle that moves smoothly alongside the progress bar.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
-                    <pre><code>MovementTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed Booster"</span>, <span class="c-number">16</span>, <span class="c-number">200</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(value)
-    <span class="c-comment">-- value changes dynamically as user drags the slider handle</span>
+                    <pre><code><span class="c-keyword">local</span> MySlider = MovementTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed"</span>, <span class="c-number">16</span>, <span class="c-number">200</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(value)
     game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = value
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
-                <p><strong>Returns:</strong> A table containing <code>SetValue(number)</code> to force set a specific value.</p>
+                <p><strong>Parameters:</strong></p>
+                <ul>
+                    <li><code>sliderText</code> (string) - Label text.</li>
+                    <li><code>min</code> (number) - Smallest allowed value.</li>
+                    <li><code>max</code> (number) - Largest allowed value.</li>
+                    <li><code>default</code> (number) - Starting value.</li>
+                    <li><code>callback</code> (function) - Executed during drag, receiving the current value.</li>
+                </ul>
+                <p><strong>Returns:</strong> A table containing <code>SetValue(number)</code> to force set a specific value programmatically.</p>
             </div>
 
             <!-- Dropdown -->
@@ -539,10 +597,17 @@
                 <p>Collapsible lists allowing the user to pick a single string value from an array of choices. Smoothly expands downward with a clip-fade animation.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
-                    <pre><code>SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Choose Region"</span>, {<span class="c-string">"US-East"</span>, <span class="c-string">"EU-West"</span>, <span class="c-string">"Asia-Pacific"</span>}, <span class="c-string">"US-East"</span>, <span class="c-keyword">function</span>(selected)
+                    <pre><code>SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Choose Region"</span>, {<span class="c-string">"US-East"</span>, <span class="c-string">"EU-West"</span>, <span class="c-string">"Asia"</span>}, <span class="c-string">"US-East"</span>, <span class="c-keyword">function</span>(selected)
     print(<span class="c-string">"Region chosen:"</span>, selected)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
+                <p><strong>Parameters:</strong></p>
+                <ul>
+                    <li><code>dropdownText</code> (string) - Label text.</li>
+                    <li><code>list</code> (table) - Array of strings options.</li>
+                    <li><code>default</code> (string) - Initial selected option.</li>
+                    <li><code>callback</code> (function) - Executed on selection, receiving selected item text.</li>
+                </ul>
             </div>
 
             <!-- Textbox -->
@@ -555,6 +620,12 @@
     print(<span class="c-string">"User entered:"</span>, text)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
+                <p><strong>Parameters:</strong></p>
+                <ul>
+                    <li><code>textboxText</code> (string) - Label text.</li>
+                    <li><code>placeholder</code> (string) - Text to display when box is empty.</li>
+                    <li><code>callback</code> (function) - Executed on enter press, receiving the current text.</li>
+                </ul>
             </div>
 
             <!-- Label -->
@@ -563,8 +634,9 @@
                 <p>Static headers or notice boxes used to organize elements or list info. Supports full multiline wrapping text blocks.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Version 2.0.0 Update Changelog"</span>)</code></pre>
+                    <pre><code>MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Version 2.1.0 Update"</span>)</code></pre>
                 </div>
+                <p><strong>Parameters:</strong> <code>labelText</code> (string) - Display content.</p>
             </div>
         </section>
 
@@ -604,7 +676,7 @@ Window:<span class="c-function">SetTheme</span>(TungstenHub.Themes.Nebula)</code
             <p>Tungsten Hub includes an integrated FNV-1a HWID key gate. Developers can easily protect their scripts without having to purchase external hosting or database services.</p>
             
             <div class="card">
-                <h3>Configuration Example</h3>
+                <h3>Key System Configuration (Roblox Integration)</h3>
                 <p>To enable the secure dynamic key verification, pass the <code>KeySettings</code> configuration block to <code>CreateWindow</code>:</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
@@ -620,6 +692,86 @@ Window:<span class="c-function">SetTheme</span>(TungstenHub.Themes.Nebula)</code
         Url = <span class="c-string">"https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid="</span> .. getHashedHWID()
     }
 })</code></pre>
+                </div>
+
+                <h4 style="color: var(--accent-2); margin-top: 20px; margin-bottom: 8px; font-size: 14px;">KeySettings Properties Table:</h4>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; text-align: left;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--stroke-color); color: var(--text-main);">
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Property</th>
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Type</th>
+                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Title</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">Header title text displayed on the Key System window.</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Subtitle</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">Smaller caption displayed directly below the Key System header.</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Note</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">Instructions/description for the users explaining how to fetch the key.</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">SaveKey</td>
+                            <td style="padding: 8px;">boolean</td>
+                            <td style="padding: 8px;">If true, saves the successfully verified key locally in <code>workspace/filename</code> to bypass future loads within 24 hours.</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Key</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">The exact Daily HWID Key that the player must enter to unlock the GUI.</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
+                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Url</td>
+                            <td style="padding: 8px;">string</td>
+                            <td style="padding: 8px;">The redirection link (e.g. your Tungsten-Hub page) loaded when users click "Get Key".</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Detailed Daily HWID Verification Math (FNV-1a)</h3>
+                <p>The daily secure key is computed in Roblox using a custom 32-bit FNV-1a (Fowler-Noll-Vo) hash. This ensures that the valid key changes automatically every 24 hours and is securely tied to the user's specific Hardware Identifier (HWID).</p>
+                
+                <h4 style="color: var(--accent-2); margin-top: 15px; margin-bottom: 5px; font-size: 14px;">How the hash is constructed step-by-step:</h4>
+                <ol style="margin-left: 20px; margin-bottom: 15px; color: var(--text-dark); line-height: 1.6;">
+                    <li><strong>Gather Inputs:</strong> The system collects the player's <code>HWID</code> (or Roblox UserId as fallback), your custom <code>Salt</code>, and the current UTC date formatted as <code>DDMMYYYY</code>.</li>
+                    <li><strong>Concatenate:</strong> The string is formatted as: <code>[HWID]_[Salt]_[DDMMYYYY]</code>.</li>
+                    <li><strong>Iterative Hash:</strong> For each byte in this concatenated string, we perform:
+                        <ul style="margin-left: 20px; list-style: circle;">
+                            <li>XOR the hash value with the byte value.</li>
+                            <li>Multiply by the FNV 32-bit prime value: <code>16777619</code>.</li>
+                            <li>Clamp the output to a 32-bit unsigned boundary: <code>hash & 0xFFFFFFFF</code>.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Hex Formatting:</strong> The final hash is output in Uppercase Hexadecimal and prefixed with <code>Tungsten_</code>.</li>
+                </ol>
+
+                <div class="code-container">
+                    <button class="copy-btn">Copy Hash Logic</button>
+                    <pre><code><span class="c-comment">-- Lua mathematical reproduction of the client-side FNV-1a key matching algorithm</span>
+<span class="c-keyword">local function</span> <span class="c-function">generateDailyHWIDKey</span>(hwid, salt)
+    <span class="c-keyword">local</span> dateString = <span class="c-function">os.date</span>(<span class="c-string">"!%d%m%Y"</span>) <span class="c-comment">-- UTC date formatting</span>
+    <span class="c-keyword">local</span> input = hwid .. <span class="c-string">"_"</span> .. salt .. <span class="c-string">"_"</span> .. dateString
+    
+    <span class="c-keyword">local</span> hash = <span class="c-number">2166136261</span> <span class="c-comment">-- FNV-1a Offset Basis</span>
+    <span class="c-keyword">for</span> i = <span class="c-number">1</span>, #input <span class="c-keyword">do</span>
+        <span class="c-keyword">local</span> charByte = string.byte(input, i)
+        hash = bit32.bxor(hash, charByte)
+        hash = bit32.band(hash * <span class="c-number">16777619</span>, <span class="c-number">0xFFFFFFFF</span>) <span class="c-comment">-- Multiply by FNV Prime</span>
+    <span class="c-keyword">end</span>
+    
+    <span class="c-keyword">return</span> <span class="c-string">"Tungsten_"</span> .. string.format(<span class="c-string">"%X"</span>, hash)
+<span class="c-keyword">end</span></code></pre>
                 </div>
             </div>
         </section>
