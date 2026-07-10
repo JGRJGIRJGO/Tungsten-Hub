@@ -235,9 +235,9 @@
             return "Tungsten_" + hash.toString(16).toUpperCase();
         }
 
-        // Get HWID from URL parameters
+        // Get HWID from URL parameters or localStorage
         const urlParams = new URLSearchParams(window.location.search);
-        const hwid = urlParams.get('hwid');
+        const hwidParam = urlParams.get('hwid');
 
         const spinner = document.getElementById('spinner');
         const statusText = document.getElementById('status-text');
@@ -245,26 +245,40 @@
         const keyBox = document.getElementById('key-box');
         const actionBtn = document.getElementById('action-btn');
 
-        if (!hwid || hwid.trim() === "") {
-            // No HWID error
-            spinner.style.display = 'none';
-            statusText.style.display = 'none';
-            errorBox.style.display = 'block';
-        } else {
-            // Simulated validation sequence
+        if (hwidParam && hwidParam.trim() !== "") {
+            // Step 1: User came fresh from Roblox. Save HWID and redirect to LootLabs.
+            localStorage.setItem('tungsten_hwid', hwidParam.trim());
+            statusText.innerText = "Redirecting to LootLabs checkpoint...";
+            
             setTimeout(() => {
-                statusText.innerText = "Generating HWID-locked key...";
+                window.location.href = "https://lootdest.org/s?DfJNgxIO";
+            }, 800);
+            
+        } else {
+            // Step 2: User returned from LootLabs (no HWID in URL). Check localStorage.
+            const storedHwid = localStorage.getItem('tungsten_hwid');
+            
+            if (!storedHwid || storedHwid.trim() === "") {
+                // No HWID found at all
+                spinner.style.display = 'none';
+                statusText.style.display = 'none';
+                errorBox.style.display = 'block';
+            } else {
+                // Found stored HWID. Generate key.
                 setTimeout(() => {
-                    const generatedKey = generateDailyHWIDKey(hwid);
-                    
-                    // Display Key
-                    spinner.style.display = 'none';
-                    statusText.innerText = "Key generated successfully! Proceed to copy.";
-                    keyBox.innerText = generatedKey;
-                    keyBox.style.display = 'block';
-                    actionBtn.style.display = 'block';
-                }, 1000);
-            }, 1200);
+                    statusText.innerText = "Generating HWID-locked key...";
+                    setTimeout(() => {
+                        const generatedKey = generateDailyHWIDKey(storedHwid);
+                        
+                        // Display Key
+                        spinner.style.display = 'none';
+                        statusText.innerText = "Key generated successfully! Proceed to copy.";
+                        keyBox.innerText = generatedKey;
+                        keyBox.style.display = 'block';
+                        actionBtn.style.display = 'block';
+                    }, 1000);
+                }, 1200);
+            }
         }
 
         // Clipboard Copy Logic

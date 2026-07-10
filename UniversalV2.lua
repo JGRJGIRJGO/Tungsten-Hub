@@ -99,7 +99,7 @@ local Window = TungstenHub:CreateWindow({
         Note = "Please enter your secure HWID-locked key to unlock features.",
         SaveKey = true,
         Key = getDailyHWIDKey(),
-        Url = "https://aged-hall-3742.raidingstreamers7.workers.dev/?hwid=" .. getHashedHWID()
+        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid=" .. getHashedHWID()
     }
 })
 
