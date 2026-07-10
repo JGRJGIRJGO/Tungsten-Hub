@@ -23,6 +23,10 @@
             --success: #2ecc71;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -153,17 +157,17 @@
 
         /* --- Documentation Styling --- */
         .doc-section {
-            display: none;
-            animation: fadeIn 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+            display: block; /* Visible stacked vertically */
+            margin-bottom: 120px;
+            scroll-margin-top: 60px; /* Offset for smooth scroll anchors */
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            padding-bottom: 60px;
         }
 
-        .doc-section.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        .doc-section:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 100px;
         }
 
         h2 {
@@ -224,9 +228,32 @@
         }
 
         .card p {
-            font-size: 14px;
+            font-size: 14.5px;
             margin-bottom: 15px;
             color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        .card ul {
+            list-style: none;
+            margin-left: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .card li {
+            font-size: 14px;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card li::before {
+            content: '•';
+            color: var(--accent-2);
+            font-weight: bold;
         }
 
         .code-container {
@@ -372,13 +399,13 @@
         </div>
         <nav style="display: flex; flex-direction: column; height: calc(100% - 100px); justify-content: space-between;">
             <ul class="nav-menu">
-                <li><a class="nav-item active" data-section="intro">🌟 Introduction</a></li>
-                <li><a class="nav-item" data-section="start">⚡ Getting Started</a></li>
-                <li><a class="nav-item" data-section="window-tab">🪟 Windows & Tabs</a></li>
-                <li><a class="nav-item" data-section="elements">🧩 UI Elements</a></li>
-                <li><a class="nav-item" data-section="themes">🎨 Themes & Styling</a></li>
-                <li><a class="nav-item" data-section="keysystem">🔑 Key System Gate</a></li>
-                <li><a class="nav-item" data-section="example">📄 Complete Example</a></li>
+                <li><a class="nav-item active" href="#intro">🌟 Introduction</a></li>
+                <li><a class="nav-item" href="#start">⚡ Getting Started</a></li>
+                <li><a class="nav-item" href="#window-tab">🪟 Windows & Tabs</a></li>
+                <li><a class="nav-item" href="#elements">🧩 UI Elements</a></li>
+                <li><a class="nav-item" href="#themes">🎨 Themes & Styling</a></li>
+                <li><a class="nav-item" href="#keysystem">🔑 Key System Gate</a></li>
+                <li><a class="nav-item" href="#example">📄 Complete Example</a></li>
             </ul>
             <a href="../dashboard/" class="nav-item" style="margin-top: auto; border: 1px solid var(--accent-1); color: var(--accent-2); font-weight: 700; background: rgba(0, 150, 255, 0.05); text-align: center; justify-content: center; box-shadow: 0 4px 15px rgba(0, 150, 255, 0.1);">
                 🎛️ Developer Dashboard
@@ -389,7 +416,7 @@
     <div class="main-wrapper">
 
         <!-- Introduction Section -->
-        <section class="doc-section active" id="intro-section">
+        <section class="doc-section" id="intro">
             <span class="badge">v2.1.0 — Fluent Style</span>
             <h2>Introduction</h2>
             <div class="accent-bar"></div>
@@ -411,7 +438,7 @@
         </section>
 
         <!-- Getting Started Section -->
-        <section class="doc-section" id="start-section">
+        <section class="doc-section" id="start">
             <h2>Getting Started</h2>
             <div class="accent-bar"></div>
             <p>To use Tungsten Hub in your Roblox script, import the library using the global loadstring below. This fetches the latest production build from the official GitHub repository.</p>
@@ -427,7 +454,7 @@
         </section>
 
         <!-- Windows and Tabs Section -->
-        <section class="doc-section" id="window-tab-section">
+        <section class="doc-section" id="window-tab">
             <h2>Windows & Tabs</h2>
             <div class="accent-bar"></div>
             <p>Every hub begins with a Window. Windows hold the global configurations, title, subtitle, optional key verification gate, and tabs.</p>
@@ -459,7 +486,7 @@
         </section>
 
         <!-- UI Elements Section -->
-        <section class="doc-section" id="elements-section">
+        <section class="doc-section" id="elements">
             <h2>UI Elements</h2>
             <div class="accent-bar"></div>
             <p>UI Elements are interactive controls added to tabs. All elements scale automatically to fit content cleanly.</p>
@@ -467,7 +494,7 @@
             <!-- Button -->
             <div class="card">
                 <h3>Buttons <span>Tab:CreateButton()</span></h3>
-                <p>Executes a block of code immediately upon user click.</p>
+                <p>Executes a block of code immediately upon user click. Features a clean card style and dynamic outline highlight transitions.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Click Me!"</span>, <span class="c-keyword">function</span>()
@@ -475,12 +502,13 @@
     print(<span class="c-string">"Button clicked!"</span>)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
+                <p><strong>Returns:</strong> A table containing <code>UpdateButtonText(newText)</code> which allows you to dynamically rename the button after load.</p>
             </div>
 
             <!-- Toggle -->
             <div class="card">
                 <h3>Toggles <span>Tab:CreateToggle()</span></h3>
-                <p>A compact switch control that maintains an ON/OFF state. Sends a boolean state to the callback.</p>
+                <p>A compact switch control that maintains an ON/OFF state. Sends a boolean state to the callback. Implements a fluid sliding knob switch animation.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>MainTab:<span class="c-function">CreateToggle</span>(<span class="c-string">"Enable Autofarm"</span>, <span class="c-boolean">false</span>, <span class="c-keyword">function</span>(state)
@@ -488,12 +516,13 @@
     print(<span class="c-string">"Autofarm active:"</span>, state)
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
+                <p><strong>Returns:</strong> A table containing <code>SetToggle(boolean)</code> to programmatically trigger changes from other functions.</p>
             </div>
 
             <!-- Slider -->
             <div class="card">
                 <h3>Sliders <span>Tab:CreateSlider()</span></h3>
-                <p>Lets users slide across a range of numbers. Perfect for walkspeed, jump power, or range sliders.</p>
+                <p>Lets users slide across a range of numbers. Perfect for walkspeed, jump power, or range sliders. Includes a sliding pointer handle that moves smoothly alongside the progress bar.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>MovementTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed Booster"</span>, <span class="c-number">16</span>, <span class="c-number">200</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(value)
@@ -501,12 +530,13 @@
     game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = value
 <span class="c-keyword">end</span>)</code></pre>
                 </div>
+                <p><strong>Returns:</strong> A table containing <code>SetValue(number)</code> to force set a specific value.</p>
             </div>
 
             <!-- Dropdown -->
             <div class="card">
                 <h3>Dropdowns <span>Tab:CreateDropdown()</span></h3>
-                <p>Collapsible lists allowing the user to pick a single string value from an array of choices.</p>
+                <p>Collapsible lists allowing the user to pick a single string value from an array of choices. Smoothly expands downward with a clip-fade animation.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Choose Region"</span>, {<span class="c-string">"US-East"</span>, <span class="c-string">"EU-West"</span>, <span class="c-string">"Asia-Pacific"</span>}, <span class="c-string">"US-East"</span>, <span class="c-keyword">function</span>(selected)
@@ -518,7 +548,7 @@
             <!-- Textbox -->
             <div class="card">
                 <h3>Textboxes <span>Tab:CreateTextbox()</span></h3>
-                <p>Accepts custom text input. Fires when the user presses Enter.</p>
+                <p>Accepts custom text input. Fires when the user presses Enter. Features clear-on-focus toggling and smooth focus indicators.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>MovementTab:<span class="c-function">CreateTextbox</span>(<span class="c-string">"Custom Tag"</span>, <span class="c-string">"Type here..."</span>, <span class="c-keyword">function</span>(text)
@@ -530,7 +560,7 @@
             <!-- Label -->
             <div class="card">
                 <h3>Labels <span>Tab:CreateLabel()</span></h3>
-                <p>Static headers or notice boxes used to organize elements or list info.</p>
+                <p>Static headers or notice boxes used to organize elements or list info. Supports full multiline wrapping text blocks.</p>
                 <div class="code-container">
                     <button class="copy-btn">Copy</button>
                     <pre><code>MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Version 2.0.0 Update Changelog"</span>)</code></pre>
@@ -539,7 +569,7 @@
         </section>
 
         <!-- Themes Section -->
-        <section class="doc-section" id="themes-section">
+        <section class="doc-section" id="themes">
             <h2>Themes & Styling</h2>
             <div class="accent-bar"></div>
             <p>Tungsten Hub features a dynamic, run-time theme modifier. Themes update all labels, backgrounds, accent gradients, and borders in real-time without needing to redraw the UI.</p>
@@ -568,7 +598,7 @@ Window:<span class="c-function">SetTheme</span>(TungstenHub.Themes.Nebula)</code
         </section>
 
         <!-- Key System Section -->
-        <section class="doc-section" id="keysystem-section">
+        <section class="doc-section" id="keysystem">
             <h2>Key System Gate</h2>
             <div class="accent-bar"></div>
             <p>Tungsten Hub includes an integrated FNV-1a HWID key gate. Developers can easily protect their scripts without having to purchase external hosting or database services.</p>
@@ -595,7 +625,7 @@ Window:<span class="c-function">SetTheme</span>(TungstenHub.Themes.Nebula)</code
         </section>
 
         <!-- Example Section -->
-        <section class="doc-section" id="example-section">
+        <section class="doc-section" id="example">
             <h2>Complete Example</h2>
             <div class="accent-bar"></div>
             <p>Here is a complete, copy-paste example showcasing initialization, multiple tabs, various interactive widgets, notifications, and theme modification controls.</p>
@@ -642,32 +672,52 @@ SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string
     </div>
 
     <script>
-        const navItems = document.querySelectorAll('.nav-item');
-        const sections = document.querySelectorAll('.doc-section');
+        const navLinks = document.querySelectorAll('.nav-item[href^="#"]');
+        const docSections = document.querySelectorAll('.doc-section');
         const menuToggle = document.getElementById('menu-toggle');
         const sidebar = document.getElementById('sidebar');
 
-        navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
-                navItems.forEach(i => i.classList.remove('active'));
-                sections.forEach(s => s.classList.remove('active'));
-
-                item.classList.add('active');
-                const sectionId = item.getAttribute('data-section');
-                document.getElementById(`${sectionId}-section`).classList.add('active');
-
+        // Close mobile sidebar on click
+        navLinks.forEach(link => {
+            link.addEventListener('click', () => {
                 sidebar.classList.remove('open');
                 menuToggle.classList.remove('open');
-                
-                window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         });
 
+        // Hamburger mobile toggle
         menuToggle.addEventListener('click', () => {
             menuToggle.classList.toggle('open');
             sidebar.classList.toggle('open');
         });
 
+        // Intersection Observer Scroll Spy
+        const observerOptions = {
+            root: null,
+            rootMargin: '-10% 0px -70% 0px', // Trigger active state when section occupies the upper-middle screen
+            threshold: 0
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const id = entry.target.getAttribute('id');
+                    
+                    navLinks.forEach(link => {
+                        link.classList.remove('active');
+                        if (link.getAttribute('href') === `#${id}`) {
+                            link.classList.add('active');
+                        }
+                    });
+                }
+            });
+        }, observerOptions);
+
+        docSections.forEach(section => {
+            observer.observe(section);
+        });
+
+        // --- Copy to Clipboard Handler ---
         const copyBtns = document.querySelectorAll('.copy-btn');
         copyBtns.forEach(btn => {
             btn.addEventListener('click', () => {
