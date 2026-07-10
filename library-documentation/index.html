@@ -64,7 +64,7 @@
         .main-wrapper {
             margin-left: 280px;
             flex: 1;
-            padding: 50px 8%;
+            padding: 50px 8% 300px 8%;
             max-width: 1200px;
             min-height: 100vh;
             position: relative;
@@ -699,6 +699,9 @@ SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string
         };
 
         const observer = new IntersectionObserver((entries) => {
+            // Ignore observer updates if we are at the very bottom of the page
+            if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 60) return;
+
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const id = entry.target.getAttribute('id');
@@ -715,6 +718,14 @@ SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string
 
         docSections.forEach(section => {
             observer.observe(section);
+        });
+
+        // Fallback for reaching the very bottom of the page (highlights the last section)
+        window.addEventListener('scroll', () => {
+            if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 60) {
+                navLinks.forEach(link => link.classList.remove('active'));
+                navLinks[navLinks.length - 1].classList.add('active');
+            }
         });
 
         // --- Copy to Clipboard Handler ---
