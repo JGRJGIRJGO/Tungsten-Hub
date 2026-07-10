@@ -1336,7 +1336,7 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
             local Handle = makeElement("Frame", {
                 Name = "Handle",
                 Size = UDim2.new(0, 10, 0, 10),
-                Position = UDim2.new(0, -5, 0.5, -5),
+                Position = UDim2.new(1, -5, 0.5, -5),
                 BackgroundColor3 = Color3.fromRGB(240, 240, 245),
                 BorderSizePixel = 0,
                 Parent = Progress
@@ -1379,14 +1379,14 @@ function TungstenHub:CreateWindow(titleTextOrConfig, subtitleText)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = true
                     moveSlider(input)
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 13, 0, 13), Position = UDim2.new(0, -6.5, 0.5, -6.5)}):Play()
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 13, 0, 13), Position = UDim2.new(1, -6.5, 0.5, -6.5)}):Play()
                 end
             end)
 
             SlidingTrigger.InputEnded:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = false
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 10, 0, 10), Position = UDim2.new(0, -5, 0.5, -5)}):Play()
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 10, 0, 10), Position = UDim2.new(1, -5, 0.5, -5)}):Play()
                 end
             end)
 
