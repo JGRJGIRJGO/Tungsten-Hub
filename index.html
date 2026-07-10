@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --bg-color: #0d0d0f;
@@ -235,6 +236,33 @@
         const keyBox = document.getElementById('key-box');
         const actionBtn = document.getElementById('action-btn');
 
+        // Parse Database configuration parameters
+        const dbUrl = urlParams.get('db_url') || localStorage.getItem('tungsten_db_url');
+        const dbKey = urlParams.get('db_key') || localStorage.getItem('tungsten_db_key');
+        const scriptId = urlParams.get('script_id') || localStorage.getItem('tungsten_script_id');
+
+        let supabaseClient = null;
+        if (dbUrl && dbKey) {
+            try {
+                supabaseClient = supabase.createClient(decodeURIComponent(dbUrl), decodeURIComponent(dbKey));
+            } catch(e) {
+                console.error("Supabase client connection failed:", e);
+            }
+        }
+
+        async function logCheckin(stepNum) {
+            if (!supabaseClient || !scriptId) return;
+            const hwid = hwidParam || localStorage.getItem('tungsten_hwid');
+            if (!hwid) return;
+            try {
+                await supabaseClient
+                    .from('key_redeems')
+                    .insert([{ script_id: scriptId, hwid: hwid, step: stepNum }]);
+            } catch(e) {
+                console.error("Analytics report failed:", e);
+            }
+        }
+
         if (hwidParam && hwidParam.trim() !== "") {
             // Step 1: User came fresh from Roblox. Save HWID, total steps, and checkpoint links.
             const totalSteps = parseInt(stepsParam) || 1;
@@ -242,19 +270,26 @@
             localStorage.setItem('tungsten_total_steps', totalSteps);
             localStorage.setItem('tungsten_current_step', '0');
             
+            // Save database parameters if present
+            if (urlParams.get('db_url')) localStorage.setItem('tungsten_db_url', urlParams.get('db_url'));
+            if (urlParams.get('db_key')) localStorage.setItem('tungsten_db_key', urlParams.get('db_key'));
+            if (urlParams.get('script_id')) localStorage.setItem('tungsten_script_id', urlParams.get('script_id'));
+
             // Save link parameters
             for (let i = 1; i <= totalSteps; i++) {
                 const linkVal = urlParams.get(`link${i}`);
                 if (linkVal) {
                     localStorage.setItem(`tungsten_link_${i}`, decodeURIComponent(linkVal));
                 } else if (i === 1) {
-                    // Fallback default link if not provided
                     localStorage.setItem('tungsten_link_1', 'https://lootdest.org/s?DfJNgxIO');
                 }
             }
 
             statusText.innerText = `Redirecting to Checkpoint 1 of ${totalSteps}...`;
             
+            // Log Checkpoint 1 Start
+            logCheckin(1);
+
             setTimeout(() => {
                 const targetLink = localStorage.getItem('tungsten_link_1');
                 window.location.href = targetLink;
@@ -276,7 +311,9 @@
                 localStorage.setItem('tungsten_current_step', currentStep);
 
                 if (currentStep < totalSteps) {
-                    // Redirect to the next checkpoint link
+                    // Log checkpoint progress
+                    logCheckin(currentStep + 1);
+
                     statusText.innerText = `Checkpoint ${currentStep} completed! Redirecting to Checkpoint ${currentStep + 1} of ${totalSteps}...`;
                     setTimeout(() => {
                         const targetLink = localStorage.getItem(`tungsten_link_${currentStep + 1}`);
@@ -287,6 +324,8 @@
                         }
                     }, 1200);
                 } else {
+                    // Log full completion (marked as step 0)
+                    logCheckin(0);
                     showKey();
                 }
             }

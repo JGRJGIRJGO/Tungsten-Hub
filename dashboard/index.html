@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Include Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --bg-color: #08080a;
@@ -41,6 +43,60 @@
             min-height: 100vh;
             display: flex;
             overflow-x: hidden;
+        }
+
+        /* --- Setup Screen --- */
+        .setup-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-color);
+            z-index: 1100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .setup-screen.hidden {
+            display: none;
+        }
+
+        .setup-card {
+            background: var(--container-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--stroke-color);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6);
+            position: relative;
+        }
+
+        .setup-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 3px;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+            border-radius: 16px 16px 0 0;
+        }
+
+        .setup-card h2 {
+            font-size: 26px;
+            font-weight: 800;
+            margin-bottom: 5px;
+            background: linear-gradient(135deg, #ffffff 40%, var(--text-dark) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .setup-card p {
+            color: var(--text-dark);
+            font-size: 13px;
+            margin-bottom: 25px;
+            line-height: 1.5;
         }
 
         /* --- Login Screen --- */
@@ -200,10 +256,12 @@
             min-height: 100vh;
             opacity: 0;
             transition: opacity 0.5s ease;
+            pointer-events: none;
         }
 
         .dashboard-wrapper.visible {
             opacity: 1;
+            pointer-events: auto;
         }
 
         .sidebar {
@@ -308,6 +366,9 @@
 
         .panel-header {
             margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .panel-header h2 {
@@ -354,18 +415,6 @@
             letter-spacing: -0.5px;
         }
 
-        .stat-card .stat-trend {
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 6px;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .stat-trend.up { color: var(--success); }
-        .stat-trend.down { color: var(--danger); }
-
         /* --- Graphs / Visuals --- */
         .graph-card {
             background: var(--container-bg);
@@ -406,9 +455,10 @@
             width: 100%;
             background: linear-gradient(to top, var(--accent-1), var(--accent-2));
             border-radius: 4px 4px 0 0;
-            transition: height 1s ease;
+            transition: height 0.5s ease;
             max-width: 45px;
             box-shadow: 0 4px 12px var(--accent-glow);
+            height: 0%; /* Dynamic */
         }
 
         .chart-label {
@@ -442,7 +492,6 @@
             margin-bottom: 25px;
         }
 
-        /* Select Switch Button Styling */
         .pill-select {
             display: flex;
             background: rgba(0, 0, 0, 0.25);
@@ -532,7 +581,6 @@
             color: #d4d4d4;
         }
 
-        /* Syntax Color styling */
         .c-comment { color: #6a9955; }
         .c-string { color: #ce9178; }
         .c-keyword { color: #569cd6; }
@@ -574,9 +622,10 @@
         }
 
         .script-info p {
-            font-size: 12px;
-            color: var(--text-dark);
+            font-size: 11px;
+            color: var(--text-muted);
             margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .script-badge {
@@ -594,7 +643,8 @@
 
         .script-actions {
             display: flex;
-            gap: 10px;
+            align-items: center;
+            gap: 15px;
         }
 
         .btn-danger {
@@ -636,40 +686,117 @@
             transform: translateY(0);
             opacity: 1;
         }
+
+        /* --- Config Details Link --- */
+        .config-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--stroke-color);
+            color: var(--text-main);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .config-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
     </style>
 </head>
 <body>
 
-    <!-- Toast Notification Banner -->
-    <div class="toast" id="toast">Toast Message</div>
+    <!-- Toast Banner -->
+    <div class="toast" id="toast">Success</div>
+
+    <!-- Configuration Setup Overlay Screen -->
+    <div class="setup-screen" id="setup-screen">
+        <div class="setup-card">
+            <h2>Backend Database Integration</h2>
+            <p>Tungsten Hub uses <strong>Supabase</strong> (a free, open-source serverless PostgreSQL database) to enable secure user authentication, script registering, and real analytics logging directly from your GitHub Pages. Follow these quick steps to get connected:</p>
+            
+            <div style="text-align: left; background: rgba(0, 0, 0, 0.25); padding: 20px; border-radius: 8px; border: 1px solid var(--stroke-color); margin-bottom: 25px; font-size: 13.5px; line-height: 1.6;">
+                <h4 style="color: var(--accent-2); margin-bottom: 10px;">1. Create Database Tables</h4>
+                <p>Sign up at <a href="https://supabase.com" target="_blank" style="color: var(--accent-1); text-decoration: none; font-weight: 600;">supabase.com</a> (completely free), create a project, open the <strong>SQL Editor</strong> tab, paste this SQL script, and click <strong>Run</strong>:</p>
+                
+                <div class="code-wrapper" style="margin-top: 10px; max-height: 150px; padding: 10px;">
+                    <pre><code style="font-size: 11.5px;">-- Create Scripts Table
+create table public.scripts (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  name text not null,
+  version text not null default '1.0.0',
+  status text not null default 'Active',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Create Key Settings Table
+create table public.key_settings (
+  script_id uuid references public.scripts(id) on delete cascade primary key,
+  steps integer not null default 1,
+  salt text not null default 'TungstenSaltKey',
+  file_name text not null default 'tungsten_key.txt',
+  link_1 text,
+  link_2 text,
+  link_3 text
+);
+
+-- Create Key Redeems Table
+create table public.key_redeems (
+  id uuid default gen_random_uuid() primary key,
+  script_id uuid references public.scripts(id) on delete cascade not null,
+  hwid text not null,
+  step integer not null default 1,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);</code></pre>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Supabase Project URL (Settings -> API)</label>
+                <input type="text" class="input-field" id="setup-url" placeholder="https://your-project.supabase.co">
+            </div>
+
+            <div class="input-group">
+                <label>Supabase Public Anon Key (Settings -> API)</label>
+                <input type="text" class="input-field" id="setup-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+            </div>
+
+            <button class="login-btn" id="setup-submit-btn">Save Configuration & Connect</button>
+        </div>
+    </div>
 
     <!-- Login Screen -->
-    <div class="login-screen" id="login-screen">
+    <div class="login-screen hidden" id="login-screen">
         <div class="login-card">
             <h2>Tungsten Portal</h2>
             <p>Sign in to manage your key systems & scripts</p>
             
             <div class="input-group">
                 <label>Email Address</label>
-                <input type="email" class="input-field" placeholder="developer@tungsten.gg" value="developer@tungsten.gg">
+                <input type="email" class="input-field" id="login-email" placeholder="developer@tungsten.gg">
             </div>
 
             <div class="input-group">
                 <label>Password</label>
-                <input type="password" class="input-field" placeholder="••••••••" value="password123">
+                <input type="password" class="input-field" id="login-pass" placeholder="••••••••">
             </div>
 
-            <button class="login-btn" id="login-btn">Log In</button>
+            <button class="login-btn" id="login-submit-btn">Log In</button>
+            <button class="google-btn" id="signup-submit-btn" style="margin-top: 10px; background: rgba(0, 150, 255, 0.05); border-color: rgba(0, 150, 255, 0.2);">Sign Up</button>
 
             <div class="divider">or</div>
 
-            <button class="google-btn" id="google-btn">
+            <button class="google-btn" id="google-login-btn">
                 <svg class="google-icon" viewBox="0 0 24 24">
                     <path fill="#EA4335" d="M12 5.04c1.67 0 3.19.57 4.38 1.69l3.27-3.27C17.67 1.58 15.01 1 12 1 7.37 1 3.4 3.63 1.45 7.45l3.86 3C6.26 7.4 8.87 5.04 12 5.04z"/>
                     <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.47h6.47c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-2 3.7-4.94 3.7-8.56z"/>
                     <path fill="#FBBC05" d="M5.31 14.55c-.24-.72-.38-1.5-.38-2.3s.14-1.58.38-2.3L1.45 7.45C.52 9.27 0 11.28 0 13.43s.52 4.16 1.45 5.98l3.86-3z"/>
                     <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.7-2.87c-1.03.69-2.34 1.1-4.26 1.1-3.13 0-5.74-2.36-6.69-5.41l-3.86 3C3.4 20.37 7.37 23 12 23z"/>
-                </</svg>
+                </svg>
                 Continue with Google
             </button>
         </div>
@@ -684,13 +811,19 @@
                 <h1>Tungsten Hub</h1>
                 <p>Developer Console</p>
             </div>
-            <nav>
+            <nav style="display: flex; flex-direction: column; height: calc(100% - 100px); justify-content: space-between;">
                 <ul class="nav-menu">
                     <li><a class="nav-item active" data-panel="analytics">📊 Analytics</a></li>
                     <li><a class="nav-item" data-panel="scripts">📜 My Scripts</a></li>
                     <li><a class="nav-item" data-panel="keysettings">🔑 Key Settings</a></li>
-                    <li><a class="nav-item" id="logout-btn">🚪 Sign Out</a></li>
                 </ul>
+                
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+                    <button class="config-btn" id="reconfigure-btn">
+                        ⚙️ DB Config
+                    </button>
+                    <a class="nav-item" id="logout-btn" style="padding: 10px 16px;">🚪 Sign Out</a>
+                </div>
             </nav>
         </aside>
 
@@ -701,57 +834,54 @@
             <section class="panel active" id="analytics-panel">
                 <div class="panel-header">
                     <h2>Analytics Overview</h2>
-                    <p>Track your script launches and key generation checkins</p>
+                    <p>Track your script launches and key generation checkins from your live database</p>
                 </div>
 
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-title">Total Key Requests</div>
-                        <div class="stat-value">1,482</div>
-                        <div class="stat-trend up">▲ 14.2% this week</div>
+                        <div class="stat-value" id="stats-total-req">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-title">Completed Checkpoints</div>
-                        <div class="stat-value">1,126</div>
-                        <div class="stat-trend up">▲ 8.6% this week</div>
+                        <div class="stat-title">Total Keys Generated</div>
+                        <div class="stat-value" id="stats-total-redeemed">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-title">Completion Rate</div>
-                        <div class="stat-value">75.9%</div>
-                        <div class="stat-trend down">▼ 0.4% this week</div>
+                        <div class="stat-title">Verification Completion Rate</div>
+                        <div class="stat-value" id="stats-pass-rate">0%</div>
                     </div>
                 </div>
 
                 <div class="graph-card">
-                    <h3>Daily Verification Traffic</h3>
-                    <div class="mock-chart">
+                    <h3>Redeems in the last 7 days</h3>
+                    <div class="mock-chart" id="analytics-chart">
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 45%;"></div>
-                            <div class="chart-label">Mon</div>
+                            <div class="chart-bar" id="chart-d1"></div>
+                            <div class="chart-label" id="label-d1">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 60%;"></div>
-                            <div class="chart-label">Tue</div>
+                            <div class="chart-bar" id="chart-d2"></div>
+                            <div class="chart-label" id="label-d2">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 52%;"></div>
-                            <div class="chart-label">Wed</div>
+                            <div class="chart-bar" id="chart-d3"></div>
+                            <div class="chart-label" id="label-d3">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 80%;"></div>
-                            <div class="chart-label">Thu</div>
+                            <div class="chart-bar" id="chart-d4"></div>
+                            <div class="chart-label" id="label-d4">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 72%;"></div>
-                            <div class="chart-label">Fri</div>
+                            <div class="chart-bar" id="chart-d5"></div>
+                            <div class="chart-label" id="label-d5">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 95%;"></div>
-                            <div class="chart-label">Sat</div>
+                            <div class="chart-bar" id="chart-d6"></div>
+                            <div class="chart-label" id="label-d6">-</div>
                         </div>
                         <div class="chart-bar-wrapper">
-                            <div class="chart-bar" style="height: 88%;"></div>
-                            <div class="chart-label">Sun</div>
+                            <div class="chart-bar" id="chart-d7"></div>
+                            <div class="chart-label" id="label-d7">Today</div>
                         </div>
                     </div>
                 </div>
@@ -782,7 +912,7 @@
                 <h3>Registered Scripts</h3>
                 <br>
                 <div class="script-list" id="script-list-container">
-                    <!-- Script items load here -->
+                    <p style="color: var(--text-dark); font-size: 14px;">Loading registered scripts from database...</p>
                 </div>
             </section>
 
@@ -794,47 +924,55 @@
                 </div>
 
                 <div class="settings-card">
-                    <h3>Redirection Checkpoints</h3>
+                    <div class="input-group">
+                        <label>Select Script to Configure</label>
+                        <select class="input-field" id="settings-script-selector" style="background: rgba(0, 0, 0, 0.45); color: #fff;">
+                            <option value="">-- Choose Script --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="settings-controls-section" style="display: none;">
+                    <div class="settings-card">
+                        <h3>Redirection Checkpoints</h3>
+                        
+                        <div class="input-group" style="margin-bottom: 25px;">
+                            <label>Monetization Steps Count</label>
+                            <div class="pill-select">
+                                <div class="pill-option active" data-steps="1">1 Checkpoint</div>
+                                <div class="pill-option" data-steps="2">2 Checkpoints</div>
+                                <div class="pill-option" data-steps="3">3 Checkpoints</div>
+                            </div>
+                        </div>
+
+                        <div id="checkpoint-inputs-holder">
+                            <!-- Link inputs go here -->
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3>System Configurations</h3>
+                        <div class="row-grid">
+                            <div class="input-group">
+                                <label>Local Caching Key File (in executor workspace/)</label>
+                                <input type="text" class="input-field" id="cfg-file" value="tungsten_key.txt">
+                            </div>
+                            <div class="input-group">
+                                <label>Encryption Salt Key</label>
+                                <input type="text" class="input-field" id="cfg-salt" value="TungstenSecureKeySystem_V3_Reset_8F2D">
+                            </div>
+                        </div>
+                        <button class="login-btn" id="save-settings-btn" style="max-width: 180px;">Save Key Config</button>
+                    </div>
+
+                    <div class="code-title">
+                        <h4>Generated Roblox Lua Integration</h4>
+                        <button class="copy-btn" id="copy-lua-btn">Copy Script</button>
+                    </div>
                     
-                    <div class="input-group" style="margin-bottom: 25px;">
-                        <label>Monetization Steps Count</label>
-                        <div class="pill-select">
-                            <div class="pill-option active" data-steps="1">1 Checkpoint</div>
-                            <div class="pill-option" data-steps="2">2 Checkpoints</div>
-                            <div class="pill-option" data-steps="3">3 Checkpoints</div>
-                        </div>
+                    <div class="code-wrapper">
+                        <pre><code id="generated-lua-block"></code></pre>
                     </div>
-
-                    <div id="checkpoint-inputs-holder">
-                        <!-- Dynamic Link Inputs based on step count -->
-                        <div class="input-group">
-                            <label>Checkpoint 1 URL (e.g. LootLabs / Linkvertise link)</label>
-                            <input type="text" class="input-field chk-url" id="chk-1" placeholder="https://lootdest.org/s?DfJNgxIO" value="https://lootdest.org/s?DfJNgxIO">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="settings-card">
-                    <h3>System Configurations</h3>
-                    <div class="row-grid">
-                        <div class="input-group">
-                            <label>Local Caching Key File (in executor workspace/)</label>
-                            <input type="text" class="input-field" id="cfg-file" placeholder="tungsten_key.txt" value="tungsten_key.txt">
-                        </div>
-                        <div class="input-group">
-                            <label>Encryption Salt Key</label>
-                            <input type="text" class="input-field" id="cfg-salt" placeholder="TungstenSaltKey" value="TungstenSecureKeySystem_V3_Reset_8F2D">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="code-title">
-                    <h4>Generated Roblox Lua Integration</h4>
-                    <button class="copy-btn" id="copy-lua-btn">Copy Script</button>
-                </div>
-                
-                <div class="code-wrapper">
-                    <pre><code id="generated-lua-block"></code></pre>
                 </div>
             </section>
 
@@ -842,137 +980,238 @@
     </div>
 
     <script>
-        // --- Navigation Controller ---
-        const navItems = document.querySelectorAll('.nav-item[data-panel]');
-        const panels = document.querySelectorAll('.panel');
+        let supabaseClient = null;
+        let currentUser = null;
 
-        navItems.forEach(item => {
-            item.addEventListener('click', () => {
-                navItems.forEach(i => i.classList.remove('active'));
-                panels.forEach(p => p.classList.remove('active'));
-
-                item.classList.add('active');
-                const panelId = item.getAttribute('data-panel');
-                document.getElementById(`${panelId}-panel`).classList.add('active');
-            });
-        });
-
-        // --- Auth Mock ---
-        const loginBtn = document.getElementById('login-btn');
-        const googleBtn = document.getElementById('google-btn');
-        const logoutBtn = document.getElementById('logout-btn');
+        const setupScreen = document.getElementById('setup-screen');
         const loginScreen = document.getElementById('login-screen');
         const dashboardWrapper = document.getElementById('dashboard-wrapper');
-
-        function showDashboard() {
-            loginScreen.classList.add('hidden');
-            dashboardWrapper.classList.add('visible');
-            showToast("Successfully logged in!");
-        }
-
-        function showLogin() {
-            dashboardWrapper.classList.remove('visible');
-            loginScreen.classList.remove('hidden');
-        }
-
-        loginBtn.addEventListener('click', showDashboard);
-        googleBtn.addEventListener('click', showDashboard);
-        logoutBtn.addEventListener('click', showLogin);
-
-        // Check if mock user already logged in previously
-        if(localStorage.getItem('tungsten_logged_in') === 'true') {
-            showDashboard();
-        }
-
-        // --- Toast Controller ---
         const toast = document.getElementById('toast');
+
+        // --- Toast Alert Helper ---
         function showToast(msg, isSuccess = true) {
             toast.innerText = msg;
             toast.style.background = isSuccess ? 'var(--success)' : 'var(--danger)';
             toast.classList.add('show');
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // --- Scripts State Management (LocalStorage synced) ---
-        const defaultScripts = [
-            { id: 1, name: "Universal Booster", version: "2.1.0", status: "Active" },
-            { id: 2, name: "Jailbreak Coin Autofarm", version: "1.0.4", status: "Active" }
-        ];
+        // --- Initialize Connection to Supabase ---
+        function initSupabase() {
+            const url = localStorage.getItem('tungsten_sb_url');
+            const key = localStorage.getItem('tungsten_sb_key');
 
-        function getScripts() {
-            const data = localStorage.getItem('tungsten_scripts');
-            if(!data) {
-                localStorage.setItem('tungsten_scripts', JSON.stringify(defaultScripts));
-                return defaultScripts;
+            if (url && key) {
+                try {
+                    supabaseClient = supabase.createClient(url, key);
+                    setupScreen.classList.add('hidden');
+                    checkSession();
+                } catch(e) {
+                    showToast("Invalid credentials format", false);
+                    localStorage.removeItem('tungsten_sb_url');
+                    localStorage.removeItem('tungsten_sb_key');
+                    setupScreen.classList.remove('hidden');
+                }
+            } else {
+                setupScreen.classList.remove('hidden');
             }
-            return JSON.parse(data);
         }
 
-        function saveScripts(scripts) {
-            localStorage.setItem('tungsten_scripts', JSON.stringify(scripts));
-            renderScripts();
-        }
+        // Handle database configuration submission
+        document.getElementById('setup-submit-btn').addEventListener('click', () => {
+            const url = document.getElementById('setup-url').value.trim();
+            const key = document.getElementById('setup-key').value.trim();
 
-        const scriptListContainer = document.getElementById('script-list-container');
-        const newScriptName = document.getElementById('new-script-name');
-        const newScriptVersion = document.getElementById('new-script-version');
-        const addScriptBtn = document.getElementById('add-script-btn');
-
-        function renderScripts() {
-            const scripts = getScripts();
-            scriptListContainer.innerHTML = '';
-            
-            scripts.forEach(s => {
-                const item = document.createElement('div');
-                item.className = 'script-item';
-                item.innerHTML = `
-                    <div class="script-info">
-                        <h4>${s.name} <span>v${s.version}</span></h4>
-                        <p>ID: tungsten_${s.name.toLowerCase().replace(/\s+/g, '_')}</p>
-                    </div>
-                    <div class="script-actions">
-                        <span class="script-badge active">${s.status}</span>
-                        <button class="btn-danger" onclick="deleteScript(${s.id})">Delete</button>
-                    </div>
-                `;
-                scriptListContainer.appendChild(item);
-            });
-        }
-
-        addScriptBtn.addEventListener('click', () => {
-            const name = newScriptName.value.trim();
-            const version = newScriptVersion.value.trim();
-            
-            if(!name || !version) {
-                showToast("Please fill in all script fields", false);
+            if (!url || !key) {
+                showToast("Please enter both Supabase credentials", false);
                 return;
             }
 
-            const scripts = getScripts();
-            const newId = scripts.length > 0 ? Math.max(...scripts.map(s => s.id)) + 1 : 1;
-            
-            scripts.push({
-                id: newId,
-                name: name,
-                version: version,
-                status: "Active"
-            });
-
-            saveScripts(scripts);
-            newScriptName.value = '';
-            showToast("Script registered successfully!");
+            localStorage.setItem('tungsten_sb_url', url);
+            localStorage.setItem('tungsten_sb_key', key);
+            initSupabase();
         });
 
-        window.deleteScript = function(id) {
-            let scripts = getScripts();
-            scripts = scripts.filter(s => s.id !== id);
-            saveScripts(scripts);
-            showToast("Script deleted successfully!");
+        document.getElementById('reconfigure-btn').addEventListener('click', () => {
+            localStorage.removeItem('tungsten_sb_url');
+            localStorage.removeItem('tungsten_sb_key');
+            setupScreen.classList.remove('hidden');
+            loginScreen.classList.add('hidden');
+            dashboardWrapper.classList.remove('visible');
+        });
+
+        // --- Session check ---
+        async function checkSession() {
+            if (!supabaseClient) return;
+            
+            const { data: { session }, error } = await supabaseClient.auth.getSession();
+            if (session) {
+                currentUser = session.user;
+                loginScreen.classList.add('hidden');
+                dashboardWrapper.classList.add('visible');
+                loadDashboardData();
+            } else {
+                loginScreen.classList.remove('hidden');
+                dashboardWrapper.classList.remove('visible');
+            }
+        }
+
+        // --- Authentication Actions ---
+        document.getElementById('login-submit-btn').addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-pass').value.trim();
+
+            if (!email || !password) {
+                showToast("Please enter email and password", false);
+                return;
+            }
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                showToast(error.message, false);
+            } else {
+                currentUser = data.user;
+                checkSession();
+            }
+        });
+
+        document.getElementById('signup-submit-btn').addEventListener('click', async () => {
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-pass').value.trim();
+
+            if (!email || password.length < 6) {
+                showToast("Password must be at least 6 characters", false);
+                return;
+            }
+
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) {
+                showToast(error.message, false);
+            } else {
+                showToast("Sign up successful! Please check your email for confirmation.");
+            }
+        });
+
+        document.getElementById('google-login-btn').addEventListener('click', async () => {
+            const { error } = await supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: window.location.href
+                }
+            });
+            if (error) showToast(error.message, false);
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await supabaseClient.auth.signOut();
+            currentUser = null;
+            checkSession();
+        });
+
+        // --- Load Dashboard Data ---
+        function loadDashboardData() {
+            fetchScripts();
+            fetchAnalytics();
+        }
+
+        // --- Scripts State Management (Real Supabase integration) ---
+        async function fetchScripts() {
+            if (!supabaseClient || !currentUser) return;
+
+            const { data: scripts, error } = await supabaseClient
+                .from('scripts')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                showToast("Error loading scripts: " + error.message, false);
+                return;
+            }
+
+            const container = document.getElementById('script-list-container');
+            const selector = document.getElementById('settings-script-selector');
+            
+            // Render Script List in tab
+            container.innerHTML = '';
+            if (scripts.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-dark); font-size: 14px;">No scripts registered yet. Add your first script above!</p>';
+            } else {
+                scripts.forEach(s => {
+                    const item = document.createElement('div');
+                    item.className = 'script-item';
+                    item.innerHTML = `
+                        <div class="script-info">
+                            <h4>${s.name} <span>v${s.version}</span></h4>
+                            <p>Script ID: ${s.id}</p>
+                        </div>
+                        <div class="script-actions">
+                            <span class="script-badge active">${s.status}</span>
+                            <button class="btn-danger" onclick="deleteScript('${s.id}')">Delete</button>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+            }
+
+            // Fill script dropdown in settings tab
+            const previousSelection = selector.value;
+            selector.innerHTML = '<option value="">-- Choose Script --</option>';
+            scripts.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.innerText = `${s.name} (v${s.version})`;
+                selector.appendChild(opt);
+            });
+            selector.value = previousSelection;
+        }
+
+        // Add script
+        document.getElementById('add-script-btn').addEventListener('click', async () => {
+            const name = document.getElementById('new-script-name').value.trim();
+            const version = document.getElementById('new-script-version').value.trim();
+
+            if (!name || !version) {
+                showToast("Please fill in script name & version", false);
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from('scripts')
+                .insert([{ name, version, user_id: currentUser.id }]);
+
+            if (error) {
+                showToast(error.message, false);
+            } else {
+                showToast("Script registered successfully!");
+                document.getElementById('new-script-name').value = '';
+                fetchScripts();
+            }
+        });
+
+        // Delete script
+        window.deleteScript = async function(id) {
+            if (!confirm("Are you sure you want to delete this script? This will delete all key settings and analytics history for it.")) return;
+
+            const { error } = await supabaseClient
+                .from('scripts')
+                .delete()
+                .eq('id', id);
+
+            if (error) {
+                showToast(error.message, false);
+            } else {
+                showToast("Script deleted successfully!");
+                fetchScripts();
+                if (document.getElementById('settings-script-selector').value === id) {
+                    document.getElementById('settings-script-selector').value = '';
+                    document.getElementById('settings-controls-section').style.display = 'none';
+                }
+            }
         };
 
-        // --- Key Settings Form & Generator Logic ---
+        // --- Key Settings Panels ---
+        const selector = document.getElementById('settings-script-selector');
+        const settingsControls = document.getElementById('settings-controls-section');
         const stepOptions = document.querySelectorAll('.pill-option[data-steps]');
         const checkpointInputsHolder = document.getElementById('checkpoint-inputs-holder');
         const cfgFile = document.getElementById('cfg-file');
@@ -981,6 +1220,50 @@
         const copyLuaBtn = document.getElementById('copy-lua-btn');
 
         let activeSteps = 1;
+
+        selector.addEventListener('change', async () => {
+            const scriptId = selector.value;
+            if (!scriptId) {
+                settingsControls.style.display = 'none';
+                return;
+            }
+
+            // Fetch existing config if any
+            const { data: config, error } = await supabaseClient
+                .from('key_settings')
+                .select('*')
+                .eq('script_id', scriptId)
+                .single();
+
+            if (config) {
+                activeSteps = config.steps || 1;
+                cfgFile.value = config.file_name || 'tungsten_key.txt';
+                cfgSalt.value = config.salt || 'TungstenSecureKeySystem_V3_Reset_8F2D';
+                
+                // Select proper pill
+                stepOptions.forEach(o => {
+                    o.classList.remove('active');
+                    if (parseInt(o.getAttribute('data-steps')) === activeSteps) {
+                        o.classList.add('active');
+                    }
+                });
+
+                renderCheckpointInputs(config);
+            } else {
+                // Default settings
+                activeSteps = 1;
+                cfgFile.value = 'tungsten_key.txt';
+                cfgSalt.value = 'TungstenSecureKeySystem_V3_Reset_8F2D';
+                stepOptions.forEach(o => {
+                    o.classList.remove('active');
+                    if (o.getAttribute('data-steps') === '1') o.classList.add('active');
+                });
+                renderCheckpointInputs();
+            }
+
+            settingsControls.style.display = 'block';
+            generateLuaCode();
+        });
 
         stepOptions.forEach(opt => {
             opt.addEventListener('click', () => {
@@ -993,30 +1276,65 @@
             });
         });
 
-        function renderCheckpointInputs() {
+        function renderCheckpointInputs(existingConfig = null) {
             checkpointInputsHolder.innerHTML = '';
             for(let i = 1; i <= activeSteps; i++) {
                 const group = document.createElement('div');
                 group.className = 'input-group';
                 group.style.marginTop = i > 1 ? '15px' : '0px';
                 
-                const val = i === 1 ? 'https://lootdest.org/s?DfJNgxIO' : '';
+                let val = '';
+                if (existingConfig) {
+                    val = existingConfig[`link_${i}`] || '';
+                } else if (i === 1) {
+                    val = 'https://lootdest.org/s?DfJNgxIO';
+                }
+
                 group.innerHTML = `
                     <label>Checkpoint ${i} URL (e.g. Linkvertise / LootLabs link)</label>
                     <input type="text" class="input-field chk-url" id="chk-${i}" placeholder="Enter Link ${i} here..." value="${val}">
                 `;
                 
                 checkpointInputsHolder.appendChild(group);
-                
-                // Add change listener to regenerate code when typing URLs
                 group.querySelector('input').addEventListener('input', generateLuaCode);
             }
         }
+
+        // Save key settings
+        document.getElementById('save-settings-btn').addEventListener('click', async () => {
+            const scriptId = selector.value;
+            const fileName = cfgFile.value.trim();
+            const salt = cfgSalt.value.trim();
+
+            if (!scriptId || !fileName || !salt) return;
+
+            const upsertPayload = {
+                script_id: scriptId,
+                steps: activeSteps,
+                file_name: fileName,
+                salt: salt,
+                link_1: document.getElementById('chk-1') ? document.getElementById('chk-1').value.trim() : null,
+                link_2: document.getElementById('chk-2') ? document.getElementById('chk-2').value.trim() : null,
+                link_3: document.getElementById('chk-3') ? document.getElementById('chk-3').value.trim() : null
+            };
+
+            const { error } = await supabaseClient
+                .from('key_settings')
+                .upsert(upsertPayload);
+
+            if (error) {
+                showToast(error.message, false);
+            } else {
+                showToast("Key system settings saved!");
+                generateLuaCode();
+            }
+        });
 
         cfgFile.addEventListener('input', generateLuaCode);
         cfgSalt.addEventListener('input', generateLuaCode);
 
         function generateLuaCode() {
+            const scriptId = selector.value;
             const fileName = cfgFile.value.trim() || 'tungsten_key.txt';
             const salt = cfgSalt.value.trim() || 'TungstenSaltKey';
             
@@ -1026,56 +1344,60 @@
                 urls.push(el ? el.value.trim() : '');
             }
 
-            // Construct client redirect chain landing page base
-            let gateUrl = 'https://jgrjgirjgo.github.io/Tungsten-Hub/';
+            const gateUrl = 'https://jgrjgirjgo.github.io/Tungsten-Hub/';
+            const dbUrl = localStorage.getItem('tungsten_sb_url');
+            const dbKey = localStorage.getItem('tungsten_sb_key');
             
-            // Build the dynamic note block to output in Lua code representing step settings
-            let stepNote = `Please complete all ${activeSteps} ad steps to get your key.`;
+            let queryParams = `?hwid=" .. getHardwareID() .. "&script_id=${scriptId}&db_url=${encodeURIComponent(dbUrl)}&db_key=${encodeURIComponent(dbKey)}&steps=${activeSteps}`;
+            
+            for (let i = 1; i <= activeSteps; i++) {
+                queryParams += `&link${i}=` .. game:GetService("HttpService"):UrlEncode(urls[i-1] || '')
+            }
 
-            let code = `<span class="c-comment">-- Custom Tungsten Hub Key System Configuration</span>
-<span class="c-keyword">local</span> TungstenHub = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua"</span>))()
+            let code = `-- Tungsten Secure Key System Loadstring
+local TungstenHub = loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua"))()
 
-<span class="c-comment">-- Generate HWID daily key securely matching your dashboard config</span>
-<span class="c-keyword">local function</span> <span class="c-function">getHardwareID</span>()
-    <span class="c-keyword">local</span> hwid = <span class="c-function">tostring</span>(game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.UserId)
-    <span class="c-keyword">if</span> gethwid <span class="c-keyword">then</span>
-        <span class="c-keyword">local</span> success, result = <span class="c-function">pcall</span>(gethwid)
-        <span class="c-keyword">if</span> success <span class="c-keyword">and</span> <span class="c-function">type</span>(result) == <span class="c-string">"string"</span> <span class="c-keyword">then</span> hwid = result <span class="c-keyword">end</span>
-    <span class="c-keyword">end</span>
-    <span class="c-keyword">return</span> hwid:<span class="c-function">gsub</span>(<span class="c-string">"%s+"</span>, <span class="c-string">""</span>)
-<span class="c-keyword">end</span>
+-- Generate HWID daily key securely matching your dashboard config
+local function getHardwareID()
+    local hwid = tostring(game:GetService("Players").LocalPlayer.UserId)
+    if gethwid then
+        local success, result = pcall(gethwid)
+        if success and type(result) == "string" then hwid = result end
+    end
+    return hwid:gsub("%s+", "")
+end
 
-<span class="c-keyword">local function</span> <span class="c-function">getDailyHWIDKey</span>()
-    <span class="c-keyword">local</span> input = <span class="c-function">getHardwareID</span>() .. <span class="c-string">"_${salt}_"</span> .. <span class="c-function">os.date</span>(<span class="c-string">"!%d%m%Y"</span>)
-    <span class="c-keyword">local</span> hash = <span class="c-number">2166136261</span>
-    <span class="c-keyword">for</span> i = <span class="c-number">1</span>, #input <span class="c-keyword">do</span>
+local function getDailyHWIDKey()
+    local input = getHardwareID() .. "_${salt}_" .. os.date("!%d%m%Y")
+    local hash = 2166136261
+    for i = 1, #input do
         hash = bit32.bxor(hash, string.byte(input, i))
-        hash = bit32.band(hash * <span class="c-number">16777619</span>, <span class="c-number">0xFFFFFFFF</span>)
-    <span class="c-keyword">end</span>
-    <span class="c-keyword">return</span> <span class="c-string">"Tungsten_"</span> .. string.format(<span class="c-string">"%X"</span>, hash)
-<span class="c-keyword">end</span>
+        hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
+    end
+    return "Tungsten_" .. string.format("%X", hash)
+end
 
-<span class="c-comment">-- Initialize UI Window</span>
-<span class="c-keyword">local</span> Window = TungstenHub:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Tungsten Protected Hub"</span>,
-    Subtitle = <span class="c-string">"Roblox Cheat v1.0"</span>,
+-- Initialize UI Window
+local Window = TungstenHub:CreateWindow({
+    Name = "${selector.options[selector.selectedIndex].text}",
+    Subtitle = "Protected Loader",
     KeySettings = {
-        Title = <span class="c-string">"Verification Gate"</span>,
-        Subtitle = <span class="c-string">"Tungsten Hub"</span>,
-        Note = <span class="c-string">"${stepNote}"</span>,
-        SaveKey = <span class="c-boolean">true</span>,
-        Key = <span class="c-function">getDailyHWIDKey</span>(),
-        Url = <span class="c-string">"${gateUrl}?hwid="</span> .. <span class="c-function">getHardwareID</span>() .. <span class="c-string">"&steps=${activeSteps}"</span>
+        Title = "Key Verification",
+        Subtitle = "Tungsten Hub",
+        Note = "Please complete all ${activeSteps} ad checkpoints to unlock.",
+        SaveKey = true,
+        Key = getDailyHWIDKey(),
+        Url = "${gateUrl}${queryParams}
     }
 })
 `;
-            // Insert dynamic parameters
+            // Interpolate values
             code = code.replace('${salt}', salt)
-                       .replace('${stepNote}', stepNote)
+                       .replace('${activeSteps}', activeSteps.toString())
                        .replace('${gateUrl}', gateUrl)
-                       .replace('${activeSteps}', activeSteps.toString());
+                       .replace('${queryParams}', queryParams);
 
-            generatedLuaBlock.innerHTML = code;
+            generatedLuaBlock.innerText = code;
         }
 
         // Copy button action
@@ -1091,9 +1413,79 @@
             });
         });
 
-        // Initialize lists & code on load
-        renderScripts();
-        generateLuaCode();
+        // --- Fetch & Draw Real Analytics ---
+        async function fetchAnalytics() {
+            if (!supabaseClient || !currentUser) return;
+
+            // Fetch key requests (step = 1 or above)
+            const { data: checkins, error: err1 } = await supabaseClient
+                .from('key_redeems')
+                .select('created_at, step');
+
+            if (err1) return;
+
+            // Process Total stats
+            const totalRequests = checkins.filter(c => c.step === 1).length;
+            
+            // Group by steps to find redeems. Redeems happen at step 0 (which marks final finish) or we check the max step
+            // Let's assume step 0 marks a completed validation
+            const totalRedeemed = checkins.filter(c => c.step === 0).length;
+            const passRate = totalRequests > 0 ? Math.round((totalRedeemed / totalRequests) * 100) : 0;
+
+            document.getElementById('stats-total-req').innerText = totalRequests;
+            document.getElementById('stats-total-redeemed').innerText = totalRedeemed;
+            document.getElementById('stats-pass-rate').innerText = `${passRate}%`;
+
+            // Draw Chart: Filter redeems (step=0) by date for the last 7 days
+            const chartBars = [];
+            const dayLabels = [];
+            const counts = [0, 0, 0, 0, 0, 0, 0];
+            
+            const now = new Date();
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(now.getDate() - i);
+                dayLabels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+            }
+
+            // Fill counts
+            checkins.filter(c => c.step === 0).forEach(c => {
+                const date = new Date(c.created_at);
+                const diffTime = Math.abs(now - date);
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays <= 6) {
+                    counts[6 - diffDays]++;
+                }
+            });
+
+            // Draw bars
+            const maxVal = Math.max(...counts, 1);
+            for (let i = 0; i < 7; i++) {
+                const pct = (counts[i] / maxVal) * 95;
+                const bar = document.getElementById(`chart-d${i+1}`);
+                const label = document.getElementById(`label-d${i+1}`);
+                if (bar && label) {
+                    bar.style.height = `${Math.max(pct, 5)}%`;
+                    label.innerText = dayLabels[i];
+                    bar.title = `${counts[i]} redeems`;
+                }
+            }
+        }
+
+        // --- Panel Navigation ---
+        const menuNavs = document.querySelectorAll('.nav-item[data-panel]');
+        menuNavs.forEach(nav => {
+            nav.addEventListener('click', () => {
+                if (nav.getAttribute('data-panel') === 'analytics') {
+                    fetchAnalytics();
+                } else if (nav.getAttribute('data-panel') === 'scripts') {
+                    fetchScripts();
+                }
+            });
+        });
+
+        // Initialize Supabase on load
+        initSupabase();
     </script>
 </body>
 </html>
