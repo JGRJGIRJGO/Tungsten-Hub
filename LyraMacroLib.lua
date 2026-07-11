@@ -9,7 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
+local RemoteFunction = ReplicatedStorage:WaitForChild("Remotes")
 
 local LyraMacro = {}
 LyraMacro.SpawnedTowers = {}

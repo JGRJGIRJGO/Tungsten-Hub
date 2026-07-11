@@ -96,7 +96,7 @@ end
 
 -- Helper to continuously request a retry or skip until accepted
 local function fireRestartRequest()
-    local Remote = ReplicatedStorage:WaitForChild("RemoteFunction")
+    local Remote = ReplicatedStorage:WaitForChild("Remotes")
     while true do
         local success, result = pcall(function()
             return Remote:InvokeServer("Voting", "Skip") -- Adjust parameter for restart if game has a restart vote
