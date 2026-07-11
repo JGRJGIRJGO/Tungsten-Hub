@@ -9,7 +9,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local TowersFolder = workspace:WaitForChild("Towers")
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
 
 local LyraMacro = {}
@@ -19,12 +18,33 @@ LyraMacro.SelectedLoadout = {}
 LyraMacro.SelectedMode = "Normal"
 LyraMacro.SelectedMap = ""
 
--- Auto-register newly spawned towers sequentially
-TowersFolder.ChildAdded:Connect(function(newTower)
-    task.wait(0.05) -- Brief yield to let properties replicate to the client
-    table.insert(LyraMacro.SpawnedTowers, newTower)
-    print("[LyraMacro] Registered tower #" .. #LyraMacro.SpawnedTowers .. ": " .. newTower.Name)
-end)
+-- Hook function to register towers when folder is found
+local function hookTowersFolder(folder)
+    folder.ChildAdded:Connect(function(newTower)
+        task.wait(0.05) -- Brief yield to let properties replicate to the client
+        table.insert(LyraMacro.SpawnedTowers, newTower)
+        print("[LyraMacro] Registered tower #" .. #LyraMacro.SpawnedTowers .. ": " .. newTower.Name)
+    end)
+    -- Also register any towers already in the folder
+    for _, tower in ipairs(folder:GetChildren()) do
+        table.insert(LyraMacro.SpawnedTowers, tower)
+    end
+end
+
+-- Non-blocking folder registration
+local initialTowers = workspace:FindFirstChild("Towers")
+if initialTowers then
+    hookTowersFolder(initialTowers)
+else
+    local workspaceConnection
+    workspaceConnection = workspace.ChildAdded:Connect(function(child)
+        if child.Name == "Towers" then
+            print("[LyraMacro] Towers folder spawned dynamically! Hooking listener.")
+            hookTowersFolder(child)
+            workspaceConnection:Disconnect()
+        end
+    end)
+end
 
 -- Sets up the starting troop configuration
 function LyraMacro:Loadout(...)
