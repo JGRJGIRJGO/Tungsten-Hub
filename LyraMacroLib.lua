@@ -124,6 +124,7 @@ local LyraMacro = {
     AutoRecordLibraryUrl = nil,
     AutoRecordTimeout = 45,
     LastDetectedElevator = nil,
+    PendingElevatorReplay = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
 }
@@ -1010,12 +1011,74 @@ function LyraMacro:_queueAutoRecordAfterTeleport(mapTitle)
     return true, mapTitle
 end
 
+function LyraMacro:_getStrategyReplayTeleportSource(replay, mapTitle)
+    local libraryUrl = replay.LibraryUrl or DEFAULT_MACRO_LIBRARY_URL
+    local timeout = math.max(10, math.floor(tonumber(replay.Timeout) or 45))
+    local lines = {
+        "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then",
+        "    warn(\"[LyraMacro] Strategy replay skipped: this is not the match place.\")",
+        "    return",
+        "end",
+        "",
+        "local hasSharedEnvironment = type(getgenv) == \"function\"",
+        "if hasSharedEnvironment then",
+        "    getgenv().LyraMacroAutoUI = false",
+    }
+
+    if mapTitle then
+        table.insert(lines, "    getgenv().LyraMacroMapName = " .. formatLuaValue(mapTitle))
+    end
+
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local loaded, LyraMacro = pcall(function()")
+    table.insert(lines, "    return loadstring(game:HttpGet(" .. formatLuaValue(getCacheBustedUrlPrefix(libraryUrl)) .. " .. tostring(os.time())))()")
+    table.insert(lines, "end)")
+    table.insert(lines, "")
+    table.insert(lines, "if not loaded then")
+    table.insert(lines, "    warn(\"[LyraMacro] Strategy replay bootstrap failed: \" .. tostring(LyraMacro))")
+    table.insert(lines, "    return")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+
+    appendRecordedStrategyLines(lines, replay.Strategy)
+    table.insert(lines, "")
+    table.insert(lines, "local completed, message = LyraMacro:RunWhenMapReady(Strategy, " .. formatLuaValue(replay.ExpectedFingerprint) .. ", { Timeout = " .. tostring(timeout) .. " })")
+    table.insert(lines, "if not completed then")
+    table.insert(lines, "    warn(\"[LyraMacro] Strategy replay was not started: \" .. tostring(message))")
+    table.insert(lines, "end")
+    table.insert(lines, "return Strategy")
+
+    return table.concat(lines, "\n")
+end
+
+function LyraMacro:_queueStrategyReplayAfterTeleport(replay, mapTitle)
+    local queueTeleport = getTeleportQueueFunction()
+
+    if not queueTeleport then
+        return false, "Your executor does not expose queue_on_teleport, so strategy replay cannot continue into the match server."
+    end
+
+    local queued, queueError = pcall(queueTeleport, self:_getStrategyReplayTeleportSource(replay, mapTitle))
+
+    if not queued then
+        return false, "Could not queue strategy replay: " .. tostring(queueError)
+    end
+
+    self.AutoRecordTeleportArmed = true
+    self.LastDetectedElevator = mapTitle
+    self.PendingElevatorReplay = nil
+    print("[LyraMacro] Elevator map detected: " .. tostring(mapTitle) .. ". Strategy replay is queued for the match server.")
+
+    return true, mapTitle
+end
+
 function LyraMacro:_observeElevatorEnter(args)
     if game.PlaceId ~= LOBBY_PLACE_ID then
         return
     end
 
-    if not self.AutoRecordOnTeleport or self.AutoRecordTeleportArmed then
+    if (not self.AutoRecordOnTeleport and not self.PendingElevatorReplay) or self.AutoRecordTeleportArmed then
         return
     end
 
@@ -1030,11 +1093,50 @@ function LyraMacro:_observeElevatorEnter(args)
         return
     end
 
+    if self.PendingElevatorReplay then
+        local queued, queueMessage = self:_queueStrategyReplayAfterTeleport(self.PendingElevatorReplay, mapTitle)
+
+        if not queued then
+            warn("[LyraMacro] " .. queueMessage)
+        end
+
+        return
+    end
+
     local queued, queueMessage = self:_queueAutoRecordAfterTeleport(mapTitle)
 
     if not queued then
         warn("[LyraMacro] " .. queueMessage)
     end
+end
+
+function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, options)
+    options = options or {}
+
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "Strategy replay can only be queued in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
+    end
+
+    if type(strategy) ~= "table" then
+        return false, "Strategy replay requires a table of recorded steps."
+    end
+
+    local recorderReady, recorderMessage = self:_installRecorder()
+
+    if not recorderReady then
+        return false, recorderMessage
+    end
+
+    self.PendingElevatorReplay = {
+        Strategy = cloneStrategy(strategy),
+        ExpectedFingerprint = type(expectedFingerprint) == "string" and expectedFingerprint or nil,
+        LibraryUrl = options.LibraryUrl,
+        Timeout = options.Timeout or self.AutoRecordTimeout,
+    }
+    self.AutoRecordTeleportArmed = false
+    print("[LyraMacro] Strategy replay armed. Enter the elevator for the recorded map to continue after teleport.")
+
+    return true, "Enter the elevator for the recorded map to queue strategy replay."
 end
 
 function LyraMacro:SetAutoRecordOnTeleport(enabled, options)
@@ -1094,6 +1196,57 @@ function LyraMacro:StartRecordingWhenMapReady(options)
             end
 
             return self:StartRecording()
+        end
+
+        task.wait(pollInterval)
+    end
+
+    return false, "Timed out waiting for the destination map to load."
+end
+
+function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
+    options = options or {}
+
+    if game.PlaceId ~= MATCH_PLACE_ID then
+        return false, "Strategy replay must run in match place " .. tostring(MATCH_PLACE_ID) .. "."
+    end
+
+    if type(strategy) ~= "table" then
+        return false, "Strategy replay requires a table of recorded steps."
+    end
+
+    local timeout = math.max(1, tonumber(options.Timeout) or self.AutoRecordTimeout or 45)
+    local pollInterval = math.max(0.1, tonumber(options.PollInterval) or 0.25)
+    local settleTime = math.max(0, tonumber(options.SettleTime) or 1)
+    local deadline = os.clock() + timeout
+
+    while os.clock() < deadline do
+        local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+
+        if fingerprint then
+            if settleTime > 0 then
+                task.wait(settleTime)
+            end
+
+            local skipMapCheck = type(getgenv) == "function" and getgenv().LyraMacroSkipMapCheck == true
+
+            if type(expectedFingerprint) == "string" and expectedFingerprint ~= "" and not skipMapCheck then
+                local matches = self:AssertMapFingerprint(expectedFingerprint, { Silent = true, WarnOnly = true })
+
+                if not matches then
+                    return false, "The destination map does not match this recorded strategy."
+                end
+            end
+
+            local ran, runError = pcall(function()
+                self:Run(strategy)
+            end)
+
+            if not ran then
+                return false, runError
+            end
+
+            return true
         end
 
         task.wait(pollInterval)
@@ -1504,16 +1657,20 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
 
     if type(self.SelectedMapFingerprint) == "string" and self.SelectedMapFingerprint ~= "" then
         table.insert(lines, "local RecordedMapFingerprint = " .. formatLuaValue(self.SelectedMapFingerprint))
-        table.insert(lines, "")
-        table.insert(lines, "if not (hasSharedEnvironment and getgenv().LyraMacroSkipMapCheck == true) then")
-        table.insert(lines, "    LyraMacro:AssertMapFingerprint(RecordedMapFingerprint)")
-        table.insert(lines, "end")
-        table.insert(lines, "")
+    else
+        table.insert(lines, "local RecordedMapFingerprint = nil")
     end
 
     appendRecordedStrategyLines(lines, self.RecordedStrategy)
     table.insert(lines, "")
-    table.insert(lines, "LyraMacro:Run(Strategy)")
+    table.insert(lines, "if game.PlaceId == " .. tostring(LOBBY_PLACE_ID) .. " then")
+    table.insert(lines, "    local queued, message = LyraMacro:QueueStrategyAfterElevator(Strategy, RecordedMapFingerprint, { LibraryUrl = " .. formatLuaValue(macroLibraryUrl) .. " })")
+    table.insert(lines, "    assert(queued, message)")
+    table.insert(lines, "    return Strategy")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local completed, message = LyraMacro:RunWhenMapReady(Strategy, RecordedMapFingerprint)")
+    table.insert(lines, "assert(completed, message)")
     table.insert(lines, "return Strategy")
 
     return table.concat(lines, "\n")
