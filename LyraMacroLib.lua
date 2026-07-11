@@ -12,6 +12,92 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DEFAULT_MACRO_LIBRARY_URL = "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua"
 local DEFAULT_UI_LIBRARY_URL = "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua"
 local DEFAULT_STRATEGY_FOLDER = "LyraStrategies"
+local MAP_SCAN_LIMIT = 2500
+local LOBBY_PLACE_ID = 113331026373939
+local MATCH_PLACE_ID = 133260551256133
+
+local MAP_NAME_KEYS = {
+    currentmap = true,
+    gamemap = true,
+    loadedmap = true,
+    map = true,
+    mapid = true,
+    mapname = true,
+    maptitle = true,
+    mission = true,
+    missionname = true,
+    selectedmap = true,
+    stage = true,
+    stagename = true,
+}
+
+local GENERIC_MAP_NAMES = {
+    active = true,
+    activemap = true,
+    current = true,
+    currentmap = true,
+    default = true,
+    difficulty = true,
+    gamemap = true,
+    get = true,
+    info = true,
+    load = true,
+    loaded = true,
+    loadedmap = true,
+    lobby = true,
+    map = true,
+    mapfolder = true,
+    mapname = true,
+    mapmodel = true,
+    mapselect = true,
+    mapselection = true,
+    maps = true,
+    mapvote = true,
+    mapvoting = true,
+    mode = true,
+    nil = true,
+    none = true,
+    paths = true,
+    select = true,
+    selected = true,
+    selectedmap = true,
+    set = true,
+    skip = true,
+    start = true,
+    terrain = true,
+    towers = true,
+    unknown = true,
+    vote = true,
+    votemap = true,
+    votingmap = true,
+    waypoints = true,
+}
+
+local MAP_CONTAINER_NAMES = {
+    "CurrentMap",
+    "GameMap",
+    "LoadedMap",
+    "Map",
+    "MapFolder",
+    "MapModel",
+    "Maps",
+    "SelectedMap",
+}
+
+local DYNAMIC_CONTAINER_NAMES = {
+    cameras = true,
+    characters = true,
+    enemies = true,
+    mobs = true,
+    npcs = true,
+    players = true,
+    projectiles = true,
+    troops = true,
+    towers = true,
+    units = true,
+}
+
+local MAP_FINGERPRINT_PART_LIMIT = 500
 
 local LocalPlayer = Players.LocalPlayer
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
@@ -29,6 +115,15 @@ local LyraMacro = {
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
     LastStrategyExport = nil,
+    LastDetectedMapSource = nil,
+    SelectedMapFingerprint = "",
+    SelectedMapFingerprintSource = nil,
+    SelectedMapFingerprintPartCount = 0,
+    AutoRecordOnTeleport = false,
+    AutoRecordTeleportArmed = false,
+    AutoRecordLibraryUrl = nil,
+    AutoRecordTimeout = 45,
+    LastDetectedElevator = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
 }
@@ -167,6 +262,563 @@ local function joinFilePath(folder, fileName)
     return folder .. "/" .. fileName
 end
 
+local function normalizeLookupKey(value)
+    return tostring(value or ""):lower():gsub("[%s_%-%.:]", "")
+end
+
+local function isMapNameKey(value)
+    local lookupKey = normalizeLookupKey(value)
+
+    if MAP_NAME_KEYS[lookupKey] then
+        return true
+    end
+
+    return lookupKey:find("map", 1, true) ~= nil
+        and (
+            lookupKey:find("name", 1, true) ~= nil
+            or lookupKey:find("title", 1, true) ~= nil
+            or lookupKey:find("current", 1, true) ~= nil
+            or lookupKey:find("selected", 1, true) ~= nil
+            or lookupKey:find("label", 1, true) ~= nil
+        )
+end
+
+local function trimString(value)
+    return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function normalizeMapCandidate(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local candidate = trimString(value)
+    candidate = candidate:gsub("^Current%s+[Mm]ap%s*[:%-]%s*", "")
+    candidate = candidate:gsub("^Selected%s+[Mm]ap%s*[:%-]%s*", "")
+    candidate = candidate:gsub("^Loaded%s+[Mm]ap%s*[:%-]%s*", "")
+    candidate = candidate:gsub("^[Mm]ap%s*[Nn]ame%s*[:%-]%s*", "")
+    candidate = candidate:gsub("^[Mm]ap%s*[:%-]%s*", "")
+    candidate = trimString(candidate:gsub("[%s%p]+$", ""))
+
+    if candidate == "" or #candidate > 80 or candidate:find("[\r\n]") then
+        return nil
+    end
+
+    local lookupKey = normalizeLookupKey(candidate)
+
+    if GENERIC_MAP_NAMES[lookupKey] or #lookupKey < 3 or not candidate:match("[%w]") then
+        return nil
+    end
+
+    return candidate
+end
+
+local function safeGetChildren(instance)
+    local ok, children = pcall(function()
+        return instance:GetChildren()
+    end)
+
+    if ok and type(children) == "table" then
+        return children
+    end
+
+    return {}
+end
+
+local function safeGetDescendants(instance)
+    local ok, descendants = pcall(function()
+        return instance:GetDescendants()
+    end)
+
+    if ok and type(descendants) == "table" then
+        return descendants
+    end
+
+    return {}
+end
+
+local function getInstanceName(instance)
+    local ok, name = pcall(function()
+        return instance.Name
+    end)
+
+    if ok and type(name) == "string" then
+        return name
+    end
+
+    return nil
+end
+
+local function instanceIsA(instance, className)
+    local ok, isClass = pcall(function()
+        return instance:IsA(className)
+    end)
+
+    return ok and isClass
+end
+
+local function safeFindFirstChild(instance, childName)
+    local ok, child = pcall(function()
+        return instance:FindFirstChild(childName)
+    end)
+
+    if ok then
+        return child
+    end
+
+    return nil
+end
+
+local function readInstanceValue(instance)
+    local ok, value = pcall(function()
+        return instance.Value
+    end)
+
+    if ok then
+        return value
+    end
+
+    return nil
+end
+
+local function readInstanceText(instance)
+    if not (
+        instanceIsA(instance, "TextLabel")
+        or instanceIsA(instance, "TextButton")
+        or instanceIsA(instance, "TextBox")
+    ) then
+        return nil
+    end
+
+    local ok, text = pcall(function()
+        return instance.Text
+    end)
+
+    if ok then
+        return text
+    end
+
+    return nil
+end
+
+local function findMapNameInValue(value, depth, preferred, source, visited)
+    if depth > 4 then
+        return nil
+    end
+
+    if type(value) == "string" then
+        local candidate = normalizeMapCandidate(value)
+
+        if candidate and preferred then
+            return candidate, source
+        end
+
+        return nil
+    end
+
+    local valueKind = getValueKind(value)
+
+    if valueKind == "Instance" then
+        local instanceName = getInstanceName(value)
+        local hasMapName = preferred or isMapNameKey(instanceName)
+        local instanceValue = readInstanceValue(value)
+
+        if instanceValue ~= nil then
+            local candidate, valueSource = findMapNameInValue(instanceValue, depth + 1, hasMapName, source .. ".Value", visited)
+
+            if candidate then
+                return candidate, valueSource
+            end
+        end
+
+        if getValueKind(instanceValue) == "Instance" then
+            local candidate = normalizeMapCandidate(getInstanceName(instanceValue))
+
+            if candidate and hasMapName then
+                return candidate, source .. ".Value.Name"
+            end
+        end
+
+        local text = readInstanceText(value)
+
+        if text then
+            local candidate = normalizeMapCandidate(text)
+
+            if candidate and (hasMapName or text:lower():find("map", 1, true)) then
+                return candidate, source .. ".Text"
+            end
+        end
+
+        local gotAttributes, attributes = pcall(function()
+            return value:GetAttributes()
+        end)
+
+        if gotAttributes and type(attributes) == "table" then
+            for attributeName, attributeValue in pairs(attributes) do
+                if isMapNameKey(attributeName) then
+                    local candidate = normalizeMapCandidate(attributeValue)
+
+                    if candidate then
+                        return candidate, source .. ".Attributes." .. tostring(attributeName)
+                    end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    visited = visited or {}
+
+    if visited[value] then
+        return nil
+    end
+
+    visited[value] = true
+
+    for key, childValue in pairs(value) do
+        local childPreferred = preferred or isMapNameKey(key)
+        local candidate, childSource = findMapNameInValue(childValue, depth + 1, childPreferred, source .. "." .. tostring(key), visited)
+
+        if candidate then
+            return candidate, childSource
+        end
+    end
+
+    return nil
+end
+
+local function findMapNameInInstanceMetadata(instance, source)
+    local candidate, candidateSource = findMapNameInValue(instance, 0, false, source, {})
+
+    if candidate then
+        return candidate, candidateSource
+    end
+
+    for _, child in ipairs(safeGetChildren(instance)) do
+        local childName = getInstanceName(child)
+
+        if isMapNameKey(childName) then
+            candidate, candidateSource = findMapNameInValue(child, 0, true, source .. "." .. childName, {})
+
+            if candidate then
+                return candidate, candidateSource
+            end
+        end
+    end
+
+    return nil
+end
+
+local function findMapNameInContainer(instance, source)
+    local candidate, candidateSource = findMapNameInInstanceMetadata(instance, source)
+
+    if candidate then
+        return candidate, candidateSource
+    end
+
+    candidate = normalizeMapCandidate(getInstanceName(instance))
+
+    if candidate then
+        return candidate, source .. ".Name"
+    end
+
+    for _, child in ipairs(safeGetChildren(instance)) do
+        local childName = getInstanceName(child)
+
+        candidate, candidateSource = findMapNameInInstanceMetadata(child, source .. "." .. tostring(childName))
+
+        if candidate then
+            return candidate, candidateSource
+        end
+
+        if instanceIsA(child, "Folder") or instanceIsA(child, "Model") then
+            candidate = normalizeMapCandidate(childName)
+
+            if candidate then
+                return candidate, source .. "." .. childName .. ".Name"
+            end
+        end
+    end
+
+    return nil
+end
+
+local function scanDescendantsForMapName(root, rootName)
+    local descendants = safeGetDescendants(root)
+    local scanned = 0
+
+    for _, instance in ipairs(descendants) do
+        scanned += 1
+
+        if scanned > MAP_SCAN_LIMIT then
+            break
+        end
+
+        local instanceName = getInstanceName(instance)
+        local source = rootName .. "." .. tostring(instanceName)
+
+        if isMapNameKey(instanceName) then
+            local candidate, candidateSource = findMapNameInValue(instance, 0, true, source, {})
+
+            if candidate then
+                return candidate, candidateSource
+            end
+        end
+
+        local text = readInstanceText(instance)
+
+        if text and text:lower():find("map", 1, true) then
+            local candidate = normalizeMapCandidate(text)
+
+            if candidate then
+                return candidate, source .. ".Text"
+            end
+        end
+    end
+
+    return nil
+end
+
+local function detectMapFromRoot(root, rootName)
+    for _, containerName in ipairs(MAP_CONTAINER_NAMES) do
+        local container = safeFindFirstChild(root, containerName)
+
+        if container then
+            local candidate, source = findMapNameInContainer(container, rootName .. "." .. containerName)
+
+            if candidate then
+                return candidate, source
+            end
+        end
+    end
+
+    return scanDescendantsForMapName(root, rootName)
+end
+
+local function remoteRouteLooksMapRelated(args)
+    for index = 1, math.min(#args, 4) do
+        local value = args[index]
+
+        if type(value) == "string" then
+            local lookupKey = normalizeLookupKey(value)
+
+            if MAP_NAME_KEYS[lookupKey]
+                or lookupKey:find("map", 1, true)
+                or lookupKey:find("mission", 1, true)
+                or lookupKey:find("stage", 1, true)
+            then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function detectMapFromRemoteArgs(args)
+    if not remoteRouteLooksMapRelated(args) then
+        return nil
+    end
+
+    return findMapNameInValue(args, 0, true, "RemoteFunction", {})
+end
+
+local function isDynamicContainer(instance)
+    local instanceName = getInstanceName(instance)
+
+    if not instanceName then
+        return false
+    end
+
+    return DYNAMIC_CONTAINER_NAMES[normalizeLookupKey(instanceName)] == true
+end
+
+local function getInstanceParent(instance)
+    local ok, parent = pcall(function()
+        return instance.Parent
+    end)
+
+    if ok then
+        return parent
+    end
+
+    return nil
+end
+
+local function isUnderDynamicContainer(instance, root)
+    local current = instance
+
+    while current and current ~= root do
+        if isDynamicContainer(current) then
+            return true
+        end
+
+        current = getInstanceParent(current)
+    end
+
+    return false
+end
+
+local function fingerprintNumber(value)
+    return formatNumber(roundNumber(value))
+end
+
+local function rollingHash(value)
+    local hash = 5381
+
+    for index = 1, #value do
+        hash = (hash * 33 + value:byte(index)) % 2147483647
+    end
+
+    return tostring(hash)
+end
+
+local function getMapRootCandidateScore(instance)
+    if isDynamicContainer(instance) then
+        return -1, 0
+    end
+
+    local instanceName = getInstanceName(instance) or ""
+    local lookupKey = normalizeLookupKey(instanceName)
+    local score = 0
+    local partCount = 0
+
+    if lookupKey:find("map", 1, true)
+        or lookupKey:find("terrain", 1, true)
+        or lookupKey:find("path", 1, true)
+        or lookupKey:find("stage", 1, true)
+    then
+        score += 200
+    end
+
+    if instanceIsA(instance, "Model") or instanceIsA(instance, "Folder") then
+        score += 25
+    end
+
+    for _, descendant in ipairs(safeGetDescendants(instance)) do
+        if isUnderDynamicContainer(descendant, instance) then
+            continue
+        end
+
+        local descendantName = getInstanceName(descendant) or ""
+        local descendantKey = normalizeLookupKey(descendantName)
+
+        if instanceIsA(descendant, "BasePart") then
+            partCount += 1
+            score += 3
+        end
+
+        if descendantKey:find("waypoint", 1, true)
+            or descendantKey:find("path", 1, true)
+            or descendantKey:find("road", 1, true)
+            or descendantKey:find("track", 1, true)
+        then
+            score += 15
+        end
+
+        if partCount >= MAP_FINGERPRINT_PART_LIMIT then
+            break
+        end
+    end
+
+    return score, partCount
+end
+
+local function findBestMapFingerprintRoot()
+    for _, containerName in ipairs(MAP_CONTAINER_NAMES) do
+        local container = safeFindFirstChild(workspace, containerName)
+
+        if container and not isDynamicContainer(container) then
+            local score, partCount = getMapRootCandidateScore(container)
+
+            if partCount > 0 then
+                return container, "workspace." .. containerName, score, partCount
+            end
+        end
+    end
+
+    local bestRoot = nil
+    local bestSource = nil
+    local bestScore = -1
+    local bestPartCount = 0
+
+    for _, child in ipairs(safeGetChildren(workspace)) do
+        if not isDynamicContainer(child) and (instanceIsA(child, "Model") or instanceIsA(child, "Folder")) then
+            local score, partCount = getMapRootCandidateScore(child)
+
+            if partCount > 0 and score > bestScore then
+                bestRoot = child
+                bestSource = "workspace." .. tostring(getInstanceName(child))
+                bestScore = score
+                bestPartCount = partCount
+            end
+        end
+    end
+
+    if bestRoot then
+        return bestRoot, bestSource, bestScore, bestPartCount
+    end
+
+    return workspace, "workspace", 0, 0
+end
+
+local function collectFingerprintParts(root)
+    local lines = {}
+    local partCount = 0
+
+    for _, instance in ipairs(safeGetDescendants(root)) do
+        if isUnderDynamicContainer(instance, root) then
+            continue
+        end
+
+        if instanceIsA(instance, "BasePart") then
+            local ok, descriptor = pcall(function()
+                local position = instance.Position
+                local size = instance.Size
+                return table.concat({
+                    getInstanceName(instance) or "",
+                    tostring(instance.ClassName),
+                    fingerprintNumber(position.X),
+                    fingerprintNumber(position.Y),
+                    fingerprintNumber(position.Z),
+                    fingerprintNumber(size.X),
+                    fingerprintNumber(size.Y),
+                    fingerprintNumber(size.Z),
+                }, "|")
+            end)
+
+            if ok and descriptor then
+                table.insert(lines, descriptor)
+                partCount += 1
+            end
+
+            if partCount >= MAP_FINGERPRINT_PART_LIMIT then
+                break
+            end
+        end
+    end
+
+    table.sort(lines)
+    return lines, partCount
+end
+
+local function buildMapFingerprint()
+    local root, source = findBestMapFingerprintRoot()
+    local lines, partCount = collectFingerprintParts(root)
+
+    if partCount == 0 then
+        return nil, source, 0
+    end
+
+    local fingerprintBody = table.concat(lines, "\n")
+    return rollingHash(fingerprintBody) .. "-" .. tostring(partCount), source, partCount
+end
+
 local function cloneStrategy(strategy)
     local copiedStrategy = {}
 
@@ -238,8 +890,12 @@ function LyraMacro:VoteMode(modeName, confirmed)
 end
 
 function LyraMacro:GameInfo(mapName, options)
-    self.SelectedMap = mapName
-    print("[LyraMacro] Match configured for map: " .. mapName)
+    options = options or {}
+
+    local normalizedMapName = normalizeMapCandidate(mapName) or tostring(mapName or "")
+    self.SelectedMap = normalizedMapName
+    self.LastDetectedMapSource = options.Source or "manual"
+    print("[LyraMacro] Match configured for map: " .. normalizedMapName)
 end
 
 -- Clears only this strategy's stable tower IDs for a fresh solo match.
@@ -251,6 +907,325 @@ end
 
 function LyraMacro:Ready()
     print("[LyraMacro] Strategy match starting.")
+end
+
+local function getTeleportQueueFunction()
+    if type(queue_on_teleport) == "function" then
+        return queue_on_teleport
+    end
+
+    if type(syn) == "table" and type(syn.queue_on_teleport) == "function" then
+        return syn.queue_on_teleport
+    end
+
+    return nil
+end
+
+local function getElevatorMapTitle(elevator)
+    if getValueKind(elevator) ~= "Instance" then
+        return nil
+    end
+
+    local gotTitle, title = pcall(function()
+        local state = elevator:FindFirstChild("State")
+        local map = state and state:FindFirstChild("Map")
+        local mapTitle = map and map:FindFirstChild("Title")
+
+        if not mapTitle then
+            return nil
+        end
+
+        if mapTitle:IsA("ValueBase") then
+            return tostring(mapTitle.Value)
+        end
+
+        return tostring(mapTitle.Text)
+    end)
+
+    if gotTitle and type(title) == "string" and trimString(title) ~= "" then
+        return trimString(title)
+    end
+
+    return nil
+end
+
+function LyraMacro:_getAutoRecordTeleportSource(mapTitle)
+    local libraryUrl = self.AutoRecordLibraryUrl or DEFAULT_MACRO_LIBRARY_URL
+    local timeout = math.max(10, math.floor(tonumber(self.AutoRecordTimeout) or 45))
+    local lines = {
+        "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then",
+        "    warn(\"[LyraMacro] Auto-record skipped: this is not the match place.\")",
+        "    return",
+        "end",
+        "",
+        "local hasSharedEnvironment = type(getgenv) == \"function\"",
+        "if hasSharedEnvironment then",
+        "    getgenv().LyraMacroAutoUI = false",
+    }
+
+    if mapTitle then
+        table.insert(lines, "    getgenv().LyraMacroMapName = " .. formatLuaValue(mapTitle))
+    end
+
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local loaded, LyraMacro = pcall(function()")
+    table.insert(lines, "    return loadstring(game:HttpGet(" .. formatLuaValue(getCacheBustedUrlPrefix(libraryUrl)) .. " .. tostring(os.time())))()")
+    table.insert(lines, "end)")
+    table.insert(lines, "")
+    table.insert(lines, "if not loaded then")
+    table.insert(lines, "    warn(\"[LyraMacro] Auto-record bootstrap failed: \" .. tostring(LyraMacro))")
+    table.insert(lines, "    return")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "task.spawn(function()")
+    table.insert(lines, "    local started, message = LyraMacro:StartRecordingWhenMapReady({ Timeout = " .. tostring(timeout) .. " })")
+    table.insert(lines, "    if not started then")
+    table.insert(lines, "        warn(\"[LyraMacro] Auto-record was not started: \" .. tostring(message))")
+    table.insert(lines, "        return")
+    table.insert(lines, "    end")
+    table.insert(lines, "    LyraMacro:CreateRecorderWindow()")
+    table.insert(lines, "end)")
+
+    return table.concat(lines, "\n")
+end
+
+function LyraMacro:_queueAutoRecordAfterTeleport(mapTitle)
+    local queueTeleport = getTeleportQueueFunction()
+
+    if not queueTeleport then
+        return false, "Your executor does not expose queue_on_teleport, so recording cannot continue into the match server."
+    end
+
+    local queued, queueError = pcall(queueTeleport, self:_getAutoRecordTeleportSource(mapTitle))
+
+    if not queued then
+        return false, "Could not queue auto-recording: " .. tostring(queueError)
+    end
+
+    self.AutoRecordTeleportArmed = true
+    self.LastDetectedElevator = mapTitle
+    print("[LyraMacro] Elevator map detected: " .. tostring(mapTitle) .. ". Auto-recording is queued for the match server.")
+
+    return true, mapTitle
+end
+
+function LyraMacro:_observeElevatorEnter(args)
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return
+    end
+
+    if not self.AutoRecordOnTeleport or self.AutoRecordTeleportArmed then
+        return
+    end
+
+    if normalizeLookupKey(args[1]) ~= "elevators" or normalizeLookupKey(args[2]) ~= "enter" then
+        return
+    end
+
+    local mapTitle = getElevatorMapTitle(args[3])
+
+    if not mapTitle then
+        warn("[LyraMacro] Elevator entered, but State.Map.Title was not available.")
+        return
+    end
+
+    local queued, queueMessage = self:_queueAutoRecordAfterTeleport(mapTitle)
+
+    if not queued then
+        warn("[LyraMacro] " .. queueMessage)
+    end
+end
+
+function LyraMacro:SetAutoRecordOnTeleport(enabled, options)
+    options = options or {}
+    enabled = enabled == true
+
+    if enabled and game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "Elevator auto-recording can only be armed in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
+    end
+
+    self.AutoRecordOnTeleport = enabled
+    self.AutoRecordTeleportArmed = false
+    self.LastDetectedElevator = nil
+
+    if type(options.LibraryUrl) == "string" and options.LibraryUrl ~= "" then
+        self.AutoRecordLibraryUrl = options.LibraryUrl
+    end
+
+    if tonumber(options.Timeout) then
+        self.AutoRecordTimeout = math.max(10, math.floor(tonumber(options.Timeout)))
+    end
+
+    if not enabled then
+        print("[LyraMacro] Elevator auto-recording disabled.")
+        return true, "Elevator auto-recording disabled."
+    end
+
+    local recorderReady, recorderMessage = self:_installRecorder()
+
+    if not recorderReady then
+        self.AutoRecordOnTeleport = false
+        return false, recorderMessage
+    end
+
+    print("[LyraMacro] Elevator auto-recording enabled. Enter an elevator to queue the recorder for the selected map.")
+    return true, "Enter an elevator to queue recording for its selected map."
+end
+
+function LyraMacro:StartRecordingWhenMapReady(options)
+    options = options or {}
+
+    if self.IsRecording then
+        return true, "Recording is already active."
+    end
+
+    local timeout = math.max(1, tonumber(options.Timeout) or self.AutoRecordTimeout or 45)
+    local pollInterval = math.max(0.1, tonumber(options.PollInterval) or 0.25)
+    local settleTime = math.max(0, tonumber(options.SettleTime) or 1)
+    local deadline = os.clock() + timeout
+
+    while os.clock() < deadline do
+        local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+
+        if fingerprint then
+            if settleTime > 0 then
+                task.wait(settleTime)
+            end
+
+            return self:StartRecording()
+        end
+
+        task.wait(pollInterval)
+    end
+
+    return false, "Timed out waiting for the destination map to load."
+end
+
+function LyraMacro:_setDetectedMap(mapName, source, force)
+    local normalizedMapName = normalizeMapCandidate(mapName)
+
+    if not normalizedMapName then
+        return nil
+    end
+
+    if self.SelectedMap ~= "" and self.SelectedMap ~= normalizedMapName and self.LastDetectedMapSource == "manual" and not force then
+        return self.SelectedMap, self.LastDetectedMapSource
+    end
+
+    if self.SelectedMap == normalizedMapName and self.LastDetectedMapSource then
+        return self.SelectedMap, self.LastDetectedMapSource
+    end
+
+    self.SelectedMap = normalizedMapName
+    self.LastDetectedMapSource = source or "detected"
+    print("[LyraMacro] Detected map: " .. normalizedMapName .. " (" .. self.LastDetectedMapSource .. ")")
+
+    return self.SelectedMap, self.LastDetectedMapSource
+end
+
+function LyraMacro:DetectMap(options)
+    options = options or {}
+
+    if self.SelectedMap ~= "" and not options.Force then
+        return self.SelectedMap, self.LastDetectedMapSource or "configured"
+    end
+
+    if type(getgenv) == "function" then
+        local override = normalizeMapCandidate(getgenv().LyraMacroMapName)
+
+        if override then
+            return self:_setDetectedMap(override, "manual override", true)
+        end
+    end
+
+    local roots = {
+        { Root = workspace, Name = "workspace" },
+        { Root = ReplicatedStorage, Name = "ReplicatedStorage" },
+    }
+
+    local gotPlayerGui, playerGui = pcall(function()
+        return LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 1)
+    end)
+
+    if gotPlayerGui and playerGui then
+        table.insert(roots, { Root = playerGui, Name = "PlayerGui" })
+    end
+
+    local gotCoreGui, coreGui = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+
+    if gotCoreGui and coreGui then
+        table.insert(roots, { Root = coreGui, Name = "CoreGui" })
+    end
+
+    for _, rootInfo in ipairs(roots) do
+        local mapName, source = detectMapFromRoot(rootInfo.Root, rootInfo.Name)
+
+        if mapName then
+            return self:_setDetectedMap(mapName, source, true)
+        end
+    end
+
+    if not options.Silent then
+        warn("[LyraMacro] Could not detect the map name. Set getgenv().LyraMacroMapName before loading LyraMacroLib to force it.")
+    end
+
+    return nil, "not found"
+end
+
+function LyraMacro:DetectMapFingerprint(options)
+    options = options or {}
+
+    if self.SelectedMapFingerprint ~= "" and not options.Force then
+        return self.SelectedMapFingerprint, self.SelectedMapFingerprintSource, self.SelectedMapFingerprintPartCount
+    end
+
+    local fingerprint, source, partCount = buildMapFingerprint()
+
+    if not fingerprint then
+        if not options.Silent then
+            warn("[LyraMacro] Could not build a map fingerprint from workspace.")
+        end
+
+        return nil, source or "not found", partCount or 0
+    end
+
+    self.SelectedMapFingerprint = fingerprint
+    self.SelectedMapFingerprintSource = source
+    self.SelectedMapFingerprintPartCount = partCount
+
+    print("[LyraMacro] Map fingerprint: " .. fingerprint .. " (" .. tostring(source) .. ", " .. tostring(partCount) .. " parts)")
+
+    return fingerprint, source, partCount
+end
+
+function LyraMacro:AssertMapFingerprint(expectedFingerprint, options)
+    options = options or {}
+
+    if type(expectedFingerprint) ~= "string" or expectedFingerprint == "" then
+        return true
+    end
+
+    local currentFingerprint, source = self:DetectMapFingerprint({ Force = true, Silent = options.Silent })
+
+    if currentFingerprint == expectedFingerprint then
+        return true, currentFingerprint, source
+    end
+
+    local message = "[LyraMacro] Current map fingerprint does not match this recorded strategy. Expected "
+        .. tostring(expectedFingerprint)
+        .. ", got "
+        .. tostring(currentFingerprint)
+        .. "."
+
+    if options.WarnOnly then
+        warn(message)
+        return false, currentFingerprint, source
+    end
+
+    error(message, 2)
 end
 
 function LyraMacro:_appendRecordedStep(step)
@@ -297,6 +1272,11 @@ function LyraMacro:_recordRemoteInvoke(args)
 
     local category = args[1]
     local action = args[2]
+    local remoteMapName, remoteMapSource = detectMapFromRemoteArgs(args)
+
+    if remoteMapName then
+        self:_setDetectedMap(remoteMapName, remoteMapSource, false)
+    end
 
     if category == "Waves" and action == "Skip" then
         self:_appendRecordedStep({
@@ -383,6 +1363,7 @@ function LyraMacro:_installRecorder()
 
         if method == "InvokeServer" and remote == RemoteFunction then
             local args = { ... }
+            self:_observeElevatorEnter(args)
             local recorded, recordError = pcall(function()
                 self:_recordRemoteInvoke(args)
             end)
@@ -422,7 +1403,18 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
+    self.SelectedMapFingerprint = ""
+    self.SelectedMapFingerprintSource = nil
+    self.SelectedMapFingerprintPartCount = 0
+
+    if self.LastDetectedMapSource ~= "manual" and self.LastDetectedMapSource ~= "manual override" then
+        self.SelectedMap = ""
+        self.LastDetectedMapSource = nil
+    end
+
     self.IsRecording = true
+    self:DetectMap({ Silent = true })
+    self:DetectMapFingerprint({ Silent = true, Force = true })
 
     print("[LyraMacro] Strategy recording started.")
     return true
@@ -440,6 +1432,12 @@ function LyraMacro:StopRecording()
     end
 
     table.clear(self.RecordingConnections)
+
+    if self.SelectedMap == "" then
+        self:DetectMap({ Silent = true })
+    end
+
+    self:DetectMapFingerprint({ Silent = true, Force = true })
 
     local recordedStrategy = self:GetRecordedStrategy()
     local exportResult = self:SaveRecordedStrategy()
@@ -499,6 +1497,20 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
         "",
     }
 
+    if type(self.SelectedMap) == "string" and self.SelectedMap ~= "" then
+        table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(self.SelectedMap) .. ", { Source = " .. formatLuaValue(self.LastDetectedMapSource or "recorded") .. " })")
+        table.insert(lines, "")
+    end
+
+    if type(self.SelectedMapFingerprint) == "string" and self.SelectedMapFingerprint ~= "" then
+        table.insert(lines, "local RecordedMapFingerprint = " .. formatLuaValue(self.SelectedMapFingerprint))
+        table.insert(lines, "")
+        table.insert(lines, "if not (hasSharedEnvironment and getgenv().LyraMacroSkipMapCheck == true) then")
+        table.insert(lines, "    LyraMacro:AssertMapFingerprint(RecordedMapFingerprint)")
+        table.insert(lines, "end")
+        table.insert(lines, "")
+    end
+
     appendRecordedStrategyLines(lines, self.RecordedStrategy)
     table.insert(lines, "")
     table.insert(lines, "LyraMacro:Run(Strategy)")
@@ -524,6 +1536,8 @@ function LyraMacro:SaveRecordedStrategy(options)
 
         if type(self.SelectedMap) == "string" and self.SelectedMap ~= "" then
             mapPart = "_" .. sanitizeFileName(self.SelectedMap)
+        elseif type(self.SelectedMapFingerprint) == "string" and self.SelectedMapFingerprint ~= "" then
+            mapPart = "_MapFingerprint_" .. sanitizeFileName(self.SelectedMapFingerprint)
         end
 
         fileName = "LyraRecordedStrategy" .. mapPart .. "_" .. getRecordingTimestamp() .. ".lua"
@@ -745,11 +1759,50 @@ function LyraMacro:CreateRecorderWindow(config)
 
         local strategyTab = window:CreateTab(config.TabName or "Strategy")
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
+        strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
+            if not enabled then
+                self:SetAutoRecordOnTeleport(false)
+                return
+            end
 
-        local isRecording = false
+            local armed, message = self:SetAutoRecordOnTeleport(true)
+
+            if armed then
+                descriptionLabel.UpdateText("Elevator watcher armed. Enter an elevator to record its selected map.")
+                window:Notify("Elevator Watcher Armed", message, 4)
+                return
+            end
+
+            descriptionLabel.UpdateText(message or "Elevator auto-recording could not be enabled.")
+            window:Notify("Elevator Watcher Unavailable", message or "Your executor cannot queue scripts across teleports.", 4)
+        end)
+
+
+        local isRecording = self.IsRecording
         local recordButton
 
-        recordButton = strategyTab:CreateButton("Record Strategy", function()
+        strategyTab:CreateButton("Detect Map", function()
+            local mapName, mapSource = self:DetectMap({ Force = true, Silent = true })
+
+            if mapName then
+                descriptionLabel.UpdateText("Detected map: " .. mapName .. " (" .. tostring(mapSource) .. ")")
+                window:Notify("Map Detected", mapName, 3)
+                return
+            end
+
+            local fingerprint, fingerprintSource, partCount = self:DetectMapFingerprint({ Force = true })
+
+            if fingerprint then
+                descriptionLabel.UpdateText("Map fingerprint: " .. fingerprint .. " (" .. tostring(partCount) .. " parts)")
+                window:Notify("Map Fingerprinted", tostring(fingerprintSource), 4)
+                return
+            end
+
+            descriptionLabel.UpdateText("Map not detected. Set getgenv().LyraMacroMapName before loading the recorder.")
+            window:Notify("Map Not Detected", "No name or stable fingerprint was found.", 4)
+        end)
+
+        recordButton = strategyTab:CreateButton(isRecording and "Stop Recording" or "Record Strategy", function()
             if isRecording then
                 local recordedStrategy, _, exportResult = self:StopRecording()
                 isRecording = false
