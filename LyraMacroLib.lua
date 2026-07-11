@@ -125,6 +125,7 @@ local LyraMacro = {
     AutoRecordTimeout = 45,
     LastDetectedElevator = nil,
     PendingElevatorReplay = nil,
+    PendingLegacyReplayFingerprint = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
 }
@@ -1093,6 +1094,8 @@ function LyraMacro:_observeElevatorEnter(args)
         return
     end
 
+    self:_setDetectedMap(mapTitle, "elevator", true)
+
     if self.PendingElevatorReplay then
         local queued, queueMessage = self:_queueStrategyReplayAfterTeleport(self.PendingElevatorReplay, mapTitle)
 
@@ -1359,6 +1362,12 @@ function LyraMacro:AssertMapFingerprint(expectedFingerprint, options)
 
     if type(expectedFingerprint) ~= "string" or expectedFingerprint == "" then
         return true
+    end
+
+    if game.PlaceId == LOBBY_PLACE_ID then
+        self.PendingLegacyReplayFingerprint = expectedFingerprint
+        print("[LyraMacro] Strategy fingerprint check deferred until the elevator teleports to the match.")
+        return true, nil, "lobby deferred"
     end
 
     local currentFingerprint, source = self:DetectMapFingerprint({ Force = true, Silent = options.Silent })
@@ -1938,6 +1947,21 @@ function LyraMacro:CreateRecorderWindow(config)
         local isRecording = self.IsRecording
         local recordButton
 
+        task.spawn(function()
+            local deadline = os.clock() + (tonumber(config.AutoDetectTimeout) or 60)
+
+            while (not self.RecorderWindow or self.RecorderWindow == window) and os.clock() < deadline do
+                local mapName, mapSource = self:DetectMap({ Force = true, Silent = true })
+
+                if mapName then
+                    descriptionLabel.UpdateText("Detected map: " .. mapName .. " (" .. tostring(mapSource) .. ")")
+                    return
+                end
+
+                task.wait(1)
+            end
+        end)
+
         strategyTab:CreateButton("Detect Map", function()
             local mapName, mapSource = self:DetectMap({ Force = true, Silent = true })
 
@@ -2108,6 +2132,23 @@ end
 
 function LyraMacro:Run(strategy)
     assert(type(strategy) == "table", "[LyraMacro] Strategy must be a table of step tables.")
+
+    if game.PlaceId == LOBBY_PLACE_ID then
+        local expectedFingerprint = self.PendingLegacyReplayFingerprint
+        self.PendingLegacyReplayFingerprint = nil
+
+        if expectedFingerprint then
+            local queued, queueMessage = self:QueueStrategyAfterElevator(strategy, expectedFingerprint)
+
+            if not queued then
+                error(queueMessage, 2)
+            end
+
+            return
+        end
+
+        error("[LyraMacro] Strategy replay must be started from the match, or include a recorded map fingerprint to queue through an elevator.", 2)
+    end
 
     self:RemoveIndex()
     self:Ready()
