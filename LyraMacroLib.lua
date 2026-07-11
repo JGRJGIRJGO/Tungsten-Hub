@@ -112,6 +112,16 @@ local COA_TOWER_NAMES = {
     lifeguard = true,
 }
 
+local COA_ATTRIBUTE_NAMES = {
+    "Troop",
+    "Tower",
+    "TowerName",
+    "Unit",
+    "UnitName",
+    "Skin",
+    "SkinName",
+}
+
 local LocalPlayer = Players.LocalPlayer
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
 local RemoteEvent = ReplicatedStorage:WaitForChild("RemoteEvent")
@@ -1064,22 +1074,39 @@ local function getTowersFolder()
     return TowersFolder
 end
 
+local function isCallOfArmsIdentifier(value)
+    local lookupKey = normalizeLookupKey(value)
+
+    return COA_TOWER_NAMES[lookupKey]
+        or lookupKey == "callofarms"
+        or lookupKey:find("commander", 1, true) ~= nil
+        or lookupKey:find("lifeguard", 1, true) ~= nil
+end
+
 local function isCallOfArmsTower(tower)
-    if COA_TOWER_NAMES[normalizeLookupKey(tower.Name)] then
+    if isCallOfArmsIdentifier(getInstanceName(tower)) then
         return true
     end
 
+    for _, attributeName in ipairs(COA_ATTRIBUTE_NAMES) do
+        local gotAttribute, attributeValue = pcall(function()
+            return tower:GetAttribute(attributeName)
+        end)
+
+        if gotAttribute and isCallOfArmsIdentifier(attributeValue) then
+            return true
+        end
+    end
+
     for _, descendant in ipairs(safeGetDescendants(tower)) do
-        if normalizeLookupKey(descendant.Name) == "callofarms" then
+        if isCallOfArmsIdentifier(getInstanceName(descendant)) then
             return true
         end
 
         if instanceIsA(descendant, "StringValue") then
-            local gotValue, value = pcall(function()
-                return descendant.Value
-            end)
+            local value = readInstanceValue(descendant)
 
-            if gotValue and normalizeLookupKey(value) == "callofarms" then
+            if isCallOfArmsIdentifier(value) then
                 return true
             end
         end
@@ -1140,6 +1167,10 @@ function LyraMacro:_getCallOfArmsTowers()
         end
     end
 
+    table.sort(callOfArmsTowers, function(left, right)
+        return tostring(getInstanceName(left) or "") < tostring(getInstanceName(right) or "")
+    end)
+
     return callOfArmsTowers
 end
 
@@ -1158,16 +1189,37 @@ function LyraMacro:SetChainCOA(enabled)
         return true, "Chain COA disabled."
     end
 
+    self.ChainCOANextIndex = 0
     local chainToken = self._chainCOAToken
-    print("[LyraMacro] Chain COA enabled. Activating the next tower every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    print("[LyraMacro] Chain COA armed. Waiting for a Commander or Lifeguard, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
 
     task.spawn(function()
+        local detectedCommander = false
+        local lastTowerCount = 0
+
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers = self:_getCallOfArmsTowers()
 
             if #callOfArmsTowers == 0 then
-                task.wait(0.5)
+                if detectedCommander then
+                    print("[LyraMacro] Chain COA is waiting for another Commander or Lifeguard.")
+                end
+
+                detectedCommander = false
+                lastTowerCount = 0
+                self.ChainCOANextIndex = 0
+                task.wait(0.15)
             else
+                if not detectedCommander then
+                    detectedCommander = true
+                    self.ChainCOANextIndex = 0
+                    print("[LyraMacro] Chain COA detected " .. tostring(#callOfArmsTowers) .. " Commander/Lifeguard tower(s); starting rotation.")
+                elseif lastTowerCount ~= #callOfArmsTowers then
+                    self.ChainCOANextIndex = 0
+                    print("[LyraMacro] Chain COA refreshed its Commander/Lifeguard rotation.")
+                end
+
+                lastTowerCount = #callOfArmsTowers
                 self.ChainCOANextIndex = self.ChainCOANextIndex % #callOfArmsTowers + 1
                 local targetTower = callOfArmsTowers[self.ChainCOANextIndex]
                 local activated, activationError = pcall(function()
