@@ -144,6 +144,7 @@ local LyraMacro = {
     ChainCOANextIndex = 0,
     _chainCOAToken = 0,
     _resultsWatchToken = 0,
+    StrategyLogger = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
 }
@@ -228,6 +229,24 @@ local function formatRecordedStep(step)
     end
 
     return "{ " .. table.concat(fields, ", ") .. " }"
+end
+
+local function describeStrategyStep(step)
+    if step.action == "place" then
+        return "PLACE " .. tostring(step.troop)
+    elseif step.action == "upgrade" then
+        return "UPGRADE TOWER #" .. tostring(step.tower)
+    elseif step.action == "sell" then
+        return "SELL TOWER #" .. tostring(step.tower)
+    elseif step.action == "mode" then
+        return "VOTE " .. tostring(step.mode)
+    elseif step.action == "skip" then
+        return "SKIP WAVE"
+    elseif step.action == "ability" then
+        return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower)
+    end
+
+    return string.upper(tostring(step.action or "UNKNOWN"))
 end
 
 local function appendRecordedStrategyLines(lines, strategy)
@@ -1902,20 +1921,22 @@ function LyraMacro:_recordRemoteInvoke(args)
 
     local category = args[1]
     local action = args[2]
+    local categoryKey = normalizeLookupKey(category)
+    local actionKey = normalizeLookupKey(action)
     local remoteMapName, remoteMapSource = detectMapFromRemoteArgs(args)
 
     if remoteMapName then
         self:_setDetectedMap(remoteMapName, remoteMapSource, false)
     end
 
-    if category == "Waves" and action == "Skip" then
+    if categoryKey == "waves" and actionKey == "skip" then
         self:_appendRecordedStep({
             action = "skip",
         })
         return
     end
 
-    if category == "Difficulty" and action == "Vote" then
+    if categoryKey == "difficulty" and actionKey == "vote" then
         local modeName = args[3]
 
         if type(modeName) ~= "string" then
@@ -1932,11 +1953,11 @@ function LyraMacro:_recordRemoteInvoke(args)
         return
     end
 
-    if category ~= "Troops" then
+    if categoryKey ~= "troops" then
         return
     end
 
-    if action == "Abilities" and args[3] == "Activate" then
+    if actionKey == "abilities" and normalizeLookupKey(args[3]) == "activate" then
         local abilityInfo = args[4] or {}
         local abilityName = TRACKED_ABILITIES[normalizeLookupKey(abilityInfo.Name)]
 
@@ -2687,6 +2708,177 @@ function LyraMacro:VoteSkip(label)
     RemoteFunction:InvokeServer("Waves", "Skip")
 end
 
+function LyraMacro:CreateStrategyLogger()
+    local parent = game:GetService("CoreGui")
+    local parentReady = pcall(function()
+        return parent.Name
+    end)
+
+    if not parentReady then
+        parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    local existing = parent:FindFirstChild("LyraAutoStrategies")
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "LyraAutoStrategies"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = false
+    screenGui.DisplayOrder = 1000000
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = parent
+
+    local topBanner = Instance.new("Frame")
+    topBanner.Name = "TopBanner"
+    topBanner.AnchorPoint = Vector2.new(1, 0)
+    topBanner.Position = UDim2.new(1, -18, 0, 14)
+    topBanner.Size = UDim2.new(0, 326, 0, 28)
+    topBanner.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
+    topBanner.BackgroundTransparency = 0.28
+    topBanner.BorderSizePixel = 0
+    topBanner.ZIndex = 100
+    topBanner.Parent = screenGui
+
+    local topBannerCorner = Instance.new("UICorner")
+    topBannerCorner.CornerRadius = UDim.new(0, 6)
+    topBannerCorner.Parent = topBanner
+
+    local topBannerText = Instance.new("TextLabel")
+    topBannerText.Size = UDim2.new(1, -16, 1, 0)
+    topBannerText.Position = UDim2.new(0, 8, 0, 0)
+    topBannerText.BackgroundTransparency = 1
+    topBannerText.Text = "LYRA AUTOSTRATEGIES"
+    topBannerText.TextColor3 = Color3.fromRGB(240, 244, 255)
+    topBannerText.TextSize = 13
+    topBannerText.Font = Enum.Font.MontserratBold
+    topBannerText.TextXAlignment = Enum.TextXAlignment.Left
+    topBannerText.ZIndex = 101
+    topBannerText.Parent = topBanner
+
+    local frame = Instance.new("Frame")
+    frame.Name = "ActionLog"
+    frame.AnchorPoint = Vector2.new(1, 0)
+    frame.Position = UDim2.new(1, -18, 0, 48)
+    frame.Size = UDim2.new(0, 326, 0, 294)
+    frame.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
+    frame.BackgroundTransparency = 0.36
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 100
+    frame.Parent = screenGui
+
+    local frameCorner = Instance.new("UICorner")
+    frameCorner.CornerRadius = UDim.new(0, 6)
+    frameCorner.Parent = frame
+
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, 0, 0, 36)
+    header.BackgroundColor3 = Color3.fromRGB(20, 29, 39)
+    header.BackgroundTransparency = 0.22
+    header.BorderSizePixel = 0
+    header.ZIndex = 101
+    header.Parent = frame
+
+    local headerCorner = Instance.new("UICorner")
+    headerCorner.CornerRadius = UDim.new(0, 6)
+    headerCorner.Parent = header
+
+    local headerText = Instance.new("TextLabel")
+    headerText.Size = UDim2.new(1, -20, 1, 0)
+    headerText.Position = UDim2.new(0, 10, 0, 0)
+    headerText.BackgroundTransparency = 1
+    headerText.Text = "LYRA AUTOSTRATEGIES"
+    headerText.TextColor3 = Color3.fromRGB(240, 244, 255)
+    headerText.TextSize = 14
+    headerText.Font = Enum.Font.MontserratBold
+    headerText.TextXAlignment = Enum.TextXAlignment.Left
+    headerText.ZIndex = 102
+    headerText.Parent = header
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "Actions"
+    scroll.Position = UDim2.new(0, 8, 0, 44)
+    scroll.Size = UDim2.new(1, -16, 1, -52)
+    scroll.BackgroundColor3 = Color3.fromRGB(5, 7, 10)
+    scroll.BackgroundTransparency = 0.48
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 4
+    scroll.ScrollBarImageColor3 = Color3.fromRGB(95, 180, 255)
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ZIndex = 101
+    scroll.Parent = frame
+
+    local scrollCorner = Instance.new("UICorner")
+    scrollCorner.CornerRadius = UDim.new(0, 5)
+    scrollCorner.Parent = scroll
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 6)
+    padding.PaddingBottom = UDim.new(0, 6)
+    padding.PaddingLeft = UDim.new(0, 6)
+    padding.PaddingRight = UDim.new(0, 6)
+    padding.Parent = scroll
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 4)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = scroll
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
+    end)
+
+    self.StrategyLogger = {
+        Gui = screenGui,
+        Scroll = scroll,
+        Layout = layout,
+        Entries = 0,
+    }
+
+    return self.StrategyLogger
+end
+
+function LyraMacro:LogStrategyAction(message)
+    local logger = self.StrategyLogger
+
+    if not logger or not logger.Gui or not logger.Gui.Parent then
+        logger = self:CreateStrategyLogger()
+    end
+
+    logger.Entries += 1
+
+    local entry = Instance.new("TextLabel")
+    entry.Name = "Action" .. tostring(logger.Entries)
+    entry.Size = UDim2.new(1, 0, 0, 32)
+    entry.BackgroundColor3 = Color3.fromRGB(30, 42, 56)
+    entry.BackgroundTransparency = 0.46
+    entry.BorderSizePixel = 0
+    entry.Text = tostring(logger.Entries) .. ". " .. tostring(message)
+    entry.TextColor3 = Color3.fromRGB(232, 239, 250)
+    entry.TextSize = 12
+    entry.Font = Enum.Font.MontserratBold
+    entry.TextWrapped = true
+    entry.TextXAlignment = Enum.TextXAlignment.Left
+    entry.TextYAlignment = Enum.TextYAlignment.Center
+    entry.LayoutOrder = logger.Entries
+    entry.ZIndex = 102
+    entry.Parent = logger.Scroll
+
+    local entryCorner = Instance.new("UICorner")
+    entryCorner.CornerRadius = UDim.new(0, 4)
+    entryCorner.Parent = entry
+
+    task.defer(function()
+        if logger.Scroll and logger.Scroll.Parent then
+            logger.Scroll.CanvasPosition = Vector2.new(0, math.max(0, logger.Layout.AbsoluteContentSize.Y - logger.Scroll.AbsoluteWindowSize.Y + 12))
+        end
+    end)
+end
+
 function LyraMacro:Run(strategy)
     assert(type(strategy) == "table", "[LyraMacro] Strategy must be a table of step tables.")
 
@@ -2709,10 +2901,13 @@ function LyraMacro:Run(strategy)
 
     self:RemoveIndex()
     self:Ready()
+    self:CreateStrategyLogger()
+    self:LogStrategyAction("STRATEGY STARTED - " .. tostring(#strategy) .. " ACTIONS")
 
     for stepNumber, step in ipairs(strategy) do
         local action = step.action
         assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
+        self:LogStrategyAction(tostring(stepNumber) .. "/" .. tostring(#strategy) .. "  " .. describeStrategyStep(step))
 
         if action == "skip" then
             self:VoteSkip(step.label)
@@ -2732,6 +2927,7 @@ function LyraMacro:Run(strategy)
     end
 
     print("[LyraMacro] Strategy completed.")
+    self:LogStrategyAction("STRATEGY COMPLETED")
 end
 
 local function shouldAutoOpenRecorderWindow()
