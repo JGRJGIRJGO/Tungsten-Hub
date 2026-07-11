@@ -98,6 +98,18 @@ local DYNAMIC_CONTAINER_NAMES = {
 }
 
 local MAP_FINGERPRINT_PART_LIMIT = 500
+local CHAIN_COA_INTERVAL = 10.2
+
+local TRACKED_ABILITIES = {
+    callofarms = "Call Of Arms",
+    mafiacall = "Mafia Call",
+    overcharge = "Overcharge",
+}
+
+local COA_TOWER_NAMES = {
+    commander = true,
+    lifeguard = true,
+}
 
 local LocalPlayer = Players.LocalPlayer
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
@@ -127,6 +139,11 @@ local LyraMacro = {
     LastDetectedElevator = nil,
     PendingElevatorReplay = nil,
     PendingLegacyReplayFingerprint = nil,
+    ChainCOAEnabled = false,
+    ChainCOAInterval = CHAIN_COA_INTERVAL,
+    ChainCOANextIndex = 0,
+    _chainCOAToken = 0,
+    _resultsWatchToken = 0,
     _recordHookInstalled = false,
     _originalNamecall = nil,
 }
@@ -203,6 +220,9 @@ local function formatRecordedStep(step)
         end
     elseif step.action == "upgrade" or step.action == "sell" then
         table.insert(fields, formatField("tower", step.tower))
+    elseif step.action == "ability" then
+        table.insert(fields, formatField("tower", step.tower))
+        table.insert(fields, formatField("ability", step.ability))
     elseif step.action == "skip" and step.label then
         table.insert(fields, formatField("label", step.label))
     end
@@ -1008,6 +1028,30 @@ local function getTowersFolder()
     return TowersFolder
 end
 
+local function isCallOfArmsTower(tower)
+    if COA_TOWER_NAMES[normalizeLookupKey(tower.Name)] then
+        return true
+    end
+
+    for _, descendant in ipairs(safeGetDescendants(tower)) do
+        if normalizeLookupKey(descendant.Name) == "callofarms" then
+            return true
+        end
+
+        if instanceIsA(descendant, "StringValue") then
+            local gotValue, value = pcall(function()
+                return descendant.Value
+            end)
+
+            if gotValue and normalizeLookupKey(value) == "callofarms" then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 -- Retries only when the authoritative cash value changes; it never polls or sleeps.
 function LyraMacro:_retryOnCashChange(actionName, invoke, isComplete)
     local cash = getCashValue()
@@ -1026,6 +1070,84 @@ function LyraMacro:_retryOnCashChange(actionName, invoke, isComplete)
             return
         end
     end
+end
+
+function LyraMacro:ActivateAbilityForTower(tower, abilityName)
+    assert(tower and tower.Parent, "[LyraMacro] Cannot activate an ability for a missing tower.")
+
+    local canonicalAbilityName = TRACKED_ABILITIES[normalizeLookupKey(abilityName)] or tostring(abilityName or "")
+    assert(canonicalAbilityName ~= "", "[LyraMacro] Ability name is required.")
+
+    return RemoteFunction:InvokeServer("Troops", "Abilities", "Activate", {
+        Name = canonicalAbilityName,
+        Troop = tower,
+    })
+end
+
+function LyraMacro:ActivateAbility(towerIndex, abilityName)
+    local targetTower = self.SpawnedTowers[towerIndex]
+    assert(
+        targetTower and targetTower.Parent,
+        "[LyraMacro] Cannot activate an ability for tower #" .. tostring(towerIndex) .. "; it is missing or was sold."
+    )
+
+    self:ActivateAbilityForTower(targetTower, abilityName)
+    print("[LyraMacro] Activated " .. tostring(abilityName) .. " for tower #" .. tostring(towerIndex) .. ".")
+end
+
+function LyraMacro:_getCallOfArmsTowers()
+    local callOfArmsTowers = {}
+
+    for _, tower in ipairs(getTowersFolder():GetChildren()) do
+        if tower.Parent and isCallOfArmsTower(tower) then
+            table.insert(callOfArmsTowers, tower)
+        end
+    end
+
+    return callOfArmsTowers
+end
+
+function LyraMacro:SetChainCOA(enabled)
+    enabled = enabled == true
+
+    if enabled and game.PlaceId ~= MATCH_PLACE_ID then
+        return false, "Chain COA can only run in match place " .. tostring(MATCH_PLACE_ID) .. "."
+    end
+
+    self.ChainCOAEnabled = enabled
+    self._chainCOAToken += 1
+
+    if not enabled then
+        print("[LyraMacro] Chain COA disabled.")
+        return true, "Chain COA disabled."
+    end
+
+    local chainToken = self._chainCOAToken
+    print("[LyraMacro] Chain COA enabled. Activating the next tower every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+
+    task.spawn(function()
+        while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
+            local callOfArmsTowers = self:_getCallOfArmsTowers()
+
+            if #callOfArmsTowers == 0 then
+                task.wait(0.5)
+            else
+                self.ChainCOANextIndex = self.ChainCOANextIndex % #callOfArmsTowers + 1
+                local targetTower = callOfArmsTowers[self.ChainCOANextIndex]
+                local activated, activationError = pcall(function()
+                    self:ActivateAbilityForTower(targetTower, "Call Of Arms")
+                end)
+
+                if not activated then
+                    warn("[LyraMacro] Chain COA activation failed: " .. tostring(activationError))
+                end
+
+                task.wait(self.ChainCOAInterval)
+            end
+        end
+    end)
+
+    return true, "Chain COA enabled."
 end
 
 -- Sets the starting troop configuration. Lobby selection is intentionally separate.
@@ -1798,6 +1920,27 @@ function LyraMacro:_recordRemoteInvoke(args)
         return
     end
 
+    if action == "Abilities" and args[3] == "Activate" then
+        local abilityInfo = args[4] or {}
+        local abilityName = TRACKED_ABILITIES[normalizeLookupKey(abilityInfo.Name)]
+
+        if not abilityName then
+            return
+        end
+
+        local towerIndex = self:_getRecordedTowerIndex(abilityInfo.Troop)
+
+        if towerIndex then
+            self:_appendRecordedStep({
+                action = "ability",
+                tower = towerIndex,
+                ability = abilityName,
+            })
+        end
+
+        return
+    end
+
     if action == "Place" then
         local troopType = args[3]
         local placementInfo = args[4] or {}
@@ -1879,6 +2022,53 @@ function LyraMacro:_installRecorder()
     return true
 end
 
+function LyraMacro:_watchForMatchResults(watchToken)
+    task.spawn(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 30)
+        local gameGui = playerGui and (playerGui:FindFirstChild("GameGui") or playerGui:WaitForChild("GameGui", 60))
+        local results = gameGui and (gameGui:FindFirstChild("Results") or gameGui:WaitForChild("Results", 60))
+
+        if not results then
+            return
+        end
+
+        if self._resultsWatchToken ~= watchToken or not self.IsRecording then
+            return
+        end
+
+        local function finishRecording()
+            if self._resultsWatchToken ~= watchToken or not self.IsRecording then
+                return
+            end
+
+            if self.ChainCOAEnabled then
+                self:SetChainCOA(false)
+            end
+
+            print("[LyraMacro] Results are visible. Stopping and exporting the recorded strategy.")
+            self:StopRecording()
+        end
+
+        if results.Visible then
+            finishRecording()
+            return
+        end
+
+        local connection
+        connection = results:GetPropertyChangedSignal("Visible"):Connect(function()
+            if results.Visible then
+                if connection then
+                    connection:Disconnect()
+                end
+
+                finishRecording()
+            end
+        end)
+
+        table.insert(self.RecordingConnections, connection)
+    end)
+end
+
 function LyraMacro:StartRecording()
     if self.IsRecording then
         return true, "Recording is already active."
@@ -1905,8 +2095,10 @@ function LyraMacro:StartRecording()
     end
 
     self.IsRecording = true
+    self._resultsWatchToken += 1
     self:DetectMap({ Silent = true })
     self:DetectMapFingerprint({ Silent = true, Force = true })
+    self:_watchForMatchResults(self._resultsWatchToken)
 
     print("[LyraMacro] Strategy recording started.")
     return true
@@ -1918,6 +2110,7 @@ function LyraMacro:StopRecording()
     end
 
     self.IsRecording = false
+    self._resultsWatchToken += 1
 
     for _, connection in ipairs(self.RecordingConnections) do
         connection:Disconnect()
@@ -2275,6 +2468,22 @@ function LyraMacro:CreateRecorderWindow(config)
             window:Notify("Elevator Watcher Unavailable", message or "Your executor cannot queue scripts across teleports.", 4)
         end)
 
+        strategyTab:CreateToggle("Chain COA", self.ChainCOAEnabled, function(enabled)
+            local chained, message = self:SetChainCOA(enabled)
+
+            if chained then
+                if enabled then
+                    descriptionLabel.UpdateText("Chain COA rotates Call Of Arms every 10.2 seconds.")
+                    window:Notify("Chain COA Enabled", message, 4)
+                end
+
+                return
+            end
+
+            descriptionLabel.UpdateText(message or "Chain COA could not be enabled.")
+            window:Notify("Chain COA Unavailable", message or "Start Chain COA from a match.", 4)
+        end)
+
 
         local isRecording = self.IsRecording
         local recordButton
@@ -2499,6 +2708,8 @@ function LyraMacro:Run(strategy)
             self:Upgrade(step.tower)
         elseif action == "sell" then
             self:Sell(step.tower)
+        elseif action == "ability" then
+            self:ActivateAbility(step.tower, step.ability)
         else
             error("[LyraMacro] Unknown action in step " .. stepNumber .. ": " .. action)
         end
