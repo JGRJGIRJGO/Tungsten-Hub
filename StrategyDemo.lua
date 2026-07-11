@@ -10,9 +10,21 @@ local LyraUI = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua?t=" .. tostring(os.time())
 ))()
 
+local previousAutoUI
+local hasSharedEnvironment = type(getgenv) == "function"
+
+if hasSharedEnvironment then
+    previousAutoUI = getgenv().LyraMacroAutoUI
+    getgenv().LyraMacroAutoUI = false
+end
+
 local LyraMacro = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua?t=" .. tostring(os.time())
 ))()
+
+if hasSharedEnvironment then
+    getgenv().LyraMacroAutoUI = previousAutoUI
+end
 
 LyraMacro:Loadout("Shotgunner", "Minigunner", "None", "None", "None")
 LyraMacro:Mode("Hardcore")
@@ -36,48 +48,7 @@ local Strategy = {
     { action = "sell", tower = 1 },
 }
 
-local Window = LyraUI:CreateWindow({
-    Name = "Lyra Strategy Recorder",
-    Subtitle = "Macro Tools",
+LyraMacro:CreateRecorderWindow({
+    LyraUI = LyraUI,
+    Strategy = Strategy,
 })
-
-local StrategyTab = Window:CreateTab("Strategy")
-
-StrategyTab:CreateLabel("Record tower placements, upgrades, sells, and wave skips.")
-
-local isRecording = false
-local recordButton
-
-recordButton = StrategyTab:CreateButton("Record Strategy", function()
-    if type(LyraMacro.StartRecording) ~= "function" or type(LyraMacro.StopRecording) ~= "function" then
-        Window:Notify("Recorder Unavailable", "LyraMacroLib.lua does not include recording support yet.", 4)
-        return
-    end
-
-    if isRecording then
-        local recordedStrategy = LyraMacro:StopRecording()
-        isRecording = false
-        recordButton.UpdateButtonText("Record Strategy")
-        Window:Notify("Recording Stopped", "Recorded " .. tostring(#recordedStrategy) .. " strategy steps.", 3)
-        return
-    end
-
-    local started, message = LyraMacro:StartRecording()
-
-    if not started then
-        Window:Notify("Recorder Unavailable", message or "Strategy recording could not be started.", 4)
-        return
-    end
-
-    isRecording = true
-    recordButton.UpdateButtonText("Stop Recording")
-    Window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
-end)
-
-StrategyTab:CreateButton("Run Demo Strategy", function()
-    task.spawn(function()
-        LyraMacro:Run(Strategy)
-    end)
-end)
-
-Window:Notify("Lyra UI Library", "Strategy recorder loaded.", 4)

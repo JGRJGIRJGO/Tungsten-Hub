@@ -11,7 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
-local TowersFolder = workspace:WaitForChild("Towers")
+local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
     SpawnedTowers = {},
@@ -92,6 +92,12 @@ local function formatRecordedStep(step)
         if step.rotation then
             table.insert(fields, formatField("rotation", step.rotation))
         end
+    elseif step.action == "mode" then
+        table.insert(fields, formatField("mode", step.mode))
+
+        if step.confirmed ~= nil then
+            table.insert(fields, formatField("confirmed", step.confirmed))
+        end
     elseif step.action == "upgrade" or step.action == "sell" then
         table.insert(fields, formatField("tower", step.tower))
     elseif step.action == "skip" and step.label then
@@ -128,6 +134,11 @@ local function getCashValue()
     return cash
 end
 
+local function getTowersFolder()
+    TowersFolder = TowersFolder or workspace:WaitForChild("Towers")
+    return TowersFolder
+end
+
 -- Retries only when the authoritative cash value changes; it never polls or sleeps.
 function LyraMacro:_retryOnCashChange(actionName, invoke, isComplete)
     local cash = getCashValue()
@@ -159,6 +170,13 @@ function LyraMacro:Mode(modeName)
     print("[LyraMacro] Mode configured: " .. modeName)
 end
 
+function LyraMacro:VoteMode(modeName, confirmed)
+    confirmed = confirmed ~= false
+    self:Mode(modeName)
+    print("[LyraMacro] Voting for difficulty: " .. tostring(modeName))
+    RemoteFunction:InvokeServer("Difficulty", "Vote", modeName, confirmed)
+end
+
 function LyraMacro:GameInfo(mapName, options)
     self.SelectedMap = mapName
     print("[LyraMacro] Match configured for map: " .. mapName)
@@ -183,7 +201,7 @@ end
 function LyraMacro:_trackNextRecordedTower()
     local connection
 
-    connection = TowersFolder.ChildAdded:Connect(function(tower)
+    connection = getTowersFolder().ChildAdded:Connect(function(tower)
         connection:Disconnect()
 
         if not self.IsRecording then
@@ -223,6 +241,23 @@ function LyraMacro:_recordRemoteInvoke(args)
     if category == "Waves" and action == "Skip" then
         self:_appendRecordedStep({
             action = "skip",
+        })
+        return
+    end
+
+    if category == "Difficulty" and action == "Vote" then
+        local modeName = args[3]
+
+        if type(modeName) ~= "string" then
+            warn("[LyraMacro] Ignored difficulty vote because no mode name was found.")
+            return
+        end
+
+        self.SelectedMode = modeName
+        self:_appendRecordedStep({
+            action = "mode",
+            mode = modeName,
+            confirmed = args[4],
         })
         return
     end
@@ -376,12 +411,83 @@ function LyraMacro:GetRecordedStrategySource()
     return table.concat(lines, "\n")
 end
 
+function LyraMacro:CreateRecorderWindow(config)
+    config = config or {}
+
+    if self.RecorderWindow then
+        return self.RecorderWindow
+    end
+
+    local LyraUI = config.LyraUI
+
+    if not LyraUI then
+        local libraryUrl = config.LibraryUrl or "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua?t=" .. tostring(os.time())
+        local loaded, result = pcall(function()
+            return loadstring(game:HttpGet(libraryUrl))()
+        end)
+
+        if not loaded or not result then
+            error("[LyraMacro] Failed to load Lyra UI Library: " .. tostring(result), 0)
+        end
+
+        LyraUI = result
+    end
+
+    local window = LyraUI:CreateWindow({
+        Name = config.Name or "Lyra Strategy Recorder",
+        Subtitle = config.Subtitle or "Macro Tools",
+    })
+
+    local strategyTab = window:CreateTab(config.TabName or "Strategy")
+    local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
+
+    local isRecording = false
+    local recordButton
+
+    recordButton = strategyTab:CreateButton("Record Strategy", function()
+        if isRecording then
+            local recordedStrategy = self:StopRecording()
+            isRecording = false
+            recordButton.UpdateButtonText("Record Strategy")
+            descriptionLabel.UpdateText("Recorded " .. tostring(#recordedStrategy) .. " strategy steps.")
+            window:Notify("Recording Stopped", "Recorded " .. tostring(#recordedStrategy) .. " strategy steps.", 3)
+            return
+        end
+
+        local started, message = self:StartRecording()
+
+        if not started then
+            window:Notify("Recorder Unavailable", message or "Strategy recording could not be started.", 4)
+            return
+        end
+
+        isRecording = true
+        recordButton.UpdateButtonText("Stop Recording")
+        descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, sells, and wave skips.")
+        window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
+    end)
+
+    if config.Strategy then
+        strategyTab:CreateButton(config.RunButtonText or "Run Demo Strategy", function()
+            task.spawn(function()
+                self:Run(config.Strategy)
+            end)
+        end)
+    end
+
+    self.RecorderWindow = window
+    window:Notify("Lyra UI Library", "Strategy recorder loaded.", 4)
+
+    return window
+end
+
 function LyraMacro:Place(troopType, x, y, z, rotation)
     local position = Vector3.new(x, y, z)
     rotation = rotation or CFrame.new()
+    local towersFolder = getTowersFolder()
 
     local placedTower
-    local towerAddedConnection = TowersFolder.ChildAdded:Connect(function(tower)
+    local towerAddedConnection = towersFolder.ChildAdded:Connect(function(tower)
         -- This library is intentionally solo-only, so the next tower is ours.
         placedTower = tower
     end)
@@ -490,6 +596,8 @@ function LyraMacro:Run(strategy)
 
         if action == "skip" then
             self:VoteSkip(step.label)
+        elseif action == "mode" then
+            self:VoteMode(step.mode, step.confirmed)
         elseif action == "place" then
             self:Place(step.troop, step.x, step.y, step.z, step.rotation)
         elseif action == "upgrade" then
@@ -502,6 +610,26 @@ function LyraMacro:Run(strategy)
     end
 
     print("[LyraMacro] Strategy completed.")
+end
+
+local function shouldAutoOpenRecorderWindow()
+    if type(getgenv) ~= "function" then
+        return true
+    end
+
+    return getgenv().LyraMacroAutoUI ~= false
+end
+
+if shouldAutoOpenRecorderWindow() then
+    task.defer(function()
+        local createdWindow, err = pcall(function()
+            LyraMacro:CreateRecorderWindow()
+        end)
+
+        if not createdWindow then
+            warn("[LyraMacro] Failed to open recorder UI: " .. tostring(err))
+        end
+    end)
 end
 
 return LyraMacro
