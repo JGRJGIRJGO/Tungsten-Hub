@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     Lyra UI Library UI Library (V2 - Fluent & Rayfield Redesign)
     A professional, modern, and draggable dark-themed UI library for Roblox.
     Designed with a Fluent Windows 11 style structure, smooth bouncing transitions, and modular themes.

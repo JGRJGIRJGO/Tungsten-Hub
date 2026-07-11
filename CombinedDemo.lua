@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     Lyra UI Library UI Library & Demo (V2 - Fluent & Rayfield Redesign)
     All-in-one script. You can run this directly in a LocalScript in StarterGui
     or execute it using a Roblox exploit executor.

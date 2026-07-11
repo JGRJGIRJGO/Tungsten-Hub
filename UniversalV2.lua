@@ -1,4 +1,4 @@
-﻿--[[
+--[[
     Lyra UI Library - Universal Script Hub
     Loads the Lyra UI Library UI library from GitHub and implements real, working features:
     - Player Movement (WalkSpeed, JumpPower, Gravity, Fly, Noclip, Infinite Jump)
