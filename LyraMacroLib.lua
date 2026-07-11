@@ -411,6 +411,145 @@ function LyraMacro:GetRecordedStrategySource()
     return table.concat(lines, "\n")
 end
 
+function LyraMacro:_loadLyraUI(libraryUrl)
+    if type(loadstring) ~= "function" then
+        return nil, "loadstring is unavailable in this environment."
+    end
+
+    local fetched, source = pcall(function()
+        return game:HttpGet(libraryUrl)
+    end)
+
+    if not fetched or type(source) ~= "string" or source == "" then
+        return nil, "failed to fetch LyraV2.lua: " .. tostring(source)
+    end
+
+    local chunk, compileError = loadstring(source)
+
+    if not chunk then
+        return nil, "failed to compile LyraV2.lua: " .. tostring(compileError)
+    end
+
+    local loaded, result = pcall(chunk)
+
+    if not loaded or not result then
+        return nil, "failed to run LyraV2.lua: " .. tostring(result)
+    end
+
+    return result
+end
+
+function LyraMacro:_createFallbackRecorderWindow(reason)
+    local parent = game:GetService("CoreGui")
+    local parentReady = pcall(function()
+        return parent.Name
+    end)
+
+    if not parentReady then
+        parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    local existing = parent:FindFirstChild("LyraMacroRecorder")
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "LyraMacroRecorder"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = parent
+
+    local frame = Instance.new("Frame")
+    frame.Name = "RecorderFrame"
+    frame.Size = UDim2.new(0, 280, 0, 120)
+    frame.Position = UDim2.new(0, 18, 0, 120)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(0, 170, 255)
+    stroke.Transparency = 0.35
+    stroke.Thickness = 1
+    stroke.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -20, 0, 28)
+    title.Position = UDim2.new(0, 10, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Text = "Lyra Strategy Recorder"
+    title.TextColor3 = Color3.fromRGB(245, 245, 250)
+    title.TextSize = 14
+    title.Font = Enum.Font.GothamBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = frame
+
+    local status = Instance.new("TextLabel")
+    status.Name = "Status"
+    status.Size = UDim2.new(1, -20, 0, 34)
+    status.Position = UDim2.new(0, 10, 0, 36)
+    status.BackgroundTransparency = 1
+    status.Text = reason and ("Fallback UI: " .. tostring(reason)) or "Ready to record."
+    status.TextColor3 = Color3.fromRGB(170, 170, 180)
+    status.TextSize = 11
+    status.Font = Enum.Font.Gotham
+    status.TextWrapped = true
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = frame
+
+    local button = Instance.new("TextButton")
+    button.Name = "RecordButton"
+    button.Size = UDim2.new(1, -20, 0, 34)
+    button.Position = UDim2.new(0, 10, 1, -44)
+    button.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    button.BorderSizePixel = 0
+    button.Text = "Record Strategy"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 13
+    button.Font = Enum.Font.GothamMedium
+    button.Parent = frame
+
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 6)
+    buttonCorner.Parent = button
+
+    local isRecording = false
+
+    button.MouseButton1Click:Connect(function()
+        if isRecording then
+            local recordedStrategy = self:StopRecording()
+            isRecording = false
+            button.Text = "Record Strategy"
+            button.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+            status.Text = "Recorded " .. tostring(#recordedStrategy) .. " strategy steps."
+            return
+        end
+
+        local started, message = self:StartRecording()
+
+        if not started then
+            status.Text = message or "Strategy recording could not be started."
+            return
+        end
+
+        isRecording = true
+        button.Text = "Stop Recording"
+        button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+        status.Text = "Recording mode votes, placements, upgrades, sells, and wave skips."
+    end)
+
+    self.RecorderWindow = screenGui
+    warn("[LyraMacro] Lyra UI failed to load; opened fallback recorder UI instead. " .. tostring(reason))
+
+    return screenGui
+end
+
 function LyraMacro:CreateRecorderWindow(config)
     config = config or {}
 
@@ -422,63 +561,73 @@ function LyraMacro:CreateRecorderWindow(config)
 
     if not LyraUI then
         local libraryUrl = config.LibraryUrl or "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua?t=" .. tostring(os.time())
-        local loaded, result = pcall(function()
-            return loadstring(game:HttpGet(libraryUrl))()
-        end)
+        local loadError
 
-        if not loaded or not result then
-            error("[LyraMacro] Failed to load Lyra UI Library: " .. tostring(result), 0)
+        LyraUI, loadError = self:_loadLyraUI(libraryUrl)
+
+        if not LyraUI and not config.LibraryUrl then
+            LyraUI, loadError = self:_loadLyraUI("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua")
         end
 
-        LyraUI = result
+        if not LyraUI then
+            return self:_createFallbackRecorderWindow(loadError)
+        end
     end
 
-    local window = LyraUI:CreateWindow({
-        Name = config.Name or "Lyra Strategy Recorder",
-        Subtitle = config.Subtitle or "Macro Tools",
-    })
+    local created, windowOrError = pcall(function()
+        local window = LyraUI:CreateWindow({
+            Name = config.Name or "Lyra Strategy Recorder",
+            Subtitle = config.Subtitle or "Macro Tools",
+        })
 
-    local strategyTab = window:CreateTab(config.TabName or "Strategy")
-    local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
+        local strategyTab = window:CreateTab(config.TabName or "Strategy")
+        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
 
-    local isRecording = false
-    local recordButton
+        local isRecording = false
+        local recordButton
 
-    recordButton = strategyTab:CreateButton("Record Strategy", function()
-        if isRecording then
-            local recordedStrategy = self:StopRecording()
-            isRecording = false
-            recordButton.UpdateButtonText("Record Strategy")
-            descriptionLabel.UpdateText("Recorded " .. tostring(#recordedStrategy) .. " strategy steps.")
-            window:Notify("Recording Stopped", "Recorded " .. tostring(#recordedStrategy) .. " strategy steps.", 3)
-            return
+        recordButton = strategyTab:CreateButton("Record Strategy", function()
+            if isRecording then
+                local recordedStrategy = self:StopRecording()
+                isRecording = false
+                recordButton.UpdateButtonText("Record Strategy")
+                descriptionLabel.UpdateText("Recorded " .. tostring(#recordedStrategy) .. " strategy steps.")
+                window:Notify("Recording Stopped", "Recorded " .. tostring(#recordedStrategy) .. " strategy steps.", 3)
+                return
+            end
+
+            local started, message = self:StartRecording()
+
+            if not started then
+                window:Notify("Recorder Unavailable", message or "Strategy recording could not be started.", 4)
+                return
+            end
+
+            isRecording = true
+            recordButton.UpdateButtonText("Stop Recording")
+            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, sells, and wave skips.")
+            window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
+        end)
+
+        if config.Strategy then
+            strategyTab:CreateButton(config.RunButtonText or "Run Demo Strategy", function()
+                task.spawn(function()
+                    self:Run(config.Strategy)
+                end)
+            end)
         end
 
-        local started, message = self:StartRecording()
+        self.RecorderWindow = window
+        window:Notify("Lyra UI Library", "Strategy recorder loaded.", 4)
 
-        if not started then
-            window:Notify("Recorder Unavailable", message or "Strategy recording could not be started.", 4)
-            return
-        end
-
-        isRecording = true
-        recordButton.UpdateButtonText("Stop Recording")
-        descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, sells, and wave skips.")
-        window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
+        return window
     end)
 
-    if config.Strategy then
-        strategyTab:CreateButton(config.RunButtonText or "Run Demo Strategy", function()
-            task.spawn(function()
-                self:Run(config.Strategy)
-            end)
-        end)
+    if not created then
+        return self:_createFallbackRecorderWindow(windowOrError)
     end
 
-    self.RecorderWindow = window
-    window:Notify("Lyra UI Library", "Strategy recorder loaded.", 4)
-
-    return window
+    return windowOrError
 end
 
 function LyraMacro:Place(troopType, x, y, z, rotation)

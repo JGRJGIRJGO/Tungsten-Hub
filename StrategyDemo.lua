@@ -6,10 +6,6 @@
     table that can be replayed by LyraMacroLib.
 ]]
 
-local LyraUI = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua?t=" .. tostring(os.time())
-))()
-
 local previousAutoUI
 local hasSharedEnvironment = type(getgenv) == "function"
 
@@ -49,6 +45,5 @@ local Strategy = {
 }
 
 LyraMacro:CreateRecorderWindow({
-    LyraUI = LyraUI,
     Strategy = Strategy,
 })
