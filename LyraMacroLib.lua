@@ -986,12 +986,47 @@ function LyraMacro:EnterElevatorForMap(mapName)
         return false, elevatorMapTitle
     end
 
-    local entered, enterError = pcall(function()
-        RemoteFunction:InvokeServer("Elevators", "Enter", elevator)
+    local character = LocalPlayer.Character
+    local touch = elevator:FindFirstChild("Touch")
+
+    if not character or not touch then
+        return false, "The selected elevator is missing its character or Touch part."
+    end
+
+    local movedToTouch, moveError = pcall(function()
+        character:PivotTo(touch.CFrame + Vector3.new(0, 3, 0))
     end)
 
-    if not entered then
-        return false, "Could not enter elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(enterError)
+    if not movedToTouch then
+        return false, "Could not move to elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(moveError)
+    end
+
+    -- Let the game's Touch listener perform its normal entry flow first.
+    task.wait(0.35)
+
+    if self.AutoRecordTeleportArmed then
+        return true, elevatorMapTitle
+    end
+
+    local invoked, acceptedOrError = pcall(function()
+        return RemoteFunction:InvokeServer("Elevators", "Enter", elevator)
+    end)
+
+    if not invoked then
+        return false, "Could not enter elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(acceptedOrError)
+    end
+
+    if acceptedOrError ~= true then
+        return false, "The elevator server rejected entry for " .. tostring(elevatorMapTitle) .. "."
+    end
+
+    local lift = elevator:FindFirstChild("Lift")
+    local liftMain = lift and lift:FindFirstChild("Main")
+
+    if liftMain then
+        pcall(function()
+            character:PivotTo(liftMain.CFrame + Vector3.new(0, 5, 0))
+        end)
     end
 
     return true, elevatorMapTitle
