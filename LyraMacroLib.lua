@@ -951,6 +951,67 @@ local function getElevatorMapTitle(elevator)
     return nil
 end
 
+function LyraMacro:FindElevatorForMap(mapName)
+    local targetMapKey = normalizeLookupKey(mapName)
+
+    if targetMapKey == "" then
+        return nil, "A map name is required to select an elevator."
+    end
+
+    local elevators = workspace:FindFirstChild("Elevators")
+
+    if not elevators then
+        return nil, "workspace.Elevators is not available."
+    end
+
+    for _, elevator in ipairs(elevators:GetChildren()) do
+        local elevatorMapTitle = getElevatorMapTitle(elevator)
+
+        if elevatorMapTitle and normalizeLookupKey(elevatorMapTitle) == targetMapKey then
+            return elevator, elevatorMapTitle
+        end
+    end
+
+    return nil, "No elevator currently has map " .. tostring(mapName) .. "."
+end
+
+function LyraMacro:EnterElevatorForMap(mapName)
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "Elevators can only be entered from lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
+    end
+
+    local elevator, elevatorMapTitle = self:FindElevatorForMap(mapName)
+
+    if not elevator then
+        return false, elevatorMapTitle
+    end
+
+    local entered, enterError = pcall(function()
+        RemoteFunction:InvokeServer("Elevators", "Enter", elevator)
+    end)
+
+    if not entered then
+        return false, "Could not enter elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(enterError)
+    end
+
+    return true, elevatorMapTitle
+end
+
+function LyraMacro:_autoEnterPendingReplay(replay)
+    task.spawn(function()
+        while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
+            local entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap)
+
+            if entered then
+                print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
+                return
+            end
+
+            task.wait(1)
+        end
+    end)
+end
+
 function LyraMacro:_getAutoRecordTeleportSource(mapTitle)
     local libraryUrl = self.AutoRecordLibraryUrl or DEFAULT_MACRO_LIBRARY_URL
     local timeout = math.max(10, math.floor(tonumber(self.AutoRecordTimeout) or 45))
@@ -1130,13 +1191,22 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
         return false, recorderMessage
     end
 
+    local targetMap = normalizeMapCandidate(options.MapName or self.SelectedMap)
     self.PendingElevatorReplay = {
         Strategy = cloneStrategy(strategy),
         ExpectedFingerprint = type(expectedFingerprint) == "string" and expectedFingerprint or nil,
         LibraryUrl = options.LibraryUrl,
         Timeout = options.Timeout or self.AutoRecordTimeout,
+        TargetMap = targetMap,
     }
     self.AutoRecordTeleportArmed = false
+
+    if targetMap and options.AutoEnter ~= false then
+        self:_autoEnterPendingReplay(self.PendingElevatorReplay)
+        print("[LyraMacro] Strategy replay armed. Waiting for an elevator with map " .. targetMap .. ".")
+        return true, "Waiting to enter the elevator for " .. targetMap .. "."
+    end
+
     print("[LyraMacro] Strategy replay armed. Enter the elevator for the recorded map to continue after teleport.")
 
     return true, "Enter the elevator for the recorded map to queue strategy replay."
