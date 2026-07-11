@@ -946,7 +946,7 @@ local function readEquippedTroops(timeout)
 
     local loaded, cacheFactory = pcall(require, cacheModule)
 
-    if not loaded or type(cacheFactory) ~= "function" then
+    if not loaded then
         return nil, "Could not load the Equipped.Troops cache."
     end
 
