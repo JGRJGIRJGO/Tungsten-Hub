@@ -1,367 +1,644 @@
-﻿<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lyra UI Library — Key System Gate</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Lyra Macro is a strategy recorder and replay toolkit for tower defense runs.">
+    <title>Lyra Macro</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --bg-color: #0d0d0f;
-            --container-bg: rgba(20, 20, 24, 0.7);
-            --stroke-color: rgba(255, 255, 255, 0.08);
-            --accent-1: #0096ff;
-            --accent-2: #00ccff;
-            --text-main: #f5f5fa;
-            --text-dark: #a0a0a5;
+            --ink: #101413;
+            --ink-soft: #18201e;
+            --panel: #1b2522;
+            --line: #33433e;
+            --muted: #9ca9a4;
+            --paper: #eff5ef;
+            --mint: #55dfae;
+            --sky: #5bb9e8;
+            --amber: #f0c36d;
+            --coral: #f37566;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Outfit', sans-serif;
-            user-select: none;
-        }
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
 
         body {
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(0, 150, 255, 0.08) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(0, 204, 255, 0.08) 0%, transparent 40%);
-            color: var(--text-main);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            overflow: hidden;
+            margin: 0;
+            min-width: 320px;
+            background: var(--ink);
+            color: var(--paper);
+            font-family: "Montserrat", sans-serif;
         }
 
-        .glass-panel {
-            background: var(--container-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--stroke-color);
-            border-radius: 12px;
-            padding: 30px;
-            width: 90%;
-            max-width: 440px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-            text-align: center;
-            position: relative;
-            transform: scale(0.9);
-            opacity: 0;
-            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-        }
+        button, a { font: inherit; }
 
-        @keyframes popIn {
-            to {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
+        a { color: inherit; text-decoration: none; }
 
-        .glass-panel::before {
-            content: '';
+        .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+
+        .site-nav {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 3px;
-            background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-1));
-            border-radius: 12px 12px 0 0;
+            right: 0;
+            z-index: 10;
+            border-bottom: 1px solid rgba(239, 245, 239, 0.16);
         }
 
-        .header h1 {
-            font-size: 24px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #ffffff 30%, var(--text-dark) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 5px;
-        }
-
-        .header p {
-            color: var(--accent-2);
-            font-size: 13px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            margin-bottom: 25px;
-        }
-
-        .status-area {
-            margin: 20px 0;
+        .nav-inner {
+            height: 70px;
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .brand-mark {
+            display: grid;
+            width: 28px;
+            height: 28px;
+            place-items: center;
+            background: var(--mint);
+            color: var(--ink);
+        }
+
+        .brand-mark i { width: 17px; height: 17px; stroke-width: 3; }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .nav-links a:hover { color: var(--paper); }
+
+        .nav-source {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--paper);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .nav-source i { width: 17px; height: 17px; }
+
+        .hero {
+            min-height: 760px;
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid var(--line);
+            background: #111a17;
+        }
+
+        .hero::before,
+        .hero::after {
+            content: "";
+            position: absolute;
+            width: 220px;
+            height: 220px;
+            border: 1px solid rgba(85, 223, 174, 0.28);
+            transform: rotate(45deg);
+            pointer-events: none;
+        }
+
+        .hero::before { right: -104px; top: 92px; }
+        .hero::after { left: -142px; bottom: -142px; border-color: rgba(240, 195, 109, 0.32); }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 0.93fr) minmax(430px, 1.07fr);
+            gap: 52px;
+            align-items: center;
+            padding-top: 94px;
+        }
+
+        .eyebrow {
+            margin: 0 0 18px;
+            color: var(--mint);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        h1 {
+            max-width: 580px;
+            margin: 0;
+            font-size: 68px;
+            line-height: 0.96;
+            font-weight: 800;
+        }
+
+        .hero-copy {
+            max-width: 500px;
+            margin: 24px 0 32px;
+            color: var(--muted);
+            font-size: 17px;
+            font-weight: 600;
+            line-height: 1.6;
+        }
+
+        .loader {
+            width: min(100%, 506px);
+            display: grid;
+            grid-template-columns: 1fr 46px;
+            align-items: stretch;
+            border: 1px solid var(--line);
+            background: #0c1210;
+        }
+
+        .loader code {
+            display: block;
+            min-width: 0;
+            padding: 13px 15px;
+            overflow: hidden;
+            color: #c8d8d0;
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
+            line-height: 20px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .icon-button {
+            display: grid;
+            place-items: center;
+            border: 0;
+            border-left: 1px solid var(--line);
+            background: var(--mint);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .icon-button:hover { background: var(--amber); }
+        .icon-button i { width: 19px; height: 19px; stroke-width: 2.5; }
+
+        .copy-state {
+            display: block;
+            min-height: 18px;
+            margin-top: 10px;
+            color: var(--mint);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
+        }
+
+        .hero-notes {
+            display: flex;
+            gap: 22px;
+            margin-top: 34px;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
+        }
+
+        .hero-notes span { display: inline-flex; align-items: center; gap: 7px; }
+        .hero-notes i { width: 15px; height: 15px; color: var(--sky); }
+
+        .tower-roster {
+            width: min(100%, 506px);
+            display: grid;
+            grid-template-columns: 106px repeat(4, minmax(0, 1fr));
+            margin-top: 24px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .roster-label {
+            display: flex;
+            align-items: center;
+            padding: 12px 10px 12px 0;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
+        .roster-unit {
+            min-width: 0;
+            position: relative;
+            display: grid;
+            justify-items: center;
+            gap: 5px;
+            padding: 9px 4px 8px;
+            border-left: 1px solid var(--line);
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 8px;
+            font-weight: 600;
+            text-align: center;
+            transition: background 160ms ease, color 160ms ease;
+        }
+
+        .roster-unit:hover { background: #1c2924; color: var(--paper); }
+        .tower-art { width: 31px; height: 31px; object-fit: contain; image-rendering: auto; }
+        .tower-fallback {
+            width: 31px;
+            height: 31px;
+            place-items: center;
+            color: var(--ink);
+            background: var(--sky);
+            font-family: "Montserrat", sans-serif;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .tower-fallback[hidden] { display: none; }
+        .tower-fallback:not([hidden]) { display: grid; }
+
+        .tower-fallback.commander { background: var(--mint); }
+        .tower-fallback.crook { background: var(--coral); }
+        .tower-fallback.commando { background: var(--amber); }
+
+        .tactical-visual {
+            min-height: 470px;
+            position: relative;
+            display: grid;
             align-items: center;
         }
 
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255, 255, 255, 0.05);
-            border-top: 3px solid var(--accent-1);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
+        .visual-label {
+            position: absolute;
+            top: 26px;
+            right: 0;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .status-text {
-            font-size: 15px;
-            color: var(--text-dark);
-            margin-bottom: 10px;
-        }
-
-        .key-display-box {
-            display: none;
+        .map-board {
             width: 100%;
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px dashed var(--stroke-color);
-            border-radius: 6px;
-            padding: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-main);
-            letter-spacing: 0.5px;
-            margin: 20px 0;
+            aspect-ratio: 1.26;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 7px;
+            padding: 18px;
+            background: #141f1b;
+            border: 1px solid #43564e;
+            box-shadow: 16px 16px 0 #0a0f0d;
+            transform: rotate(-3deg);
+        }
+
+        .cell {
+            background: #1b2924;
+            border: 1px solid #2c3b35;
             position: relative;
-            cursor: pointer;
-            transition: all 0.2s;
         }
 
-        .key-display-box:hover {
-            border-color: var(--accent-1);
-            background: rgba(0, 150, 255, 0.03);
+        .cell.path { background: #2c4439; }
+        .cell.path::after {
+            content: "";
+            position: absolute;
+            inset: 36% 12%;
+            background: var(--amber);
+            opacity: 0.8;
         }
 
-        .action-btn {
-            display: none;
-            width: 100%;
-            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
-            color: #ffffff;
-            border: none;
-            border-radius: 6px;
-            padding: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.1s, opacity 0.2s;
-            box-shadow: 0 4px 15px rgba(0, 150, 255, 0.3);
+        .cell.tower::before,
+        .cell.tower::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--sky);
         }
 
-        .action-btn:hover {
-            opacity: 0.9;
+        .cell.tower::before { width: 44%; height: 44%; }
+        .cell.tower::after { width: 14%; height: 68%; background: var(--paper); transform: translate(-50%, -90%) rotate(42deg); }
+        .cell.tower.mint::before { background: var(--mint); }
+        .cell.tower.coral::before { background: var(--coral); }
+
+        .map-tower-art {
+            position: absolute;
+            z-index: 2;
+            inset: 8%;
+            width: 84%;
+            height: 84%;
+            object-fit: contain;
         }
 
-        .action-btn:active {
-            transform: scale(0.98);
+        .map-hud {
+            position: absolute;
+            right: 18px;
+            bottom: 14px;
+            width: 256px;
+            padding: 14px;
+            background: #0f1714;
+            border: 1px solid #52665c;
+            box-shadow: 10px 10px 0 rgba(7, 11, 9, 0.68);
+            transform: rotate(2deg);
         }
 
-        .error-message {
-            display: none;
-            color: #ff4b4b;
-            font-size: 13px;
-            margin: 20px 0;
-            line-height: 1.5;
+        .hud-top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
+        .hud-top strong { color: var(--mint); font-size: 11px; }
+        .hud-line { height: 1px; margin: 12px 0; background: #394b43; }
+        .hud-bottom { display: flex; align-items: end; justify-content: space-between; }
+        .hud-number { color: var(--paper); font-size: 31px; font-weight: 800; line-height: 1; }
+        .hud-status { color: var(--amber); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
+
+        .rail {
+            min-height: 92px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .rail-item { padding: 22px max(20px, calc((100vw - 1180px) / 2)); border-right: 1px solid var(--line); }
+        .rail-item:first-child { padding-left: max(20px, calc((100vw - 1180px) / 2)); }
+        .rail-item:last-child { border-right: 0; padding-right: max(20px, calc((100vw - 1180px) / 2)); }
+        .rail-value { display: block; color: var(--paper); font-family: "IBM Plex Mono", monospace; font-size: 15px; font-weight: 600; }
+        .rail-label { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+
+        .section { padding: 104px 0; border-bottom: 1px solid var(--line); }
+        .section-label { margin: 0 0 13px; color: var(--sky); font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; }
+        h2 { margin: 0; max-width: 700px; font-size: 38px; line-height: 1.08; }
+        .section-copy { max-width: 620px; margin: 17px 0 0; color: var(--muted); font-size: 16px; font-weight: 600; line-height: 1.65; }
+
+        .capabilities { margin-top: 56px; border-top: 1px solid var(--line); }
+        .capability { display: grid; grid-template-columns: 74px minmax(160px, 0.7fr) minmax(260px, 1.25fr) 36px; gap: 24px; align-items: center; min-height: 118px; border-bottom: 1px solid var(--line); }
+        .capability-icon { display: grid; width: 42px; height: 42px; place-items: center; color: var(--ink); background: var(--mint); }
+        .capability:nth-child(2) .capability-icon { background: var(--sky); }
+        .capability:nth-child(3) .capability-icon { background: var(--amber); }
+        .capability:nth-child(4) .capability-icon { background: var(--coral); }
+        .capability-icon i { width: 20px; height: 20px; stroke-width: 2.5; }
+        .capability h3 { margin: 0; font-size: 17px; }
+        .capability p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1.55; }
+        .capability > i { color: var(--muted); width: 18px; height: 18px; }
+
+        .log-section { background: var(--ink-soft); }
+        .log-layout { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(380px, 1.18fr); gap: 70px; align-items: center; }
+        .strategy-log { border: 1px solid #43564e; background: #101815; box-shadow: 14px 14px 0 #0b100e; }
+        .log-cap { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #43564e; color: var(--paper); font-size: 12px; font-weight: 800; }
+        .log-cap span { color: var(--mint); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
+        .log-list { padding: 10px; }
+        .log-row { display: grid; grid-template-columns: 48px 1fr; gap: 12px; min-height: 45px; align-items: center; border-bottom: 1px solid #283a33; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+        .log-row:last-child { border-bottom: 0; }
+        .log-row time { color: var(--muted); }
+        .log-row strong { color: var(--paper); font-weight: 500; }
+        .log-row strong.mint { color: var(--mint); }
+        .log-row strong.amber { color: var(--amber); }
+        .log-row strong.coral { color: var(--coral); }
+
+        .workflow { display: grid; margin-top: 56px; border-top: 1px solid var(--line); }
+        .workflow-step { display: grid; grid-template-columns: 70px 1fr; gap: 24px; padding: 28px 0; border-bottom: 1px solid var(--line); }
+        .workflow-number { color: var(--mint); font-family: "IBM Plex Mono", monospace; font-size: 14px; font-weight: 600; }
+        .workflow-step h3 { margin: 0 0 8px; font-size: 17px; }
+        .workflow-step p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1.6; }
+
+        footer { padding: 34px 0; background: #0b100e; }
+        .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 11px; }
+        .footer-link { display: inline-flex; align-items: center; gap: 7px; color: var(--paper); }
+        .footer-link i { width: 15px; height: 15px; }
+        .footer-meta { display: flex; align-items: center; gap: 16px; }
+        .tower-credit { color: var(--muted); }
+        .tower-credit:hover { color: var(--paper); }
+
+        @media (max-width: 820px) {
+            .shell { width: min(100% - 28px, 620px); }
+            .nav-inner { height: 62px; }
+            .nav-links { display: none; }
+            .hero { min-height: auto; padding: 110px 0 54px; }
+            .hero-grid, .log-layout { grid-template-columns: 1fr; gap: 42px; }
+            h1 { font-size: 52px; }
+            .hero-copy { font-size: 16px; }
+            .tactical-visual { min-height: 360px; }
+            .map-board { width: calc(100% - 16px); justify-self: center; }
+            .map-hud { width: 220px; }
+            .tower-roster { grid-template-columns: 88px repeat(4, minmax(0, 1fr)); }
+            .rail { grid-template-columns: 1fr 1fr; }
+            .rail-item { padding: 17px 20px; }
+            .rail-item:nth-child(2) { border-right: 0; }
+            .rail-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+            .section { padding: 72px 0; }
+            h2 { font-size: 31px; }
+            .capability { grid-template-columns: 54px 1fr 22px; gap: 14px; padding: 23px 0; }
+            .capability p { grid-column: 2 / 4; }
+            .log-layout { gap: 46px; }
+        }
+
+        @media (max-width: 480px) {
+            .nav-source span { display: none; }
+            .hero-notes { flex-wrap: wrap; gap: 12px 18px; }
+            .tower-roster { grid-template-columns: repeat(4, 1fr); }
+            .roster-label { grid-column: 1 / -1; padding: 9px 0 0; }
+            .roster-unit:first-of-type { border-left: 0; }
+            h1 { font-size: 44px; }
+            .loader { grid-template-columns: 1fr 42px; }
+            .loader code { padding: 12px; font-size: 10px; }
+            .tactical-visual { min-height: 315px; }
+            .map-board { padding: 12px; gap: 5px; }
+            .map-hud { right: 0; bottom: 4px; width: 196px; padding: 11px; }
+            .hud-number { font-size: 25px; }
+            .capability { grid-template-columns: 48px 1fr 18px; }
+            .capability-icon { width: 36px; height: 36px; }
+            .footer-inner { align-items: flex-start; flex-direction: column; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
         }
     </style>
 </head>
 <body>
-    <div class="glass-panel">
-        <div class="header">
-            <h1>Lyra UI Library</h1>
-            <p>Key System Gate</p>
+    <nav class="site-nav" aria-label="Primary navigation">
+        <div class="shell nav-inner">
+            <a class="brand" href="#top" aria-label="Lyra Macro home">
+                <span class="brand-mark"><i data-lucide="crosshair"></i></span>
+                <span>LYRA MACRO</span>
+            </a>
+            <div class="nav-links">
+                <a href="#systems">Systems</a>
+                <a href="#action-log">Action log</a>
+                <a href="#workflow">Workflow</a>
+            </div>
+            <a class="nav-source" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer">
+                <i data-lucide="github"></i><span>Source</span>
+            </a>
         </div>
+    </nav>
 
-        <div class="status-area" id="status-area">
-            <div class="spinner" id="spinner"></div>
-            <p class="status-text" id="status-text">Bypassing local handshakes...</p>
+    <main id="top">
+        <section class="hero" aria-labelledby="hero-title">
+            <div class="shell hero-grid">
+                <div>
+                    <p class="eyebrow">TOWER DEFENSE AUTOSTRATEGY TOOLKIT</p>
+                    <h1 id="hero-title">LYRA<br>MACRO</h1>
+                    <p class="hero-copy">Record a run once. Lyra preserves the placements, upgrades, abilities, skips, loadout, and map context needed to replay it with intent.</p>
+                    <div class="loader" aria-label="Lyra Macro loader">
+                        <code id="loader-code">loadstring(game:HttpGet(&quot;https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua&quot;))()</code>
+                        <button class="icon-button" id="copy-loader" type="button" aria-label="Copy Lyra Macro loader" title="Copy loader"><i data-lucide="copy"></i></button>
+                    </div>
+                    <span class="copy-state" id="copy-state" aria-live="polite"></span>
+                    <div class="hero-notes">
+                        <span><i data-lucide="map-pin"></i>Map-aware replay</span>
+                        <span><i data-lucide="list-checks"></i>Action-level logs</span>
+                    </div>
+                    <div class="tower-roster" aria-label="Example tower loadout">
+                        <span class="roster-label">CORE<br>LOADOUT</span>
+                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Commander icon from TDS: Reanimated Wiki">
+                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/a/a5/Commander_tdsre.webp/revision/latest?cb=20251005210103" alt="Commander tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                            <span class="tower-fallback commander" hidden>C</span><span>COMMANDER</span>
+                        </a>
+                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Minigunner icon from TDS: Reanimated Wiki">
+                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/6/61/MinigunnerIcon.png/revision/latest" alt="Minigunner tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                            <span class="tower-fallback" hidden>M</span><span>MINIGUNNER</span>
+                        </a>
+                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Crook Boss icon from TDS: Reanimated Wiki">
+                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/d/da/CrookBossIcon.png/revision/latest?cb=20260212112609" alt="Crook Boss tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                            <span class="tower-fallback crook" hidden>CB</span><span>CROOK BOSS</span>
+                        </a>
+                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Commando icon from TDS: Reanimated Wiki">
+                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/e/e5/CommandoNew.png/revision/latest?cb=20260212112504" alt="Commando tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                            <span class="tower-fallback commando" hidden>CO</span><span>COMMANDO</span>
+                        </a>
+                    </div>
+                </div>
+
+                <div class="tactical-visual" aria-label="Tactical strategy board visual">
+                    <span class="visual-label">LIVE STRATEGY SURFACE / 01</span>
+                    <div class="map-board" aria-hidden="true">
+                        <div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell tower mint"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/a/a5/Commander_tdsre.webp/revision/latest?cb=20251005210103" alt=""></div><div class="cell"></div><div class="cell"></div><div class="cell tower"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/6/61/MinigunnerIcon.png/revision/latest" alt=""></div><div class="cell"></div>
+                        <div class="cell tower coral"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/d/da/CrookBossIcon.png/revision/latest?cb=20260212112609" alt=""></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell path"></div><div class="cell"></div><div class="cell"></div><div class="cell tower mint"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/e/e5/CommandoNew.png/revision/latest?cb=20260212112504" alt=""></div>
+                        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell tower"></div><div class="cell path"></div><div class="cell path"></div><div class="cell"></div><div class="cell"></div>
+                        <div class="cell"></div><div class="cell tower mint"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell tower coral"></div>
+                        <div class="cell tower"></div><div class="cell"></div><div class="cell"></div><div class="cell tower mint"></div><div class="cell"></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div>
+                        <div class="cell"></div><div class="cell"></div><div class="cell tower coral"></div><div class="cell"></div><div class="cell tower"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+                    </div>
+                    <div class="map-hud">
+                        <div class="hud-top"><span>RUN STATUS</span><strong>ARMED</strong></div>
+                        <div class="hud-line"></div>
+                        <div class="hud-bottom"><span class="hud-number">45</span><span class="hud-status">WAVE TARGET</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="rail" aria-label="Lyra systems overview">
+            <div class="rail-item"><span class="rail-value">MAP LOCK</span><span class="rail-label">Fingerprinted strategy context</span></div>
+            <div class="rail-item"><span class="rail-value">5-SLOT SYNC</span><span class="rail-label">Loadout prepared before entry</span></div>
+            <div class="rail-item"><span class="rail-value">10.2 SEC</span><span class="rail-label">Chain COA rotation</span></div>
+            <div class="rail-item"><span class="rail-value">RESULTS WATCH</span><span class="rail-label">Automatic strategy export</span></div>
+        </section>
+
+        <section class="section" id="systems">
+            <div class="shell">
+                <p class="section-label">SYSTEMS</p>
+                <h2>Built around the decisions that matter in a run.</h2>
+                <p class="section-copy">Lyra keeps the strategy state close to the game state: tower IDs stay stable, elevator selection is map-aware, and every replay carries its own actionable context.</p>
+                <div class="capabilities">
+                    <article class="capability">
+                        <div class="capability-icon"><i data-lucide="radio-tower"></i></div>
+                        <h3>Elevator handoff</h3>
+                        <p>Locates the matching lobby elevator, enters through its normal touch flow, and continues after the match teleport.</p>
+                        <i data-lucide="arrow-up-right"></i>
+                    </article>
+                    <article class="capability">
+                        <div class="capability-icon"><i data-lucide="boxes"></i></div>
+                        <h3>Loadout sync</h3>
+                        <p>Derives the exact towers placed in a strategy, clears the current loadout, equips the required five-slot set, and verifies it.</p>
+                        <i data-lucide="arrow-up-right"></i>
+                    </article>
+                    <article class="capability">
+                        <div class="capability-icon"><i data-lucide="zap"></i></div>
+                        <h3>Ability capture</h3>
+                        <p>Records Call Of Arms, Mafia Call, Overcharge, and Chain COA rotations as strategy actions tied to their placed towers.</p>
+                        <i data-lucide="arrow-up-right"></i>
+                    </article>
+                    <article class="capability">
+                        <div class="capability-icon"><i data-lucide="scroll-text"></i></div>
+                        <h3>Replay logger</h3>
+                        <p>Streams every replay action into the always-on-top Lyra Autostrategies log, then exports the run when results arrive.</p>
+                        <i data-lucide="arrow-up-right"></i>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="section log-section" id="action-log">
+            <div class="shell log-layout">
+                <div>
+                    <p class="section-label">ACTION LOG</p>
+                    <h2>Every action stays visible while the strategy runs.</h2>
+                    <p class="section-copy">The in-game logger remains fixed above the game UI and records the precise replay sequence as it unfolds, from placement through final wave skip.</p>
+                </div>
+                <div class="strategy-log" aria-label="Lyra Autostrategies action log preview">
+                    <div class="log-cap">LYRA AUTOSTRATEGIES <span>ACTIVE</span></div>
+                    <div class="log-list">
+                        <div class="log-row"><time>01/12</time><strong>PLACE MINIGUNNER</strong></div>
+                        <div class="log-row"><time>02/12</time><strong>UPGRADE TOWER #1</strong></div>
+                        <div class="log-row"><time>03/12</time><strong class="mint">ACTIVATE CALL OF ARMS</strong></div>
+                        <div class="log-row"><time>04/12</time><strong class="amber">SKIP WAVE</strong></div>
+                        <div class="log-row"><time>05/12</time><strong class="coral">SELL TOWER #2</strong></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="workflow">
+            <div class="shell">
+                <p class="section-label">WORKFLOW</p>
+                <h2>Record once. Replay with the map, towers, and timing intact.</h2>
+                <div class="workflow">
+                    <article class="workflow-step"><span class="workflow-number">01</span><div><h3>Record the match</h3><p>Lyra captures placements, upgrades, sales, ability activations, difficulty votes, and every wave skip.</p></div></article>
+                    <article class="workflow-step"><span class="workflow-number">02</span><div><h3>Load the strategy in the lobby</h3><p>The recorded tower list synchronizes to the lobby loadout while Lyra waits for the selected map.</p></div></article>
+                    <article class="workflow-step"><span class="workflow-number">03</span><div><h3>Enter and execute</h3><p>Lyra follows the map-matched elevator into the match, validates the fingerprint, and shows every replay action in the fixed log.</p></div></article>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="shell footer-inner">
+            <span>LYRA MACRO / TACTICAL REPLAY TOOLKIT</span>
+            <div class="footer-meta">
+                <a class="tower-credit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">Tower icons: TDS: Reanimated Wiki</a>
+                <a class="footer-link" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer"><i data-lucide="github"></i>View repository</a>
+            </div>
         </div>
-
-        <div class="error-message" id="error-box">
-            No Hardware ID (HWID) detected. Please run the script in Roblox to generate your key URL.
-        </div>
-
-        <div class="key-display-box" id="key-box">
-            Lyra_GENERATING...
-        </div>
-
-        <button class="action-btn" id="action-btn">Copy Secure Key</button>
-    </div>
+    </footer>
 
     <script>
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-            return hashHex;
-        }
+        const loader = document.getElementById('loader-code').textContent;
+        const button = document.getElementById('copy-loader');
+        const state = document.getElementById('copy-state');
 
-        async function generateDailyHWIDKey(hwid) {
-            const cleanHwid = hwid.replace(/\s+/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-            const date = new Date();
-            const day = String(date.getUTCDate()).padStart(2, '0');
-            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-            const year = date.getUTCFullYear();
-            const dateStr = `${day}${month}${year}`;
-            const salt = "LyraSecureKeySystem_V3_Reset_8F2D";
-            const input = `${cleanHwid}_${salt}_${dateStr}`;
-            
-            const hash = await sha256(input);
-            return "Lyra_" + hash.toUpperCase();
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const hwidParam = urlParams.get('hwid');
-        const stepsParam = urlParams.get('steps');
-
-        const spinner = document.getElementById('spinner');
-        const statusText = document.getElementById('status-text');
-        const errorBox = document.getElementById('error-box');
-        const keyBox = document.getElementById('key-box');
-        const actionBtn = document.getElementById('action-btn');
-
-        // Parse Database configuration parameters
-        const dbUrl = urlParams.get('db_url') || localStorage.getItem('lyra_db_url');
-        const dbKey = urlParams.get('db_key') || localStorage.getItem('lyra_db_key');
-        const scriptId = urlParams.get('script_id') || localStorage.getItem('lyra_script_id');
-
-        let supabaseClient = null;
-        if (dbUrl && dbKey) {
+        button.addEventListener('click', async () => {
             try {
-                supabaseClient = supabase.createClient(decodeURIComponent(dbUrl), decodeURIComponent(dbKey));
-            } catch(e) {
-                console.error("Supabase client connection failed:", e);
+                await navigator.clipboard.writeText(loader);
+                state.textContent = 'LOADER COPIED';
+                button.innerHTML = '<i data-lucide="check"></i>';
+                lucide.createIcons();
+                window.setTimeout(() => {
+                    state.textContent = '';
+                    button.innerHTML = '<i data-lucide="copy"></i>';
+                    lucide.createIcons();
+                }, 1800);
+            } catch {
+                state.textContent = 'COPY FAILED';
             }
-        }
+        });
 
-        async function logCheckin(stepNum) {
-            if (!supabaseClient || !scriptId) return;
-            const hwid = hwidParam || localStorage.getItem('lyra_hwid');
-            if (!hwid) return;
-            try {
-                await supabaseClient
-                    .from('key_redeems')
-                    .insert([{ script_id: scriptId, hwid: hwid, step: stepNum }]);
-            } catch(e) {
-                console.error("Analytics report failed:", e);
-            }
-        }
-
-        if (hwidParam && hwidParam.trim() !== "") {
-            // Step 1: User came fresh from Roblox. Save HWID, total steps, and checkpoint links.
-            const totalSteps = parseInt(stepsParam) || 1;
-            localStorage.setItem('lyra_hwid', hwidParam.trim());
-            localStorage.setItem('lyra_total_steps', totalSteps);
-            localStorage.setItem('lyra_current_step', '0');
-            
-            // Save database parameters if present
-            if (urlParams.get('db_url')) localStorage.setItem('lyra_db_url', urlParams.get('db_url'));
-            if (urlParams.get('db_key')) localStorage.setItem('lyra_db_key', urlParams.get('db_key'));
-            if (urlParams.get('script_id')) localStorage.setItem('lyra_script_id', urlParams.get('script_id'));
-
-            // Save link parameters
-            for (let i = 1; i <= totalSteps; i++) {
-                const linkVal = urlParams.get(`link${i}`);
-                if (linkVal) {
-                    localStorage.setItem(`lyra_link_${i}`, decodeURIComponent(linkVal));
-                } else if (i === 1) {
-                    localStorage.setItem('lyra_link_1', 'https://lootdest.org/s?DfJNgxIO');
-                }
-            }
-
-            statusText.innerText = `Redirecting to Checkpoint 1 of ${totalSteps}...`;
-            
-            // Log Checkpoint 1 Start
-            logCheckin(1);
-
-            setTimeout(() => {
-                const targetLink = localStorage.getItem('lyra_link_1');
-                window.location.href = targetLink;
-            }, 800);
-            
-        } else {
-            // Step 2: User returned from a checkpoint. Read localStorage state.
-            const storedHwid = localStorage.getItem('lyra_hwid');
-            const totalSteps = parseInt(localStorage.getItem('lyra_total_steps')) || 0;
-            let currentStep = parseInt(localStorage.getItem('lyra_current_step'));
-
-            if (!storedHwid || storedHwid.trim() === "" || isNaN(totalSteps)) {
-                spinner.style.display = 'none';
-                statusText.style.display = 'none';
-                errorBox.style.display = 'block';
-            } else {
-                // We returned from a step. Increment step counter.
-                currentStep = currentStep + 1;
-                localStorage.setItem('lyra_current_step', currentStep);
-
-                if (currentStep < totalSteps) {
-                    // Log checkpoint progress
-                    logCheckin(currentStep + 1);
-
-                    statusText.innerText = `Checkpoint ${currentStep} completed! Redirecting to Checkpoint ${currentStep + 1} of ${totalSteps}...`;
-                    setTimeout(() => {
-                        const targetLink = localStorage.getItem(`lyra_link_${currentStep + 1}`);
-                        if (targetLink) {
-                            window.location.href = targetLink;
-                        } else {
-                            showKey();
-                        }
-                    }, 1200);
-                } else {
-                    // Log full completion (marked as step 0)
-                    logCheckin(0);
-                    showKey();
-                }
-            }
-        }
-
-        function showKey() {
-            const storedHwid = localStorage.getItem('lyra_hwid');
-            setTimeout(() => {
-                statusText.innerText = "Generating HWID-locked key...";
-                setTimeout(() => {
-                    generateDailyHWIDKey(storedHwid).then(generatedKey => {
-                        spinner.style.display = 'none';
-                        statusText.innerText = "Key generated successfully! Proceed to copy.";
-                        keyBox.innerText = generatedKey;
-                        keyBox.style.display = 'block';
-                        actionBtn.style.display = 'block';
-                        
-                        // Clear step counters
-                        localStorage.removeItem('lyra_current_step');
-                        localStorage.removeItem('lyra_total_steps');
-                    });
-                }, 1000);
-            }, 800);
-        }
-
-        function copyKey() {
-            const keyText = keyBox.innerText;
-            navigator.clipboard.writeText(keyText).then(() => {
-                actionBtn.innerText = "Key Copied!";
-                actionBtn.style.background = "linear-gradient(135deg, #2ecc71, #27ae60)";
-                setTimeout(() => {
-                    actionBtn.innerText = "Copy Secure Key";
-                    actionBtn.style.background = "linear-gradient(135deg, var(--accent-1), var(--accent-2))";
-                }, 2000);
-            }).catch(() => {
-                alert("Failed to copy automatically. Please copy manually.");
-            });
-        }
-
-        actionBtn.addEventListener('click', copyKey);
-        keyBox.addEventListener('click', copyKey);
+        lucide.createIcons();
     </script>
 </body>
 </html>
