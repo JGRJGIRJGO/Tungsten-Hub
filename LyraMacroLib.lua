@@ -19,7 +19,103 @@ local LyraMacro = {
     SelectedLoadout = {},
     SelectedMode = "Normal",
     SelectedMap = "",
+    IsRecording = false,
+    RecordedStrategy = {},
+    RecordedTowerIndexes = {},
+    RecordingConnections = {},
+    NextRecordedTowerIndex = 0,
+    _recordHookInstalled = false,
+    _originalNamecall = nil,
 }
+
+local function getValueKind(value)
+    if typeof then
+        return typeof(value)
+    end
+
+    return type(value)
+end
+
+local function roundNumber(value)
+    if value >= 0 then
+        return math.floor(value * 1000 + 0.5) / 1000
+    end
+
+    return math.ceil(value * 1000 - 0.5) / 1000
+end
+
+local function formatNumber(value)
+    local formatted = string.format("%.3f", value)
+    formatted = formatted:gsub("(%..-)0+$", "%1")
+    formatted = formatted:gsub("%.$", "")
+    return formatted
+end
+
+local function formatLuaValue(value)
+    local valueType = type(value)
+    local valueKind = getValueKind(value)
+
+    if valueType == "string" then
+        return string.format("%q", value)
+    elseif valueType == "number" then
+        return formatNumber(value)
+    elseif valueType == "boolean" then
+        return tostring(value)
+    elseif valueKind == "CFrame" then
+        local components = { value:GetComponents() }
+
+        for index, component in ipairs(components) do
+            components[index] = formatNumber(component)
+        end
+
+        return "CFrame.new(" .. table.concat(components, ", ") .. ")"
+    end
+
+    return "nil"
+end
+
+local function formatField(key, value)
+    return key .. " = " .. formatLuaValue(value)
+end
+
+local function formatRecordedStep(step)
+    local fields = {
+        formatField("action", step.action),
+    }
+
+    if step.action == "place" then
+        table.insert(fields, formatField("troop", step.troop))
+        table.insert(fields, formatField("x", step.x))
+        table.insert(fields, formatField("y", step.y))
+        table.insert(fields, formatField("z", step.z))
+
+        if step.rotation then
+            table.insert(fields, formatField("rotation", step.rotation))
+        end
+    elseif step.action == "upgrade" or step.action == "sell" then
+        table.insert(fields, formatField("tower", step.tower))
+    elseif step.action == "skip" and step.label then
+        table.insert(fields, formatField("label", step.label))
+    end
+
+    return "{ " .. table.concat(fields, ", ") .. " }"
+end
+
+local function cloneStrategy(strategy)
+    local copiedStrategy = {}
+
+    for index, step in ipairs(strategy) do
+        local copiedStep = {}
+
+        for key, value in pairs(step) do
+            copiedStep[key] = value
+        end
+
+        copiedStrategy[index] = copiedStep
+    end
+
+    return copiedStrategy
+end
 
 local function getCashValue()
     local cash = LocalPlayer:WaitForChild("Cash")
@@ -77,6 +173,207 @@ end
 
 function LyraMacro:Ready()
     print("[LyraMacro] Strategy match starting.")
+end
+
+function LyraMacro:_appendRecordedStep(step)
+    table.insert(self.RecordedStrategy, step)
+    print("[LyraMacro] Recorded step #" .. #self.RecordedStrategy .. ": " .. step.action)
+end
+
+function LyraMacro:_trackNextRecordedTower()
+    local connection
+
+    connection = TowersFolder.ChildAdded:Connect(function(tower)
+        connection:Disconnect()
+
+        if not self.IsRecording then
+            return
+        end
+
+        self.NextRecordedTowerIndex += 1
+        self.RecordedTowerIndexes[tower] = self.NextRecordedTowerIndex
+        print("[LyraMacro] Recorded tower #" .. self.NextRecordedTowerIndex .. ".")
+    end)
+
+    table.insert(self.RecordingConnections, connection)
+end
+
+function LyraMacro:_getRecordedTowerIndex(tower)
+    if not tower then
+        return nil
+    end
+
+    local towerIndex = self.RecordedTowerIndexes[tower]
+
+    if not towerIndex then
+        warn("[LyraMacro] Ignored tower action because that tower was not placed after recording started.")
+    end
+
+    return towerIndex
+end
+
+function LyraMacro:_recordRemoteInvoke(args)
+    if not self.IsRecording then
+        return
+    end
+
+    local category = args[1]
+    local action = args[2]
+
+    if category == "Waves" and action == "Skip" then
+        self:_appendRecordedStep({
+            action = "skip",
+        })
+        return
+    end
+
+    if category ~= "Troops" then
+        return
+    end
+
+    if action == "Place" then
+        local troopType = args[3]
+        local placementInfo = args[4] or {}
+        local position = placementInfo.Position or args[6]
+
+        if getValueKind(position) ~= "Vector3" then
+            warn("[LyraMacro] Ignored place action because no Vector3 position was found.")
+            return
+        end
+
+        self:_appendRecordedStep({
+            action = "place",
+            troop = tostring(troopType),
+            x = roundNumber(position.X),
+            y = roundNumber(position.Y),
+            z = roundNumber(position.Z),
+            rotation = placementInfo.Rotation,
+        })
+        self:_trackNextRecordedTower()
+    elseif action == "Upgrade" and args[3] == "Set" then
+        local upgradeInfo = args[4] or {}
+        local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
+
+        if towerIndex then
+            self:_appendRecordedStep({
+                action = "upgrade",
+                tower = towerIndex,
+            })
+        end
+    elseif action == "Sell" then
+        local sellInfo = args[3] or {}
+        local towerIndex = self:_getRecordedTowerIndex(sellInfo.Troop)
+
+        if towerIndex then
+            self:_appendRecordedStep({
+                action = "sell",
+                tower = towerIndex,
+            })
+        end
+    end
+end
+
+function LyraMacro:_installRecorder()
+    if self._recordHookInstalled then
+        return true
+    end
+
+    if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then
+        return false, "Your executor does not expose hookmetamethod/getnamecallmethod, so remote recording is unavailable."
+    end
+
+    local oldNamecall
+    local recorderNamecall = function(remote, ...)
+        local method = getnamecallmethod()
+
+        if method == "InvokeServer" and remote == RemoteFunction then
+            local args = { ... }
+            local recorded, recordError = pcall(function()
+                self:_recordRemoteInvoke(args)
+            end)
+
+            if not recorded then
+                warn("[LyraMacro] Failed to record remote call: " .. tostring(recordError))
+            end
+        end
+
+        return oldNamecall(remote, ...)
+    end
+
+    if type(newcclosure) == "function" then
+        recorderNamecall = newcclosure(recorderNamecall)
+    end
+
+    oldNamecall = hookmetamethod(game, "__namecall", recorderNamecall)
+    self._originalNamecall = oldNamecall
+    self._recordHookInstalled = true
+
+    return true
+end
+
+function LyraMacro:StartRecording()
+    if self.IsRecording then
+        return true, "Recording is already active."
+    end
+
+    local recorderReady, recorderMessage = self:_installRecorder()
+
+    if not recorderReady then
+        warn("[LyraMacro] " .. recorderMessage)
+        return false, recorderMessage
+    end
+
+    table.clear(self.RecordedStrategy)
+    table.clear(self.RecordedTowerIndexes)
+    table.clear(self.RecordingConnections)
+    self.NextRecordedTowerIndex = 0
+    self.IsRecording = true
+
+    print("[LyraMacro] Strategy recording started.")
+    return true
+end
+
+function LyraMacro:StopRecording()
+    if not self.IsRecording then
+        return self:GetRecordedStrategy(), self:GetRecordedStrategySource()
+    end
+
+    self.IsRecording = false
+
+    for _, connection in ipairs(self.RecordingConnections) do
+        connection:Disconnect()
+    end
+
+    table.clear(self.RecordingConnections)
+
+    local recordedStrategy = self:GetRecordedStrategy()
+    local strategySource = self:GetRecordedStrategySource()
+
+    print("[LyraMacro] Strategy recording stopped. Recorded " .. #recordedStrategy .. " steps.")
+    print(strategySource)
+
+    if type(setclipboard) == "function" then
+        pcall(setclipboard, strategySource)
+    end
+
+    return recordedStrategy, strategySource
+end
+
+function LyraMacro:GetRecordedStrategy()
+    return cloneStrategy(self.RecordedStrategy)
+end
+
+function LyraMacro:GetRecordedStrategySource()
+    local lines = {
+        "local Strategy = {",
+    }
+
+    for _, step in ipairs(self.RecordedStrategy) do
+        table.insert(lines, "    " .. formatRecordedStep(step) .. ",")
+    end
+
+    table.insert(lines, "}")
+    return table.concat(lines, "\n")
 end
 
 function LyraMacro:Place(troopType, x, y, z, rotation)
