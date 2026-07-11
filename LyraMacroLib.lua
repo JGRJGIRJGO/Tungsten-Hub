@@ -944,11 +944,27 @@ local function readEquippedTroops(timeout)
         return nil, "Could not find the Equipped.Troops cache module."
     end
 
-    local loaded, cacheFactory = pcall(require, cacheModule)
+    local loaded, cacheFactoryOrError = pcall(require, cacheModule)
+
+    if not loaded and type(getloadedmodules) == "function" then
+        for _, loadedModule in ipairs(getloadedmodules()) do
+            if loadedModule.Name == "Cache" and loadedModule:IsA("ModuleScript") then
+                local retried, retryResult = pcall(require, loadedModule)
+
+                if retried then
+                    loaded = true
+                    cacheFactoryOrError = retryResult
+                    break
+                end
+            end
+        end
+    end
 
     if not loaded then
-        return nil, "Could not load the Equipped.Troops cache."
+        return nil, "Could not load the Equipped.Troops cache: " .. tostring(cacheFactoryOrError)
     end
+
+    local cacheFactory = cacheFactoryOrError
 
     local requested, cacheValue = pcall(function()
         return cacheFactory("Equipped.Troops"):Get()
