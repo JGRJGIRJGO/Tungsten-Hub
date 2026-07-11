@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tungsten Hub — Key System Gate</title>
+    <title>Lyra UI Library — Key System Gate</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -178,7 +178,7 @@
 <body>
     <div class="glass-panel">
         <div class="header">
-            <h1>Tungsten Hub</h1>
+            <h1>Lyra UI Library</h1>
             <p>Key System Gate</p>
         </div>
 
@@ -192,38 +192,33 @@
         </div>
 
         <div class="key-display-box" id="key-box">
-            Tungsten_GENERATING...
+            Lyra_GENERATING...
         </div>
 
         <button class="action-btn" id="action-btn">Copy Secure Key</button>
     </div>
 
     <script>
-        function multiply32(a, b) {
-            const a_hi = (a >>> 16) & 0xFFFF;
-            const a_lo = a & 0xFFFF;
-            const b_hi = (b >>> 16) & 0xFFFF;
-            const b_lo = b & 0xFFFF;
-            const mid = (a_hi * b_lo + a_lo * b_hi) & 0xFFFF;
-            return ((mid * 65536) + a_lo * b_lo) >>> 0;
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
         }
 
-        function generateDailyHWIDKey(hwid) {
+        async function generateDailyHWIDKey(hwid) {
             const cleanHwid = hwid.replace(/\s+/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '');
             const date = new Date();
             const day = String(date.getUTCDate()).padStart(2, '0');
             const month = String(date.getUTCMonth() + 1).padStart(2, '0');
             const year = date.getUTCFullYear();
             const dateStr = `${day}${month}${year}`;
-            const salt = "TungstenSecureKeySystem_V3_Reset_8F2D";
+            const salt = "LyraSecureKeySystem_V3_Reset_8F2D";
             const input = `${cleanHwid}_${salt}_${dateStr}`;
             
-            let hash = 2166136261;
-            for (let i = 0; i < input.length; i++) {
-                hash ^= input.charCodeAt(i);
-                hash = multiply32(hash, 16777619);
-            }
-            return "Tungsten_" + hash.toString(16).toUpperCase();
+            const hash = await sha256(input);
+            return "Lyra_" + hash.toUpperCase();
         }
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -237,9 +232,9 @@
         const actionBtn = document.getElementById('action-btn');
 
         // Parse Database configuration parameters
-        const dbUrl = urlParams.get('db_url') || localStorage.getItem('tungsten_db_url');
-        const dbKey = urlParams.get('db_key') || localStorage.getItem('tungsten_db_key');
-        const scriptId = urlParams.get('script_id') || localStorage.getItem('tungsten_script_id');
+        const dbUrl = urlParams.get('db_url') || localStorage.getItem('lyra_db_url');
+        const dbKey = urlParams.get('db_key') || localStorage.getItem('lyra_db_key');
+        const scriptId = urlParams.get('script_id') || localStorage.getItem('lyra_script_id');
 
         let supabaseClient = null;
         if (dbUrl && dbKey) {
@@ -252,7 +247,7 @@
 
         async function logCheckin(stepNum) {
             if (!supabaseClient || !scriptId) return;
-            const hwid = hwidParam || localStorage.getItem('tungsten_hwid');
+            const hwid = hwidParam || localStorage.getItem('lyra_hwid');
             if (!hwid) return;
             try {
                 await supabaseClient
@@ -266,22 +261,22 @@
         if (hwidParam && hwidParam.trim() !== "") {
             // Step 1: User came fresh from Roblox. Save HWID, total steps, and checkpoint links.
             const totalSteps = parseInt(stepsParam) || 1;
-            localStorage.setItem('tungsten_hwid', hwidParam.trim());
-            localStorage.setItem('tungsten_total_steps', totalSteps);
-            localStorage.setItem('tungsten_current_step', '0');
+            localStorage.setItem('lyra_hwid', hwidParam.trim());
+            localStorage.setItem('lyra_total_steps', totalSteps);
+            localStorage.setItem('lyra_current_step', '0');
             
             // Save database parameters if present
-            if (urlParams.get('db_url')) localStorage.setItem('tungsten_db_url', urlParams.get('db_url'));
-            if (urlParams.get('db_key')) localStorage.setItem('tungsten_db_key', urlParams.get('db_key'));
-            if (urlParams.get('script_id')) localStorage.setItem('tungsten_script_id', urlParams.get('script_id'));
+            if (urlParams.get('db_url')) localStorage.setItem('lyra_db_url', urlParams.get('db_url'));
+            if (urlParams.get('db_key')) localStorage.setItem('lyra_db_key', urlParams.get('db_key'));
+            if (urlParams.get('script_id')) localStorage.setItem('lyra_script_id', urlParams.get('script_id'));
 
             // Save link parameters
             for (let i = 1; i <= totalSteps; i++) {
                 const linkVal = urlParams.get(`link${i}`);
                 if (linkVal) {
-                    localStorage.setItem(`tungsten_link_${i}`, decodeURIComponent(linkVal));
+                    localStorage.setItem(`lyra_link_${i}`, decodeURIComponent(linkVal));
                 } else if (i === 1) {
-                    localStorage.setItem('tungsten_link_1', 'https://lootdest.org/s?DfJNgxIO');
+                    localStorage.setItem('lyra_link_1', 'https://lootdest.org/s?DfJNgxIO');
                 }
             }
 
@@ -291,15 +286,15 @@
             logCheckin(1);
 
             setTimeout(() => {
-                const targetLink = localStorage.getItem('tungsten_link_1');
+                const targetLink = localStorage.getItem('lyra_link_1');
                 window.location.href = targetLink;
             }, 800);
             
         } else {
             // Step 2: User returned from a checkpoint. Read localStorage state.
-            const storedHwid = localStorage.getItem('tungsten_hwid');
-            const totalSteps = parseInt(localStorage.getItem('tungsten_total_steps')) || 0;
-            let currentStep = parseInt(localStorage.getItem('tungsten_current_step'));
+            const storedHwid = localStorage.getItem('lyra_hwid');
+            const totalSteps = parseInt(localStorage.getItem('lyra_total_steps')) || 0;
+            let currentStep = parseInt(localStorage.getItem('lyra_current_step'));
 
             if (!storedHwid || storedHwid.trim() === "" || isNaN(totalSteps)) {
                 spinner.style.display = 'none';
@@ -308,7 +303,7 @@
             } else {
                 // We returned from a step. Increment step counter.
                 currentStep = currentStep + 1;
-                localStorage.setItem('tungsten_current_step', currentStep);
+                localStorage.setItem('lyra_current_step', currentStep);
 
                 if (currentStep < totalSteps) {
                     // Log checkpoint progress
@@ -316,7 +311,7 @@
 
                     statusText.innerText = `Checkpoint ${currentStep} completed! Redirecting to Checkpoint ${currentStep + 1} of ${totalSteps}...`;
                     setTimeout(() => {
-                        const targetLink = localStorage.getItem(`tungsten_link_${currentStep + 1}`);
+                        const targetLink = localStorage.getItem(`lyra_link_${currentStep + 1}`);
                         if (targetLink) {
                             window.location.href = targetLink;
                         } else {
@@ -332,21 +327,21 @@
         }
 
         function showKey() {
-            const storedHwid = localStorage.getItem('tungsten_hwid');
+            const storedHwid = localStorage.getItem('lyra_hwid');
             setTimeout(() => {
                 statusText.innerText = "Generating HWID-locked key...";
                 setTimeout(() => {
-                    const generatedKey = generateDailyHWIDKey(storedHwid);
-                    
-                    spinner.style.display = 'none';
-                    statusText.innerText = "Key generated successfully! Proceed to copy.";
-                    keyBox.innerText = generatedKey;
-                    keyBox.style.display = 'block';
-                    actionBtn.style.display = 'block';
-                    
-                    // Clear step counters
-                    localStorage.removeItem('tungsten_current_step');
-                    localStorage.removeItem('tungsten_total_steps');
+                    generateDailyHWIDKey(storedHwid).then(generatedKey => {
+                        spinner.style.display = 'none';
+                        statusText.innerText = "Key generated successfully! Proceed to copy.";
+                        keyBox.innerText = generatedKey;
+                        keyBox.style.display = 'block';
+                        actionBtn.style.display = 'block';
+                        
+                        // Clear step counters
+                        localStorage.removeItem('lyra_current_step');
+                        localStorage.removeItem('lyra_total_steps');
+                    });
                 }, 1000);
             }, 800);
         }

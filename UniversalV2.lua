@@ -1,13 +1,13 @@
---[[
-    Tungsten Hub - Universal Script Hub
-    Loads the Tungsten Hub UI library from GitHub and implements real, working features:
+﻿--[[
+    Lyra UI Library - Universal Script Hub
+    Loads the Lyra UI Library UI library from GitHub and implements real, working features:
     - Player Movement (WalkSpeed, JumpPower, Gravity, Fly, Noclip, Infinite Jump)
     - Visuals (ESP Highlighting using Roblox Highlights)
     - Teleports (Teleport to Players, Click-to-Teleport with CTRL+Click)
     - Utilities (Anti-AFK, Rejoin Game, Dynamic Theme Swapping)
     
     Loadstring to execute:
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Lyra-Hub/main/UniversalV2.lua"))()
 ]]
 
 local Players = game:GetService("Players")
@@ -32,14 +32,14 @@ local function getRoot()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- Load the Tungsten Hub UI Library from GitHub (with cache buster)
-local success, TungstenHub = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua?t=" .. tostring(os.time())))()
+-- Load the Lyra UI Library UI Library from GitHub (with cache buster)
+local success, Lyra = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Lyra-Hub/main/LyraV2.lua?t=" .. tostring(os.time())))()
 end)
 
-if not success or not TungstenHub then
-    warn("Failed to load Tungsten Hub UI Library. Falling back to local require or erroring.")
-    error("Tungsten Hub: Library load failed. Make sure you are connected to the internet.")
+if not success or not Lyra then
+    warn("Failed to load Lyra UI Library UI Library. Falling back to local require or erroring.")
+    error("Lyra UI Library: Library load failed. Make sure you are connected to the internet.")
 end
 
 -- HWID-based dynamic daily key generation (prevents key sharing)
@@ -55,51 +55,116 @@ local function getHardwareID()
     return hwid:gsub("%s+", ""):gsub("%c+", "")
 end
 
-local function multiply32(a, b)
-    local a_hi = bit32.rshift(a, 16)
-    local a_lo = bit32.band(a, 0xFFFF)
-    local b_hi = bit32.rshift(b, 16)
-    local b_lo = bit32.band(b, 0xFFFF)
+-- Pure Luau SHA-256 Hashing Algorithm
+local function sha256_hash(msg)
+    local h_init = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    }
+    local k = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    }
+    local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
+    local rshift, lshift, rrotate = bit32.rshift, bit32.lshift, bit32.rrotate
+
+    local function str2w(str)
+        local words = {}
+        for i = 1, #str, 4 do
+            local b1, b2, b3, b4 = string.byte(str, i, i+3)
+            b1 = b1 or 0 b2 = b2 or 0 b3 = b3 or 0 b4 = b4 or 0
+            table.insert(words, bor(lshift(b1, 24), lshift(b2, 16), lshift(b3, 8), b4))
+        end
+        return words
+    end
+
+    local h = {unpack(h_init)}
+    local msg_len = #msg
+    local extra = msg_len % 64
+    local pad_len = 56 - extra
+    if pad_len <= 0 then pad_len = pad_len + 64 end
     
-    local mid = bit32.band(a_hi * b_lo + a_lo * b_hi, 0xFFFF)
-    return bit32.band(mid * 65536 + a_lo * b_lo, 0xFFFFFFFF)
+    local pad = string.char(0x80) .. string.rep(string.char(0), pad_len - 1)
+    local bits = msg_len * 8
+    local bits_bin = string.char(
+        0, 0, 0, 0,
+        math.floor(bits / 16777216) % 256,
+        math.floor(bits / 65536) % 256,
+        math.floor(bits / 256) % 256,
+        bits % 256
+    )
+    
+    local padded_msg = msg .. pad .. bits_bin
+    local words = str2w(padded_msg)
+    
+    for block_start = 1, #words, 16 do
+        local w = {}
+        for i = 1, 16 do w[i] = words[block_start + i - 1] end
+        for i = 17, 64 do
+            local w15 = w[i-15]
+            local s0 = bxor(rrotate(w15, 7), rrotate(w15, 18), rshift(w15, 3))
+            local w2 = w[i-2]
+            local s1 = bxor(rrotate(w2, 17), rrotate(w2, 19), rshift(w2, 10))
+            w[i] = (w[i-16] + s0 + w[i-7] + s1) % 4294967296
+        end
+        
+        local a, b, c, d, e, f, g, h_val = h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]
+        for i = 1, 64 do
+            local s1 = bxor(rrotate(e, 6), rrotate(e, 11), rrotate(e, 25))
+            local ch = bxor(band(e, f), band(bnot(e), g))
+            local temp1 = (h_val + s1 + ch + k[i] + w[i]) % 4294967296
+            local s0 = bxor(rrotate(a, 2), rrotate(a, 13), rrotate(a, 22))
+            local maj = bxor(band(a, b), band(a, c), band(b, c))
+            local temp2 = (s0 + maj) % 4294967296
+            
+            h_val = g g = f f = e e = (d + temp1) % 4294967296
+            d = c c = b b = a a = (temp1 + temp2) % 4294967296
+        end
+        
+        h[1] = (h[1] + a) % 4294967296
+        h[2] = (h[2] + b) % 4294967296
+        h[3] = (h[3] + c) % 4294967296
+        h[4] = (h[4] + d) % 4294967296
+        h[5] = (h[5] + e) % 4294967296
+        h[6] = (h[6] + f) % 4294967296
+        h[7] = (h[7] + g) % 4294967296
+        h[8] = (h[8] + h_val) % 4294967296
+    end
+    
+    local hex = ""
+    for i = 1, 8 do hex = hex .. string.format("%08x", h[i]) end
+    return hex
 end
 
 local function getHashedHWID()
-    local raw = getHardwareID()
-    local hash = 2166136261
-    for i = 1, #raw do
-        hash = bit32.bxor(hash, string.byte(raw, i))
-        hash = multiply32(hash, 16777619)
-    end
-    return string.format("%X", hash)
+    return sha256_hash(getHardwareID()):upper()
 end
 
 local function getDailyHWIDKey()
     local hashedHwid = getHashedHWID()
     local dateStr = os.date("!%d%m%Y") -- Forced UTC date string to align with browser
-    local salt = "TungstenSecureKeySystem_V3_Reset_8F2D"
+    local salt = "LyraSecureKeySystem_V3_Reset_8F2D"
     local input = hashedHwid .. "_" .. salt .. "_" .. dateStr
-    
-    local hash = 2166136261
-    for i = 1, #input do
-        hash = bit32.bxor(hash, string.byte(input, i))
-        hash = multiply32(hash, 16777619)
-    end
-    return "Tungsten_" .. string.format("%X", hash)
+    return "Lyra_" .. sha256_hash(input):upper()
 end
 
 -- Create Window with Secure HWID Key System
-local Window = TungstenHub:CreateWindow({
-    Name = "Tungsten Hub",
+local Window = Lyra:CreateWindow({
+    Name = "Lyra UI Library",
     Subtitle = "Universal",
     KeySettings = {
-        Title = "Tungsten Key Verification",
-        Subtitle = "Tungsten Hub",
+        Title = "Lyra Key Verification",
+        Subtitle = "Lyra UI Library",
         Note = "Please enter your secure HWID-locked key to unlock features.",
         SaveKey = true,
         Key = getDailyHWIDKey(),
-        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/?hwid=" .. getHashedHWID()
+        Url = "https://jgrjgirjgo.github.io/Lyra-Hub/?hwid=" .. getHashedHWID()
     }
 })
 
@@ -428,11 +493,11 @@ SettingsTab:CreateButton("Rejoin Game", function()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end)
 
-SettingsTab:CreateLabel("Tungsten Hub Control")
+SettingsTab:CreateLabel("Lyra UI Library Control")
 
 -- Theme Color Palette Selector
-SettingsTab:CreateDropdown("UI Theme Palette", {"Tungsten", "Nebula", "BloodMoon", "Emerald", "Midnight"}, "Tungsten", function(themeName)
-    local themeTable = TungstenHub.Themes[themeName]
+SettingsTab:CreateDropdown("UI Theme Palette", {"Lyra", "Nebula", "BloodMoon", "Emerald", "Midnight"}, "Lyra", function(themeName)
+    local themeTable = Lyra.Themes[themeName]
     if themeTable then
         Window:SetTheme(themeTable)
         Window:Notify("Theme Loaded", "Applied the " .. themeName .. " theme palette.", 2)
@@ -475,11 +540,11 @@ end)
 
 -- Destroy UI
 SettingsTab:CreateButton("Destroy UI", function()
-    local existing = game:GetService("CoreGui"):FindFirstChild("TungstenHub") or LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("TungstenHub")
+    local existing = game:GetService("CoreGui"):FindFirstChild("Lyra") or LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("Lyra")
     if existing then
         existing:Destroy()
     end
 end)
 
 -- Welcome Notification
-Window:Notify("Tungsten Hub", "Universal cheats loaded successfully!", 4)
+Window:Notify("Lyra UI Library", "Universal cheats loaded successfully!", 4)

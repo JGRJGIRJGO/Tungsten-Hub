@@ -1,7 +1,7 @@
 ﻿--[[
-    Lyra UI Library UI Library & Demo (V2 - Fluent & Rayfield Redesign)
-    All-in-one script. You can run this directly in a LocalScript in StarterGui
-    or execute it using a Roblox exploit executor.
+    Lyra UI Library UI Library (V2 - Fluent & Rayfield Redesign)
+    A professional, modern, and draggable dark-themed UI library for Roblox.
+    Designed with a Fluent Windows 11 style structure, smooth bouncing transitions, and modular themes.
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -1064,7 +1064,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             BorderSizePixel = 0,
             Parent = TabButton
         })
-        table.insert(themeObjects.Backgrounds, ActiveIndicator)
+        table.insert(themeObjects.Backgrounds, ActiveIndicator) -- Uses background color logic
         
         local ActiveIndicatorGrad = makeElement("UIGradient", {
             Color = ColorSequence.new({
@@ -1167,7 +1167,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         end
 
         -- =====================================================================
-        -- COMPONENT CREATORS
+        -- COMPONENT CREATORS (Fluent Design Specs)
         -- =====================================================================
 
         function Tab:CreateLabel(textString)
@@ -1618,6 +1618,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             table.insert(themeObjects.MainText, Label)
 
+            -- Selected label highlighted with Accent color
             local SelectionLabel = makeElement("TextLabel", {
                 Size = UDim2.new(0, 100, 1, 0),
                 Position = UDim2.new(1, -135, 0, 0),
@@ -1650,6 +1651,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 Parent = TopArea
             })
 
+            -- Options menu (expands downwards)
             local OptionsHolder = makeElement("Frame", {
                 Name = "OptionsHolder",
                 Size = UDim2.new(1, -20, 0, 0),
@@ -1807,7 +1809,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             table.insert(themeObjects.MainText, Label)
 
-            -- Input Box Container
+            -- Textbox border turns accent color on click
             local InputContainer = makeElement("Frame", {
                 Name = "InputContainer",
                 Size = UDim2.new(0, 120, 0, 24),
@@ -2044,153 +2046,4 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     return Window
 end
 
--- =====================================================================
--- DEMO ASSEMBLY START
--- =====================================================================
-
--- HWID-based dynamic daily key generation (prevents key sharing)
-local function getHardwareID()
-    local hwid = tostring(LocalPlayer.UserId)
-    if gethwid then 
-        local success, result = pcall(gethwid)
-        if success and type(result) == "string" and #result > 0 then
-            hwid = result
-        end
-    end
-    -- Sanitize HWID: remove all whitespace and control characters to ensure consistency
-    return hwid:gsub("%s+", ""):gsub("%c+", "")
-end
-
-local function getHashedHWID()
-    return sha256_hash(getHardwareID()):upper()
-end
-
-local function getDailyHWIDKey()
-    local hashedHwid = getHashedHWID()
-    local dateStr = os.date("!%d%m%Y") -- Forced UTC date string to align with browser
-    local salt = "LyraSecureKeySystem_V3_Reset_8F2D"
-    local input = hashedHwid .. "_" .. salt .. "_" .. dateStr
-    return "Lyra_" .. sha256_hash(input):upper()
-end
-
--- Create Window with Key System config
-local Window = Lyra:CreateWindow({
-    Name = "Lyra UI Library",
-    Subtitle = "Universal",
-    KeySettings = {
-        Title = "Lyra Key Verification",
-        Subtitle = "Lyra UI Library",
-        Note = "Please enter your secure HWID-locked key to unlock features.",
-        SaveKey = true,
-        Key = getDailyHWIDKey(),
-        Url = "https://jgrjgirjgo.github.io/Lyra-Hub/?hwid=" .. getHashedHWID()
-    }
-})
-
--- Create Tabs
-local MainTab = Window:CreateTab("Main")
-local MovementTab = Window:CreateTab("Movement")
-local SettingsTab = Window:CreateTab("Settings")
-
--- --- Main Tab Components ---
-MainTab:CreateLabel("Welcome to Lyra UI Library!")
-
-MainTab:CreateButton("Send Notification", function()
-    Window:Notify("Lyra UI Library", "This is a smooth notification!", 3)
-end)
-
-MainTab:CreateToggle("Auto Farm Coins", false, function(state)
-    print("Auto Farm set to:", state)
-    if state then
-        Window:Notify("Auto Farm", "Script started...", 2)
-    else
-        Window:Notify("Auto Farm", "Script stopped.", 2)
-    end
-end)
-
--- --- Movement Tab Components ---
-MovementTab:CreateLabel("Player Adjustments")
-
-MovementTab:CreateSlider("WalkSpeed Booster", 16, 200, 16, function(value)
-    local character = game:GetService("Players").LocalPlayer.Character
-    if character and character:FindFirstChildOfClass("Humanoid") then
-        character:FindFirstChildOfClass("Humanoid").WalkSpeed = value
-    end
-end)
-
-MovementTab:CreateTextbox("Set Custom WalkSpeed", "Type speed and press Enter...", function(text)
-    local num = tonumber(text)
-    if num then
-        local character = game:GetService("Players").LocalPlayer.Character
-        if character and character:FindFirstChildOfClass("Humanoid") then
-            character:FindFirstChildOfClass("Humanoid").WalkSpeed = num
-            Window:Notify("Speed Updated", "WalkSpeed set to: " .. tostring(num), 2)
-        end
-    else
-        Window:Notify("Error", "Please enter a valid number", 2)
-    end
-end)
-
-MovementTab:CreateSlider("JumpPower Booster", 50, 300, 50, function(value)
-    local character = game:GetService("Players").LocalPlayer.Character
-    if character and character:FindFirstChildOfClass("Humanoid") then
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        humanoid.UseJumpPower = true
-        humanoid.JumpPower = value
-    end
-end)
-
--- --- Settings Tab Components ---
-SettingsTab:CreateLabel("Configuration settings")
-
-SettingsTab:CreateDropdown("UI Theme Palette", {"Lyra", "Nebula", "BloodMoon", "Emerald", "Midnight"}, "Lyra", function(themeName)
-    local themeTable = Lyra.Themes[themeName]
-    if themeTable then
-        Window:SetTheme(themeTable)
-        Window:Notify("Theme Loaded", "Applied the " .. themeName .. " theme palette.", 2)
-    end
-end)
-
--- Toggle Keybind Changer
-local currentToggleKey = Enum.KeyCode.RightShift
-local listeningForKeybind = false
-local keybindButton
-
-keybindButton = SettingsTab:CreateButton("Toggle Keybind: " .. currentToggleKey.Name, function()
-    if listeningForKeybind then return end
-    listeningForKeybind = true
-    keybindButton.UpdateButtonText("Toggle Keybind: Press any key...")
-    
-    local connection
-    connection = UserInputService.InputBegan:Connect(function(input, processed)
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            local pressedKey = input.KeyCode
-            
-            -- Ignore Escape so they can cancel the keybind selection
-            if pressedKey == Enum.KeyCode.Escape then
-                listeningForKeybind = false
-                keybindButton.UpdateButtonText("Toggle Keybind: " .. currentToggleKey.Name)
-                connection:Disconnect()
-                return
-            end
-            
-            currentToggleKey = pressedKey
-            Window:SetToggleKey(pressedKey)
-            keybindButton.UpdateButtonText("Toggle Keybind: " .. pressedKey.Name)
-            Window:Notify("Keybind Updated", "Toggle key set to: " .. pressedKey.Name, 2)
-            
-            listeningForKeybind = false
-            connection:Disconnect()
-        end
-    end)
-end)
-
-SettingsTab:CreateButton("Destroy UI", function()
-    local existing = game:GetService("CoreGui"):FindFirstChild("Lyra") or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("Lyra")
-    if existing then
-        existing:Destroy()
-    end
-end)
-
--- Send a welcoming notification
-Window:Notify("Success", "Loaded Lyra UI Library!", 4)
+return Lyra

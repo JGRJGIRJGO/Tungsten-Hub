@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tungsten Hub — Developer Dashboard</title>
+    <title>Lyra UI Library — Developer Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -716,7 +716,7 @@
     <div class="setup-screen" id="setup-screen">
         <div class="setup-card">
             <h2>Backend Database Integration</h2>
-            <p>Tungsten Hub uses <strong>Supabase</strong> (a free, open-source serverless PostgreSQL database) to enable secure user authentication, script registering, and real analytics logging directly from your GitHub Pages. Follow these quick steps to get connected:</p>
+            <p>Lyra UI Library uses <strong>Supabase</strong> (a free, open-source serverless PostgreSQL database) to enable secure user authentication, script registering, and real analytics logging directly from your GitHub Pages. Follow these quick steps to get connected:</p>
             
             <div style="text-align: left; background: rgba(0, 0, 0, 0.25); padding: 20px; border-radius: 8px; border: 1px solid var(--stroke-color); margin-bottom: 25px; font-size: 13.5px; line-height: 1.6;">
                 <h4 style="color: var(--accent-2); margin-bottom: 10px;">1. Create Database Tables</h4>
@@ -737,8 +737,8 @@ create table public.scripts (
 create table public.key_settings (
   script_id uuid references public.scripts(id) on delete cascade primary key,
   steps integer not null default 1,
-  salt text not null default 'TungstenSaltKey',
-  file_name text not null default 'tungsten_key.txt',
+  salt text not null default 'LyraSaltKey',
+  file_name text not null default 'lyra_key.txt',
   link_1 text,
   link_2 text,
   link_3 text
@@ -772,12 +772,12 @@ create table public.key_redeems (
     <!-- Login Screen -->
     <div class="login-screen hidden" id="login-screen">
         <div class="login-card">
-            <h2>Tungsten Portal</h2>
+            <h2>Lyra Portal</h2>
             <p>Sign in to manage your key systems & scripts</p>
             
             <div class="input-group">
                 <label>Email Address</label>
-                <input type="email" class="input-field" id="login-email" placeholder="developer@tungsten.gg">
+                <input type="email" class="input-field" id="login-email" placeholder="developer@lyra.gg">
             </div>
 
             <div class="input-group">
@@ -808,7 +808,7 @@ create table public.key_redeems (
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="brand">
-                <h1>Tungsten Hub</h1>
+                <h1>Lyra UI Library</h1>
                 <p>Developer Console</p>
             </div>
             <nav style="display: flex; flex-direction: column; height: calc(100% - 100px); justify-content: space-between;">
@@ -955,11 +955,11 @@ create table public.key_redeems (
                         <div class="row-grid">
                             <div class="input-group">
                                 <label>Local Caching Key File (in executor workspace/)</label>
-                                <input type="text" class="input-field" id="cfg-file" value="tungsten_key.txt">
+                                <input type="text" class="input-field" id="cfg-file" value="lyra_key.txt">
                             </div>
                             <div class="input-group">
                                 <label>Encryption Salt Key</label>
-                                <input type="text" class="input-field" id="cfg-salt" value="TungstenSecureKeySystem_V3_Reset_8F2D">
+                                <input type="text" class="input-field" id="cfg-salt" value="LyraSecureKeySystem_V3_Reset_8F2D">
                             </div>
                         </div>
                         <button class="login-btn" id="save-settings-btn" style="max-width: 180px;">Save Key Config</button>
@@ -998,8 +998,8 @@ create table public.key_redeems (
 
         // --- Initialize Connection to Supabase ---
         function initSupabase() {
-            const url = localStorage.getItem('tungsten_sb_url');
-            const key = localStorage.getItem('tungsten_sb_key');
+            const url = localStorage.getItem('lyra_sb_url');
+            const key = localStorage.getItem('lyra_sb_key');
 
             if (url && key) {
                 try {
@@ -1008,8 +1008,8 @@ create table public.key_redeems (
                     checkSession();
                 } catch(e) {
                     showToast("Invalid credentials format", false);
-                    localStorage.removeItem('tungsten_sb_url');
-                    localStorage.removeItem('tungsten_sb_key');
+                    localStorage.removeItem('lyra_sb_url');
+                    localStorage.removeItem('lyra_sb_key');
                     setupScreen.classList.remove('hidden');
                 }
             } else {
@@ -1027,14 +1027,14 @@ create table public.key_redeems (
                 return;
             }
 
-            localStorage.setItem('tungsten_sb_url', url);
-            localStorage.setItem('tungsten_sb_key', key);
+            localStorage.setItem('lyra_sb_url', url);
+            localStorage.setItem('lyra_sb_key', key);
             initSupabase();
         });
 
         document.getElementById('reconfigure-btn').addEventListener('click', () => {
-            localStorage.removeItem('tungsten_sb_url');
-            localStorage.removeItem('tungsten_sb_key');
+            localStorage.removeItem('lyra_sb_url');
+            localStorage.removeItem('lyra_sb_key');
             setupScreen.classList.remove('hidden');
             loginScreen.classList.add('hidden');
             dashboardWrapper.classList.remove('visible');
@@ -1237,8 +1237,8 @@ create table public.key_redeems (
 
             if (config) {
                 activeSteps = config.steps || 1;
-                cfgFile.value = config.file_name || 'tungsten_key.txt';
-                cfgSalt.value = config.salt || 'TungstenSecureKeySystem_V3_Reset_8F2D';
+                cfgFile.value = config.file_name || 'lyra_key.txt';
+                cfgSalt.value = config.salt || 'LyraSecureKeySystem_V3_Reset_8F2D';
                 
                 // Select proper pill
                 stepOptions.forEach(o => {
@@ -1252,8 +1252,8 @@ create table public.key_redeems (
             } else {
                 // Default settings
                 activeSteps = 1;
-                cfgFile.value = 'tungsten_key.txt';
-                cfgSalt.value = 'TungstenSecureKeySystem_V3_Reset_8F2D';
+                cfgFile.value = 'lyra_key.txt';
+                cfgSalt.value = 'LyraSecureKeySystem_V3_Reset_8F2D';
                 stepOptions.forEach(o => {
                     o.classList.remove('active');
                     if (o.getAttribute('data-steps') === '1') o.classList.add('active');
@@ -1335,8 +1335,8 @@ create table public.key_redeems (
 
         function generateLuaCode() {
             const scriptId = selector.value;
-            const fileName = cfgFile.value.trim() || 'tungsten_key.txt';
-            const salt = cfgSalt.value.trim() || 'TungstenSaltKey';
+            const fileName = cfgFile.value.trim() || 'lyra_key.txt';
+            const salt = cfgSalt.value.trim() || 'LyraSaltKey';
             
             const urls = [];
             for(let i = 1; i <= activeSteps; i++) {
@@ -1344,18 +1344,18 @@ create table public.key_redeems (
                 urls.push(el ? el.value.trim() : '');
             }
 
-            const gateUrl = 'https://jgrjgirjgo.github.io/Tungsten-Hub/';
-            const dbUrl = localStorage.getItem('tungsten_sb_url');
-            const dbKey = localStorage.getItem('tungsten_sb_key');
+            const gateUrl = 'https://jgrjgirjgo.github.io/Lyra-Hub/';
+            const dbUrl = localStorage.getItem('lyra_sb_url');
+            const dbKey = localStorage.getItem('lyra_sb_key');
             
-            let queryParams = `?hwid=" .. getHardwareID() .. "&script_id=${scriptId}&db_url=${encodeURIComponent(dbUrl)}&db_key=${encodeURIComponent(dbKey)}&steps=${activeSteps}`;
+            let queryParams = `?hwid=" .. getHashedHWID() .. "&script_id=${scriptId}&db_url=${encodeURIComponent(dbUrl)}&db_key=${encodeURIComponent(dbKey)}&steps=${activeSteps}`;
             
             for (let i = 1; i <= activeSteps; i++) {
                 queryParams += `&link${i}=` .. game:GetService("HttpService"):UrlEncode(urls[i-1] || '')
             }
 
-            let code = `-- Tungsten Secure Key System Loadstring
-local TungstenHub = loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/TungstenHubV2.lua"))()
+            let code = `-- Lyra Secure Key System Loadstring
+local Lyra = loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Lyra-Hub/main/LyraV2.lua"))()
 
 -- Generate HWID daily key securely matching your dashboard config
 local function getHardwareID()
@@ -1364,30 +1364,118 @@ local function getHardwareID()
         local success, result = pcall(gethwid)
         if success and type(result) == "string" then hwid = result end
     end
-    return hwid:gsub("%s+", "")
+    return hwid:gsub("%s+", ""):gsub("%c+", "")
+end
+
+-- Pure Luau SHA-256 Hashing Algorithm
+local function sha256_hash(msg)
+    local h_init = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    }
+    local k = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    }
+    local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
+    local rshift, lshift, rrotate = bit32.rshift, bit32.lshift, bit32.rrotate
+
+    local function str2w(str)
+        local words = {}
+        for i = 1, #str, 4 do
+            local b1, b2, b3, b4 = string.byte(str, i, i+3)
+            b1 = b1 or 0 b2 = b2 or 0 b3 = b3 or 0 b4 = b4 or 0
+            table.insert(words, bor(lshift(b1, 24), lshift(b2, 16), lshift(b3, 8), b4))
+        end
+        return words
+    end
+
+    local h = {unpack(h_init)}
+    local msg_len = #msg
+    local extra = msg_len % 64
+    local pad_len = 56 - extra
+    if pad_len <= 0 then pad_len = pad_len + 64 end
+    
+    local pad = string.char(0x80) .. string.rep(string.char(0), pad_len - 1)
+    local bits = msg_len * 8
+    local bits_bin = string.char(
+        0, 0, 0, 0,
+        math.floor(bits / 16777216) % 256,
+        math.floor(bits / 65536) % 256,
+        math.floor(bits / 256) % 256,
+        bits % 256
+    )
+    
+    local padded_msg = msg .. pad .. bits_bin
+    local words = str2w(padded_msg)
+    
+    for block_start = 1, #words, 16 do
+        local w = {}
+        for i = 1, 16 do w[i] = words[block_start + i - 1] end
+        for i = 17, 64 do
+            local w15 = w[i-15]
+            local s0 = bxor(rrotate(w15, 7), rrotate(w15, 18), rshift(w15, 3))
+            local w2 = w[i-2]
+            local s1 = bxor(rrotate(w2, 17), rrotate(w2, 19), rshift(w2, 10))
+            w[i] = (w[i-16] + s0 + w[i-7] + s1) % 4294967296
+        end
+        
+        local a, b, c, d, e, f, g, h_val = h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]
+        for i = 1, 64 do
+            local s1 = bxor(rrotate(e, 6), rrotate(e, 11), rrotate(e, 25))
+            local ch = bxor(band(e, f), band(bnot(e), g))
+            local temp1 = (h_val + s1 + ch + k[i] + w[i]) % 4294967296
+            local s0 = bxor(rrotate(a, 2), rrotate(a, 13), rrotate(a, 22))
+            local maj = bxor(band(a, b), band(a, c), band(b, c))
+            local temp2 = (s0 + maj) % 4294967296
+            
+            h_val = g g = f f = e e = (d + temp1) % 4294967296
+            d = c c = b b = a a = (temp1 + temp2) % 4294967296
+        end
+        
+        h[1] = (h[1] + a) % 4294967296
+        h[2] = (h[2] + b) % 4294967296
+        h[3] = (h[3] + c) % 4294967296
+        h[4] = (h[4] + d) % 4294967296
+        h[5] = (h[5] + e) % 4294967296
+        h[6] = (h[6] + f) % 4294967296
+        h[7] = (h[7] + g) % 4294967296
+        h[8] = (h[8] + h_val) % 4294967296
+    end
+    
+    local hex = ""
+    for i = 1, 8 do hex = hex .. string.format("%08x", h[i]) end
+    return hex
+end
+
+local function getHashedHWID()
+    return sha256_hash(getHardwareID()):upper()
 end
 
 local function getDailyHWIDKey()
-    local input = getHardwareID() .. "_${salt}_" .. os.date("!%d%m%Y")
-    local hash = 2166136261
-    for i = 1, #input do
-        hash = bit32.bxor(hash, string.byte(input, i))
-        hash = bit32.band(hash * 16777619, 0xFFFFFFFF)
-    end
-    return "Tungsten_" .. string.format("%X", hash)
+    local hashedHwid = getHashedHWID()
+    local dateStr = os.date("!%d%m%Y")
+    local input = hashedHwid .. "_${salt}_" .. dateStr
+    return "Lyra_" .. sha256_hash(input):upper()
 end
 
 -- Initialize UI Window
-local Window = TungstenHub:CreateWindow({
+local Window = Lyra:CreateWindow({
     Name = "${selector.options[selector.selectedIndex].text}",
     Subtitle = "Protected Loader",
     KeySettings = {
         Title = "Key Verification",
-        Subtitle = "Tungsten Hub",
+        Subtitle = "Lyra UI Library",
         Note = "Please complete all ${activeSteps} ad checkpoints to unlock.",
         SaveKey = true,
         Key = getDailyHWIDKey(),
-        Url = "${gateUrl}${queryParams}
+        Url = "${gateUrl}${queryParams}"
     }
 })
 `;
