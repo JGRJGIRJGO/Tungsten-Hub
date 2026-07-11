@@ -101,6 +101,7 @@ local MAP_FINGERPRINT_PART_LIMIT = 500
 
 local LocalPlayer = Players.LocalPlayer
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
+local RemoteEvent = ReplicatedStorage:WaitForChild("RemoteEvent")
 local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
@@ -837,6 +838,160 @@ local function cloneStrategy(strategy)
     return copiedStrategy
 end
 
+local function getUniqueTroopNames(values)
+    local troopNames = {}
+    local seen = {}
+
+    if type(values) ~= "table" then
+        return troopNames
+    end
+
+    for _, value in pairs(values) do
+        local troopName = type(value) == "string" and value or (type(value) == "table" and value.Name)
+        local lookupKey = normalizeLookupKey(troopName)
+
+        if type(troopName) == "string" and troopName ~= "" and lookupKey ~= "" and not seen[lookupKey] then
+            seen[lookupKey] = true
+            table.insert(troopNames, troopName)
+        end
+    end
+
+    return troopNames
+end
+
+local function getStrategyTroopNames(strategy)
+    local troopNames = {}
+    local seen = {}
+
+    if type(strategy) ~= "table" then
+        return troopNames
+    end
+
+    for _, step in ipairs(strategy) do
+        local troopName = step.action == "place" and step.troop or nil
+        local lookupKey = normalizeLookupKey(troopName)
+
+        if type(troopName) == "string" and troopName ~= "" and lookupKey ~= "" and not seen[lookupKey] then
+            seen[lookupKey] = true
+            table.insert(troopNames, troopName)
+        end
+    end
+
+    return troopNames
+end
+
+local function loadoutsMatch(left, right)
+    local leftNames = getUniqueTroopNames(left)
+    local rightNames = getUniqueTroopNames(right)
+
+    if #leftNames ~= #rightNames then
+        return false
+    end
+
+    local rightLookup = {}
+
+    for _, troopName in ipairs(rightNames) do
+        rightLookup[normalizeLookupKey(troopName)] = true
+    end
+
+    for _, troopName in ipairs(leftNames) do
+        if not rightLookup[normalizeLookupKey(troopName)] then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function appendLoadoutLines(lines, loadout)
+    table.insert(lines, "local StrategyLoadout = {")
+
+    for _, troopName in ipairs(loadout) do
+        table.insert(lines, "    " .. formatLuaValue(troopName) .. ",")
+    end
+
+    table.insert(lines, "}")
+end
+
+local function readEquippedTroops(timeout)
+    local cacheModule = ReplicatedStorage:FindFirstChild("Client")
+    cacheModule = cacheModule and cacheModule:FindFirstChild("Modules")
+    cacheModule = cacheModule and cacheModule:FindFirstChild("Universal")
+    cacheModule = cacheModule and cacheModule:FindFirstChild("Utilities")
+    cacheModule = cacheModule and cacheModule:FindFirstChild("Cache")
+
+    if not cacheModule then
+        return nil, "Could not find the Equipped.Troops cache module."
+    end
+
+    local loaded, cacheFactory = pcall(require, cacheModule)
+
+    if not loaded or type(cacheFactory) ~= "function" then
+        return nil, "Could not load the Equipped.Troops cache."
+    end
+
+    local requested, cacheValue = pcall(function()
+        return cacheFactory("Equipped.Troops"):Get()
+    end)
+
+    if not requested then
+        return nil, "Could not request Equipped.Troops: " .. tostring(cacheValue)
+    end
+
+    if type(cacheValue) == "table" and type(cacheValue.andThen) ~= "function" then
+        return cacheValue
+    end
+
+    local resolvedValue
+    local resolvedError
+    local settled = false
+    local subscribed, subscribeError = pcall(function()
+        cacheValue:andThen(function(value)
+            resolvedValue = value
+            settled = true
+        end, function(reason)
+            resolvedError = reason
+            settled = true
+        end)
+    end)
+
+    if not subscribed then
+        return nil, "Could not read Equipped.Troops: " .. tostring(subscribeError)
+    end
+
+    local deadline = os.clock() + (timeout or 5)
+
+    while not settled and os.clock() < deadline do
+        task.wait()
+    end
+
+    if not settled then
+        return nil, "Timed out waiting for Equipped.Troops."
+    end
+
+    if resolvedError then
+        return nil, "Could not read Equipped.Troops: " .. tostring(resolvedError)
+    end
+
+    return resolvedValue
+end
+
+local function waitForEquippedTroops(expectedLoadout, timeout)
+    local deadline = os.clock() + (timeout or 5)
+
+    while os.clock() < deadline do
+        local currentLoadout = readEquippedTroops(1)
+
+        if currentLoadout and loadoutsMatch(currentLoadout, expectedLoadout) then
+            return true
+        end
+
+        task.wait(0.1)
+    end
+
+    return false
+end
+
 local function getCashValue()
     local cash = LocalPlayer:WaitForChild("Cash")
 
@@ -877,6 +1032,70 @@ end
 function LyraMacro:Loadout(...)
     self.SelectedLoadout = { ... }
     print("[LyraMacro] Loadout configured: " .. table.concat(self.SelectedLoadout, ", "))
+end
+
+function LyraMacro:GetStrategyLoadout(strategy)
+    return getStrategyTroopNames(strategy)
+end
+
+function LyraMacro:GetRecordedLoadout()
+    return self:GetStrategyLoadout(self.RecordedStrategy)
+end
+
+function LyraMacro:SyncLobbyLoadout(loadout)
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "Troop loadouts can only be changed in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
+    end
+
+    local desiredLoadout = getUniqueTroopNames(loadout)
+
+    if #desiredLoadout > 5 then
+        return false, "This strategy uses " .. tostring(#desiredLoadout) .. " towers, but the lobby loadout only supports five."
+    end
+
+    local equippedLoadout, equippedError = readEquippedTroops()
+
+    if not equippedLoadout then
+        return false, equippedError
+    end
+
+    local currentLoadout = getUniqueTroopNames(equippedLoadout)
+
+    for _, troopName in ipairs(currentLoadout) do
+        RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Remove", {
+            Name = troopName,
+        })
+        task.wait(0.15)
+    end
+
+    if #currentLoadout > 0 then
+        if not waitForEquippedTroops({}, 5) then
+            return false, "Timed out while clearing the current lobby loadout."
+        end
+    end
+
+    for _, troopName in ipairs(desiredLoadout) do
+        RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Add", {
+            Name = troopName,
+        })
+        task.wait(0.15)
+    end
+
+    if not waitForEquippedTroops(desiredLoadout, 5) then
+        return false, "Timed out while equipping the strategy loadout."
+    end
+
+    self.SelectedLoadout = getUniqueTroopNames(desiredLoadout)
+    print("[LyraMacro] Lobby loadout synchronized: " .. table.concat(self.SelectedLoadout, ", "))
+
+    return true, self.SelectedLoadout
+end
+
+function LyraMacro:PrepareStrategyLoadout(strategy, options)
+    options = options or {}
+    local loadout = options.Loadout or self:GetStrategyLoadout(strategy)
+
+    return self:SyncLobbyLoadout(loadout)
 end
 
 function LyraMacro:Mode(modeName)
@@ -1218,6 +1437,12 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
 
     if type(strategy) ~= "table" then
         return false, "Strategy replay requires a table of recorded steps."
+    end
+
+    local loadoutReady, loadoutMessage = self:PrepareStrategyLoadout(strategy, options)
+
+    if not loadoutReady then
+        return false, loadoutMessage
     end
 
     local recorderReady, recorderMessage = self:_installRecorder()
@@ -1777,8 +2002,10 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
 
     appendRecordedStrategyLines(lines, self.RecordedStrategy)
     table.insert(lines, "")
+    appendLoadoutLines(lines, self:GetRecordedLoadout())
+    table.insert(lines, "")
     table.insert(lines, "if game.PlaceId == " .. tostring(LOBBY_PLACE_ID) .. " then")
-    table.insert(lines, "    local queued, message = LyraMacro:QueueStrategyAfterElevator(Strategy, RecordedMapFingerprint, { LibraryUrl = " .. formatLuaValue(macroLibraryUrl) .. " })")
+    table.insert(lines, "    local queued, message = LyraMacro:QueueStrategyAfterElevator(Strategy, RecordedMapFingerprint, { LibraryUrl = " .. formatLuaValue(macroLibraryUrl) .. ", Loadout = StrategyLoadout })")
     table.insert(lines, "    assert(queued, message)")
     table.insert(lines, "    return Strategy")
     table.insert(lines, "end")
