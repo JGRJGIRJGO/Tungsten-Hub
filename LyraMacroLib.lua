@@ -129,6 +129,8 @@ local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
     SpawnedTowers = {},
+    KnownTowerTroops = {},
+    CallOfArmsTowerCache = {},
     NextTowerIndex = 0,
     SelectedLoadout = {},
     SelectedMode = "Normal",
@@ -1083,8 +1085,26 @@ local function isCallOfArmsIdentifier(value)
         or lookupKey:find("lifeguard", 1, true) ~= nil
 end
 
-local function isCallOfArmsTower(tower)
-    if isCallOfArmsIdentifier(getInstanceName(tower)) then
+local function hasCallOfArmsAttributes(instance)
+    local gotAttributes, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if not gotAttributes or type(attributes) ~= "table" then
+        return false
+    end
+
+    for _, attributeValue in pairs(attributes) do
+        if isCallOfArmsIdentifier(attributeValue) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function isCallOfArmsTower(tower, knownTroopType)
+    if isCallOfArmsIdentifier(knownTroopType) or isCallOfArmsIdentifier(getInstanceName(tower)) or hasCallOfArmsAttributes(tower) then
         return true
     end
 
@@ -1099,7 +1119,7 @@ local function isCallOfArmsTower(tower)
     end
 
     for _, descendant in ipairs(safeGetDescendants(tower)) do
-        if isCallOfArmsIdentifier(getInstanceName(descendant)) then
+        if isCallOfArmsIdentifier(getInstanceName(descendant)) or hasCallOfArmsAttributes(descendant) then
             return true
         end
 
@@ -1107,6 +1127,12 @@ local function isCallOfArmsTower(tower)
             local value = readInstanceValue(descendant)
 
             if isCallOfArmsIdentifier(value) then
+                return true
+            end
+        elseif instanceIsA(descendant, "ObjectValue") then
+            local value = readInstanceValue(descendant)
+
+            if getValueKind(value) == "Instance" and isCallOfArmsIdentifier(getInstanceName(value)) then
                 return true
             end
         end
@@ -1160,9 +1186,26 @@ end
 
 function LyraMacro:_getCallOfArmsTowers()
     local callOfArmsTowers = {}
+    local now = os.clock()
 
     for _, tower in ipairs(getTowersFolder():GetChildren()) do
-        if tower.Parent and isCallOfArmsTower(tower) then
+        local knownTroopType = self.KnownTowerTroops[tower]
+        local cacheEntry = self.CallOfArmsTowerCache[tower]
+        local isCallOfArms
+
+        if knownTroopType then
+            isCallOfArms = isCallOfArmsIdentifier(knownTroopType)
+        elseif cacheEntry and now - cacheEntry.CheckedAt < 0.5 then
+            isCallOfArms = cacheEntry.IsCallOfArms
+        else
+            isCallOfArms = isCallOfArmsTower(tower)
+            self.CallOfArmsTowerCache[tower] = {
+                CheckedAt = now,
+                IsCallOfArms = isCallOfArms,
+            }
+        end
+
+        if tower.Parent and isCallOfArms then
             table.insert(callOfArmsTowers, tower)
         end
     end
@@ -1187,6 +1230,12 @@ function LyraMacro:SetChainCOA(enabled)
     if not enabled then
         print("[LyraMacro] Chain COA disabled.")
         return true, "Chain COA disabled."
+    end
+
+    local recorderInstalled, recorderMessage = self:_installRecorder()
+
+    if not recorderInstalled then
+        warn("[LyraMacro] Chain COA could not watch new tower placements: " .. tostring(recorderMessage))
     end
 
     self.ChainCOANextIndex = 0
@@ -1935,7 +1984,7 @@ function LyraMacro:_appendRecordedStep(step)
     print("[LyraMacro] Recorded step #" .. #self.RecordedStrategy .. ": " .. step.action)
 end
 
-function LyraMacro:_trackNextRecordedTower()
+function LyraMacro:_trackNextRecordedTower(troopType)
     local connection
 
     connection = getTowersFolder().ChildAdded:Connect(function(tower)
@@ -1947,10 +1996,53 @@ function LyraMacro:_trackNextRecordedTower()
 
         self.NextRecordedTowerIndex += 1
         self.RecordedTowerIndexes[tower] = self.NextRecordedTowerIndex
+
+        if type(troopType) == "string" and troopType ~= "" then
+            self.KnownTowerTroops[tower] = troopType
+        end
+
         print("[LyraMacro] Recorded tower #" .. self.NextRecordedTowerIndex .. ".")
     end)
 
     table.insert(self.RecordingConnections, connection)
+end
+
+function LyraMacro:_observeChainCOAPlacement(args)
+    if not self.ChainCOAEnabled then
+        return
+    end
+
+    if normalizeLookupKey(args[1]) ~= "troops" or normalizeLookupKey(args[2]) ~= "place" then
+        return
+    end
+
+    local placementOptions = type(args[5]) == "table" and args[5] or {}
+    local troopType = args[3]
+
+    if not isCallOfArmsIdentifier(troopType) then
+        troopType = placementOptions.Type or placementOptions.Name
+    end
+
+    if not isCallOfArmsIdentifier(troopType) then
+        return
+    end
+
+    local connection
+    connection = getTowersFolder().ChildAdded:Connect(function(tower)
+        if connection then
+            connection:Disconnect()
+            connection = nil
+        end
+
+        self.KnownTowerTroops[tower] = tostring(troopType)
+        print("[LyraMacro] Chain COA linked " .. tostring(getInstanceName(tower) or "tower") .. " skin to " .. tostring(troopType) .. ".")
+    end)
+
+    task.delay(5, function()
+        if connection then
+            connection:Disconnect()
+        end
+    end)
 end
 
 function LyraMacro:_getRecordedTowerIndex(tower)
@@ -2049,7 +2141,7 @@ function LyraMacro:_recordRemoteInvoke(args)
             z = roundNumber(position.Z),
             rotation = placementInfo.Rotation,
         })
-        self:_trackNextRecordedTower()
+        self:_trackNextRecordedTower(troopType)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
@@ -2089,6 +2181,7 @@ function LyraMacro:_installRecorder()
         if method == "InvokeServer" and remote == RemoteFunction then
             local args = { ... }
             self:_observeElevatorEnter(args)
+            self:_observeChainCOAPlacement(args)
             local recorded, recordError = pcall(function()
                 self:_recordRemoteInvoke(args)
             end)
@@ -2691,6 +2784,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation)
 
         self.NextTowerIndex += 1
         self.SpawnedTowers[self.NextTowerIndex] = placedTower
+        self.KnownTowerTroops[placedTower] = troopType
         print("[LyraMacro] Registered tower #" .. self.NextTowerIndex .. ".")
     end, debug.traceback)
 
