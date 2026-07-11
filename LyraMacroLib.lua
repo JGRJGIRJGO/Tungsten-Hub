@@ -219,6 +219,9 @@ local function formatRecordedStep(step)
 
     if step.action == "place" then
         table.insert(fields, formatField("troop", step.troop))
+        if type(step.skin) == "string" and step.skin ~= "" then
+            table.insert(fields, formatField("skin", step.skin))
+        end
         table.insert(fields, formatField("x", step.x))
         table.insert(fields, formatField("y", step.y))
         table.insert(fields, formatField("z", step.z))
@@ -246,7 +249,8 @@ end
 
 local function describeStrategyStep(step)
     if step.action == "place" then
-        return "PLACE " .. tostring(step.troop)
+        local skinSuffix = type(step.skin) == "string" and step.skin ~= "" and " [" .. step.skin .. "]" or ""
+        return "PLACE " .. tostring(step.troop) .. skinSuffix
     elseif step.action == "upgrade" then
         return "UPGRADE TOWER #" .. tostring(step.tower)
     elseif step.action == "sell" then
@@ -2124,18 +2128,30 @@ function LyraMacro:_recordRemoteInvoke(args)
     end
 
     if action == "Place" then
-        local troopType = args[3]
         local placementInfo = args[4] or {}
+        local placementOptions = type(args[5]) == "table" and args[5] or {}
+        local troopType = placementOptions.Type or args[3]
+        local skin = placementOptions.Skin
         local position = placementInfo.Position or args[6]
+
+        if type(troopType) ~= "string" or troopType == "" then
+            warn("[LyraMacro] Ignored place action because no troop type was found.")
+            return
+        end
 
         if getValueKind(position) ~= "Vector3" then
             warn("[LyraMacro] Ignored place action because no Vector3 position was found.")
             return
         end
 
+        if type(skin) ~= "string" or skin == "" then
+            skin = "Default"
+        end
+
         self:_appendRecordedStep({
             action = "place",
-            troop = tostring(troopType),
+            troop = troopType,
+            skin = skin,
             x = roundNumber(position.X),
             y = roundNumber(position.Y),
             z = roundNumber(position.Z),
@@ -2751,9 +2767,10 @@ function LyraMacro:CreateRecorderWindow(config)
     return windowOrError
 end
 
-function LyraMacro:Place(troopType, x, y, z, rotation)
+function LyraMacro:Place(troopType, x, y, z, rotation, skin)
     local position = Vector3.new(x, y, z)
     rotation = rotation or CFrame.new()
+    skin = type(skin) == "string" and skin ~= "" and skin or "Default"
     local towersFolder = getTowersFolder()
 
     local placedTower
@@ -2774,7 +2791,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation)
                 },
                 {
                     Type = troopType,
-                    Skin = "Default",
+                    Skin = skin,
                 },
                 position
             )
@@ -2785,7 +2802,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation)
         self.NextTowerIndex += 1
         self.SpawnedTowers[self.NextTowerIndex] = placedTower
         self.KnownTowerTroops[placedTower] = troopType
-        print("[LyraMacro] Registered tower #" .. self.NextTowerIndex .. ".")
+        print("[LyraMacro] Registered tower #" .. self.NextTowerIndex .. " (" .. tostring(troopType) .. " / " .. skin .. ").")
     end, debug.traceback)
 
     towerAddedConnection:Disconnect()
@@ -3117,7 +3134,7 @@ function LyraMacro:Run(strategy)
         elseif action == "mode" then
             self:VoteMode(step.mode, step.confirmed)
         elseif action == "place" then
-            self:Place(step.troop, step.x, step.y, step.z, step.rotation)
+            self:Place(step.troop, step.x, step.y, step.z, step.rotation, step.skin)
         elseif action == "upgrade" then
             self:Upgrade(step.tower)
         elseif action == "sell" then
