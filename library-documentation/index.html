@@ -1,891 +1,1736 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lyra UI Library — Library Documentation</title>
+    <meta name="description" content="Current API documentation for Lyra UI Library V4.">
+    <title>Lyra UI Library V4 | Documentation</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700&amp;display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --bg-color: #0b0b0d;
-            --sidebar-bg: #111114;
-            --container-bg: rgba(20, 20, 24, 0.6);
-            --card-bg: rgba(26, 26, 32, 0.4);
-            --stroke-color: rgba(255, 255, 255, 0.08);
-            --accent-1: #0096ff;
-            --accent-2: #00ccff;
-            --text-main: #f5f5fa;
-            --text-dark: #8c8c9e;
-            --text-muted: #5c5c6d;
-            --code-bg: #0f0f12;
-            --success: #2ecc71;
-        }
-
-        html {
-            scroll-behavior: smooth;
+            --page: #0d0f13;
+            --sidebar: #15171c;
+            --surface: #191c22;
+            --surface-raised: #20242b;
+            --surface-hover: #262a32;
+            --code: #101216;
+            --border: #30353f;
+            --border-soft: #242830;
+            --text: #f3f5f8;
+            --muted: #a0a7b4;
+            --faint: #737b89;
+            --lavender: #c9abff;
+            --cyan: #70cbef;
+            --mint: #5be0a8;
+            --amber: #f2c96d;
+            --danger: #ff7185;
+            --sidebar-width: 256px;
+            --topbar-height: 62px;
         }
 
         * {
             box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Outfit', sans-serif;
+            letter-spacing: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 82px;
         }
 
         body {
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(0, 150, 255, 0.04) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(0, 204, 255, 0.04) 0%, transparent 40%);
-            color: var(--text-main);
-            display: flex;
-            min-height: 100vh;
-            overflow-x: hidden;
+            margin: 0;
+            min-width: 300px;
+            background: var(--page);
+            color: var(--text);
+            font-family: "Montserrat", sans-serif;
+            font-size: 14px;
+            line-height: 1.65;
         }
 
-        /* --- Layout --- */
+        button,
+        input {
+            font: inherit;
+        }
+
+        button,
+        a {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
+        }
+
         .sidebar {
-            width: 280px;
-            background: var(--sidebar-bg);
-            border-right: 1px solid var(--stroke-color);
-            display: flex;
-            flex-direction: column;
             position: fixed;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            z-index: 100;
-            padding: 30px 20px;
-            transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
-        }
-
-        .main-wrapper {
-            margin-left: 280px;
-            flex: 1;
-            padding: 50px 8% 300px 8%;
-            max-width: 1200px;
-            min-height: 100vh;
-            position: relative;
-        }
-
-        /* --- Logo & Title --- */
-        .logo-section {
-            margin-bottom: 40px;
-            position: relative;
-            padding-left: 15px;
-        }
-
-        .logo-section::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 3px;
-            background: linear-gradient(to bottom, var(--accent-1), var(--accent-2));
-            border-radius: 2px;
-            box-shadow: 0 0 10px var(--accent-1);
-        }
-
-        .logo-section h1 {
-            font-size: 22px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #ffffff 40%, var(--text-dark) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.5px;
-        }
-
-        .logo-section p {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--accent-2);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            margin-top: 2px;
-        }
-
-        /* --- Navigation Menu --- */
-        .nav-menu {
-            list-style: none;
+            inset: 0 auto 0 0;
+            z-index: 40;
+            width: var(--sidebar-width);
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            background: var(--sidebar);
+            border-right: 1px solid var(--border);
         }
 
-        .nav-item {
+        .brand {
             display: flex;
             align-items: center;
-            padding: 12px 16px;
-            color: var(--text-dark);
+            gap: 11px;
+            min-height: var(--topbar-height);
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-soft);
             text-decoration: none;
-            border-radius: 8px;
-            font-weight: 500;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            border: 1px solid transparent;
         }
 
-        .nav-item:hover {
-            color: var(--text-main);
-            background: rgba(255, 255, 255, 0.03);
-            border-color: rgba(255, 255, 255, 0.02);
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            display: grid;
+            place-items: center;
+            color: #111318;
+            background: var(--lavender);
+            border-radius: 7px;
         }
 
-        .nav-item.active {
-            color: var(--text-main);
-            background: rgba(0, 150, 255, 0.08);
-            border-color: rgba(0, 150, 255, 0.15);
+        .brand-mark svg {
+            width: 18px;
+            height: 18px;
+            stroke-width: 2.2;
+        }
+
+        .brand-copy {
+            min-width: 0;
+        }
+
+        .brand-copy strong,
+        .brand-copy span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .brand-copy strong {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .brand-copy span {
+            margin-top: 1px;
+            color: var(--muted);
+            font-size: 10px;
             font-weight: 600;
-            box-shadow: inset 0 0 8px rgba(0, 150, 255, 0.05);
+        }
+
+        .version-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 13px 16px 8px;
+            color: var(--faint);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .version-badge {
+            padding: 3px 7px;
+            color: var(--mint);
+            background: rgba(91, 224, 168, 0.08);
+            border: 1px solid rgba(91, 224, 168, 0.24);
+            border-radius: 4px;
+        }
+
+        .nav {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 9px 18px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 38px;
+            margin: 2px 0;
+            padding: 8px 10px;
+            color: var(--muted);
+            border: 1px solid transparent;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+        }
+
+        .nav a:hover {
+            color: var(--text);
+            background: var(--surface);
+            border-color: var(--border-soft);
+        }
+
+        .nav a.active {
+            color: var(--text);
+            background: rgba(201, 171, 255, 0.09);
+            border-color: rgba(201, 171, 255, 0.28);
+        }
+
+        .nav a.active svg {
+            color: var(--lavender);
+        }
+
+        .nav svg {
+            width: 15px;
+            height: 15px;
+            flex: 0 0 15px;
+        }
+
+        .sidebar-footer {
+            padding: 12px 14px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .sidebar-footer a {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .sidebar-footer a:hover {
+            color: var(--text);
+        }
+
+        .sidebar-footer svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .topbar {
+            position: fixed;
+            inset: 0 0 auto var(--sidebar-width);
+            z-index: 30;
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px max(20px, calc((100vw - var(--sidebar-width) - 1060px) / 2));
+            background: rgba(13, 15, 19, 0.96);
+            border-bottom: 1px solid var(--border-soft);
+            backdrop-filter: blur(12px);
+        }
+
+        .menu-button,
+        .icon-button {
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            color: var(--muted);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .menu-button:hover,
+        .icon-button:hover {
+            color: var(--text);
+            background: var(--surface-hover);
+        }
+
+        .menu-button {
+            display: none;
+        }
+
+        .menu-button svg,
+        .icon-button svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .search-wrap {
             position: relative;
+            width: min(470px, 100%);
         }
 
-        .nav-item.active::after {
-            content: '';
+        .search-wrap > svg {
             position: absolute;
-            right: 12px;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--accent-2);
-            box-shadow: 0 0 8px var(--accent-2);
+            top: 50%;
+            left: 12px;
+            width: 16px;
+            height: 16px;
+            color: var(--faint);
+            transform: translateY(-50%);
+            pointer-events: none;
         }
 
-        /* --- Documentation Styling --- */
-        .doc-section {
-            display: block; /* Visible stacked vertically */
-            margin-bottom: 120px;
-            scroll-margin-top: 60px; /* Offset for smooth scroll anchors */
-            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            padding-bottom: 60px;
+        .search-input {
+            width: 100%;
+            height: 38px;
+            padding: 0 38px 0 38px;
+            color: var(--text);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
         }
 
-        .doc-section:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-            margin-bottom: 100px;
+        .search-input::placeholder {
+            color: var(--faint);
+        }
+
+        .search-input:focus {
+            border-color: var(--cyan);
+            outline: none;
+        }
+
+        .search-clear {
+            position: absolute;
+            top: 50%;
+            right: 6px;
+            width: 28px;
+            height: 28px;
+            display: none;
+            place-items: center;
+            padding: 0;
+            color: var(--faint);
+            background: transparent;
+            border: 0;
+            cursor: pointer;
+            transform: translateY(-50%);
+        }
+
+        .search-clear.visible {
+            display: grid;
+        }
+
+        .search-clear svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .topbar-spacer {
+            flex: 1;
+        }
+
+        .source-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 38px;
+            padding: 0 12px;
+            color: var(--muted);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .source-link:hover {
+            color: var(--text);
+            background: var(--surface-hover);
+        }
+
+        .source-link svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        main {
+            width: min(1060px, calc(100% - var(--sidebar-width) - 40px));
+            margin-left: max(calc(var(--sidebar-width) + 20px), calc((100vw + var(--sidebar-width) - 1060px) / 2));
+            padding: calc(var(--topbar-height) + 30px) 0 100px;
+        }
+
+        .section {
+            padding: 44px 0 48px;
+            border-bottom: 1px solid var(--border-soft);
+            scroll-margin-top: 72px;
+        }
+
+        .section:first-child {
+            padding-top: 12px;
+        }
+
+        .section:last-of-type {
+            border-bottom: 0;
+        }
+
+        .section-kicker {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            color: var(--cyan);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .section-kicker svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        p {
+            margin-top: 0;
+        }
+
+        h1 {
+            max-width: 760px;
+            margin-bottom: 12px;
+            font-size: 38px;
+            line-height: 1.12;
+            font-weight: 700;
         }
 
         h2 {
-            font-size: 32px;
-            font-weight: 800;
-            letter-spacing: -0.5px;
-            margin-bottom: 12px;
-            background: linear-gradient(135deg, #ffffff 60%, var(--text-dark) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .doc-section p {
-            color: var(--text-dark);
-            font-size: 16px;
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }
-
-        .accent-bar {
-            width: 60px;
-            height: 4px;
-            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
-            border-radius: 2px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: var(--container-bg);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--stroke-color);
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-            position: relative;
-        }
-
-        .card h3 {
-            font-size: 18px;
-            font-weight: 700;
             margin-bottom: 10px;
-            color: var(--text-main);
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            font-size: 25px;
+            line-height: 1.25;
+            font-weight: 700;
         }
 
-        .card h3 span {
-            color: var(--accent-2);
-            font-size: 13px;
-            font-family: 'JetBrains Mono', monospace;
-            background: rgba(0, 150, 255, 0.08);
-            padding: 3px 8px;
+        h3 {
+            margin-bottom: 7px;
+            font-size: 15px;
+            line-height: 1.35;
+            font-weight: 700;
+        }
+
+        h4 {
+            margin-bottom: 7px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        p {
+            margin-bottom: 18px;
+            color: var(--muted);
+        }
+
+        .lede {
+            max-width: 800px;
+            margin-bottom: 24px;
+            font-size: 15px;
+        }
+
+        .inline-code,
+        code,
+        .method-name,
+        .type {
+            font-family: "JetBrains Mono", monospace;
+        }
+
+        .inline-code {
+            padding: 2px 5px;
+            color: var(--lavender);
+            background: rgba(201, 171, 255, 0.08);
+            border: 1px solid rgba(201, 171, 255, 0.18);
             border-radius: 4px;
-            border: 1px solid rgba(0, 150, 255, 0.15);
+            font-size: 0.9em;
         }
 
-        .card p {
-            font-size: 14.5px;
-            margin-bottom: 15px;
-            color: var(--text-dark);
-            line-height: 1.6;
+        .fact-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
         }
 
-        .card ul {
-            list-style: none;
-            margin-left: 5px;
+        .fact {
+            min-width: 0;
+            padding: 14px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+        }
+
+        .fact:last-child {
+            border-right: 0;
+        }
+
+        .fact strong,
+        .fact span {
+            display: block;
+        }
+
+        .fact strong {
+            margin-bottom: 3px;
+            color: var(--text);
+            font-size: 11px;
+        }
+
+        .fact span {
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .notice {
             display: flex;
-            flex-direction: column;
-            gap: 8px;
+            align-items: flex-start;
+            gap: 11px;
+            margin: 18px 0;
+            padding: 13px 14px;
+            color: var(--muted);
+            background: rgba(112, 203, 239, 0.06);
+            border: 1px solid rgba(112, 203, 239, 0.22);
+            border-radius: 6px;
+            font-size: 12px;
         }
 
-        .card li {
-            font-size: 14px;
-            color: var(--text-dark);
+        .notice.warning {
+            background: rgba(242, 201, 109, 0.06);
+            border-color: rgba(242, 201, 109, 0.24);
+        }
+
+        .notice svg {
+            width: 17px;
+            height: 17px;
+            flex: 0 0 17px;
+            margin-top: 1px;
+            color: var(--cyan);
+        }
+
+        .notice.warning svg {
+            color: var(--amber);
+        }
+
+        .code-block {
+            position: relative;
+            margin: 14px 0 20px;
+            background: var(--code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .code-head {
+            min-height: 34px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 0 7px 0 12px;
+            color: var(--faint);
+            background: #15181d;
+            border-bottom: 1px solid var(--border-soft);
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
         }
 
-        .card li::before {
-            content: '•';
-            color: var(--accent-2);
-            font-weight: bold;
+        .copy-button {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            color: var(--faint);
+            background: transparent;
+            border: 0;
+            border-radius: 4px;
+            cursor: pointer;
         }
 
-        .code-container {
-            position: relative;
-            background: var(--code-bg);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin: 15px 0;
-            overflow-x: auto;
-            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+        .copy-button:hover {
+            color: var(--text);
+            background: var(--surface-hover);
+        }
+
+        .copy-button.copied {
+            color: var(--mint);
+        }
+
+        .copy-button svg {
+            width: 14px;
+            height: 14px;
         }
 
         pre {
             margin: 0;
+            padding: 15px 16px 17px;
+            overflow-x: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
         }
 
         code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13.5px;
-            line-height: 1.6;
-            color: #d4d4d4;
+            color: #d8dce4;
+            font-size: 11.5px;
+            line-height: 1.7;
+            white-space: pre;
         }
 
-        .c-comment { color: #6a9955; }
-        .c-string { color: #ce9178; }
-        .c-keyword { color: #569cd6; }
-        .c-function { color: #dcdcaa; }
-        .c-boolean { color: #569cd6; }
-        .c-number { color: #b5cea8; }
+        .api-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 20px;
+        }
 
-        .copy-btn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+        .api-card {
+            padding: 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        .api-heading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 9px;
+        }
+
+        .api-icon {
+            width: 28px;
+            height: 28px;
+            flex: 0 0 28px;
+            display: grid;
+            place-items: center;
+            color: var(--cyan);
+            background: rgba(112, 203, 239, 0.08);
+            border: 1px solid rgba(112, 203, 239, 0.2);
             border-radius: 5px;
-            color: var(--text-dark);
-            padding: 6px 12px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
         }
 
-        .copy-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-main);
-            border-color: rgba(255, 255, 255, 0.15);
+        .api-icon svg {
+            width: 15px;
+            height: 15px;
         }
 
-        .copy-btn.copied {
-            background: var(--success);
-            color: #ffffff;
-            border-color: var(--success);
+        .api-title {
+            min-width: 0;
         }
 
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            background: rgba(0, 204, 255, 0.05);
-            border: 1px solid rgba(0, 204, 255, 0.15);
-            color: var(--accent-2);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
+        .api-title h3,
+        .api-title p {
+            margin: 0;
+        }
+
+        .api-title p {
+            margin-top: 1px;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 10px;
+        }
+
+        .config-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .config-line span {
+            padding: 3px 6px;
+            color: var(--muted);
+            background: var(--surface-raised);
+            border: 1px solid var(--border-soft);
+            border-radius: 4px;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 9px;
+        }
+
+        .table-wrap {
+            margin: 16px 0 22px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            min-width: 650px;
+            border-collapse: collapse;
+            background: var(--surface);
+            text-align: left;
+        }
+
+        th,
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-soft);
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: 0;
+        }
+
+        th {
+            color: var(--text);
+            background: var(--surface-raised);
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.5px;
-            margin-bottom: 15px;
+            text-transform: uppercase;
         }
 
-        .menu-toggle {
-            display: none;
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1010;
-            background: var(--sidebar-bg);
-            border: 1px solid var(--stroke-color);
-            border-radius: 8px;
-            width: 44px;
-            height: 44px;
-            cursor: pointer;
-            justify-content: center;
+        td {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .method-name {
+            color: var(--lavender);
+            font-size: 10.5px;
+            white-space: nowrap;
+        }
+
+        .type {
+            color: var(--cyan);
+            font-size: 10px;
+            white-space: nowrap;
+        }
+
+        .interaction-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            margin: 18px 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .interaction {
+            padding: 15px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+        }
+
+        .interaction:last-child {
+            border-right: 0;
+        }
+
+        .interaction svg {
+            width: 17px;
+            height: 17px;
+            margin-bottom: 8px;
+            color: var(--lavender);
+        }
+
+        .interaction strong,
+        .interaction span {
+            display: block;
+        }
+
+        .interaction strong {
+            margin-bottom: 3px;
+            font-size: 10.5px;
+        }
+
+        .interaction span {
+            color: var(--muted);
+            font-size: 9.5px;
+        }
+
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 7px;
+            margin-top: 18px;
+        }
+
+        .icon-item {
+            min-width: 0;
+            display: flex;
             align-items: center;
-            color: var(--text-main);
+            gap: 8px;
+            padding: 9px;
+            color: var(--muted);
+            background: var(--surface);
+            border: 1px solid var(--border-soft);
+            border-radius: 5px;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 9px;
         }
 
-        .menu-toggle span {
-            width: 20px;
-            height: 2px;
-            background: var(--text-main);
+        .icon-item svg {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 14px;
+            color: var(--cyan);
+        }
+
+        .icon-item span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+            margin: 18px 0;
+        }
+
+        .theme-item {
+            min-width: 0;
+            padding: 11px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+        }
+
+        .theme-swatches {
+            display: flex;
+            height: 6px;
+            margin-bottom: 9px;
+            overflow: hidden;
+            border-radius: 2px;
+        }
+
+        .theme-swatches i {
+            flex: 1;
+        }
+
+        .theme-item strong {
             display: block;
-            position: relative;
-            transition: background 0.3s;
+            overflow: hidden;
+            font-size: 10px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .menu-toggle span::before, .menu-toggle span::after {
-            content: '';
-            width: 20px;
-            height: 2px;
-            background: var(--text-main);
+        .search-empty {
+            display: none;
+            margin-top: 28px;
+            padding: 24px;
+            color: var(--muted);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .search-empty.visible {
             display: block;
-            position: absolute;
-            transition: transform 0.3s;
         }
 
-        .menu-toggle span::before { top: -6px; }
-        .menu-toggle span::after { bottom: -6px; }
+        .search-empty svg {
+            width: 22px;
+            height: 22px;
+            margin-bottom: 8px;
+            color: var(--faint);
+        }
 
-        .menu-toggle.open span { background: transparent; }
-        .menu-toggle.open span::before { transform: rotate(45deg); top: 0; }
-        .menu-toggle.open span::after { transform: rotate(-45deg); bottom: 0; }
+        footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding-top: 28px;
+            color: var(--faint);
+            font-size: 10px;
+        }
 
-        @media (max-width: 900px) {
+        footer a {
+            color: var(--muted);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            color: var(--text);
+        }
+
+        .mobile-scrim {
+            position: fixed;
+            inset: 0;
+            z-index: 35;
+            display: none;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        @media (max-width: 1040px) {
+            .fact-grid,
+            .interaction-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .fact:nth-child(2),
+            .interaction:nth-child(2) {
+                border-right: 0;
+            }
+
+            .fact:nth-child(-n + 2),
+            .interaction:nth-child(-n + 2) {
+                border-bottom: 1px solid var(--border);
+            }
+
+            .icon-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .theme-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 860px) {
             .sidebar {
                 transform: translateX(-100%);
+                transition: transform 180ms ease;
             }
+
             .sidebar.open {
                 transform: translateX(0);
             }
-            .main-wrapper {
-                margin-left: 0;
-                padding: 80px 20px 40px;
+
+            .mobile-scrim.visible {
+                display: block;
             }
-            .menu-toggle {
-                display: flex;
+
+            .topbar {
+                left: 0;
+                padding: 10px 14px;
+            }
+
+            .menu-button {
+                display: grid;
+            }
+
+            main {
+                width: auto;
+                margin-left: 0;
+                padding: calc(var(--topbar-height) + 24px) 18px 80px;
+            }
+        }
+
+        @media (max-width: 620px) {
+            .source-link span {
+                display: none;
+            }
+
+            .source-link {
+                width: 38px;
+                justify-content: center;
+                padding: 0;
+            }
+
+            h1 {
+                font-size: 30px;
+            }
+
+            h2 {
+                font-size: 22px;
+            }
+
+            .section {
+                padding: 36px 0 40px;
+            }
+
+            .fact-grid,
+            .interaction-grid,
+            .theme-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .fact,
+            .interaction {
+                border-right: 0;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .fact:last-child,
+            .interaction:last-child {
+                border-bottom: 0;
+            }
+
+            .icon-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .api-card {
+                padding: 13px;
+            }
+
+            pre {
+                padding: 13px;
+            }
+
+            code {
+                font-size: 10.5px;
+            }
+
+            footer {
+                align-items: flex-start;
+                flex-direction: column;
             }
         }
     </style>
 </head>
 <body>
-
-    <button class="menu-toggle" id="menu-toggle">
-        <span></span>
-    </button>
+    <div class="mobile-scrim" id="mobile-scrim"></div>
 
     <aside class="sidebar" id="sidebar">
-        <div class="logo-section">
-            <h1>Lyra UI Library</h1>
-            <p>UI Documentation</p>
+        <a class="brand" href="#intro">
+            <span class="brand-mark"><i data-lucide="command"></i></span>
+            <span class="brand-copy">
+                <strong>Lyra UI Library</strong>
+                <span>API documentation</span>
+            </span>
+        </a>
+
+        <div class="version-row">
+            <span>Current build</span>
+            <span class="version-badge">V4</span>
         </div>
-        <nav style="display: flex; flex-direction: column; height: calc(100% - 100px); justify-content: space-between;">
-            <ul class="nav-menu">
-                <li><a class="nav-item active" href="#intro">🌟 Introduction</a></li>
-                <li><a class="nav-item" href="#start">⚡ Getting Started</a></li>
-                <li><a class="nav-item" href="#window-tab">🪟 Windows & Tabs</a></li>
-                <li><a class="nav-item" href="#elements">🧩 UI Elements</a></li>
-                <li><a class="nav-item" href="#themes">🎨 Themes & Styling</a></li>
-                <li><a class="nav-item" href="#keysystem">🔑 Key System Gate</a></li>
-                <li><a class="nav-item" href="#example">📄 Complete Example</a></li>
-            </ul>
-            <a href="../dashboard/" class="nav-item" style="margin-top: auto; border: 1px solid var(--accent-1); color: var(--accent-2); font-weight: 700; background: rgba(0, 150, 255, 0.05); text-align: center; justify-content: center; box-shadow: 0 4px 15px rgba(0, 150, 255, 0.1);">
-                🎛️ Developer Dashboard
-            </a>
+
+        <nav class="nav" aria-label="Documentation sections">
+            <a class="active" href="#intro"><i data-lucide="book-open"></i><span>Overview</span></a>
+            <a href="#install"><i data-lucide="download"></i><span>Installation</span></a>
+            <a href="#window"><i data-lucide="panel-left"></i><span>Window</span></a>
+            <a href="#tabs"><i data-lucide="panels-top-left"></i><span>Tabs</span></a>
+            <a href="#controls"><i data-lucide="sliders-horizontal"></i><span>Controls</span></a>
+            <a href="#notifications"><i data-lucide="bell"></i><span>Notifications</span></a>
+            <a href="#icons"><i data-lucide="shapes"></i><span>Lucide icons</span></a>
+            <a href="#themes"><i data-lucide="palette"></i><span>Themes</span></a>
+            <a href="#key-gate"><i data-lucide="key-round"></i><span>Key gate</span></a>
+            <a href="#example"><i data-lucide="file-code-2"></i><span>Complete example</span></a>
         </nav>
+
+        <div class="sidebar-footer">
+            <a href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer">
+                <i data-lucide="github"></i><span>GitHub repository</span>
+            </a>
+        </div>
     </aside>
 
-    <div class="main-wrapper">
+    <header class="topbar">
+        <button class="menu-button" id="menu-button" type="button" aria-label="Open navigation" title="Open navigation">
+            <i data-lucide="menu"></i>
+        </button>
+        <label class="search-wrap">
+            <i data-lucide="search"></i>
+            <input class="search-input" id="doc-search" type="search" placeholder="Search methods, properties, and examples" autocomplete="off">
+            <button class="search-clear" id="search-clear" type="button" aria-label="Clear search" title="Clear search">
+                <i data-lucide="x"></i>
+            </button>
+        </label>
+        <span class="topbar-spacer"></span>
+        <a class="source-link" href="https://github.com/JGRJGIRJGO/Tungsten-Hub/blob/main/LyraV2.lua" target="_blank" rel="noreferrer">
+            <i data-lucide="code-2"></i><span>View source</span>
+        </a>
+    </header>
 
-        <!-- Introduction Section -->
-        <section class="doc-section" id="intro">
-            <span class="badge">v2.1.0 — Fluent Style</span>
-            <h2>Introduction</h2>
-            <div class="accent-bar"></div>
-            <p><strong>Lyra UI Library</strong> is a premium, high-performance UI library designed specifically for Roblox script developers. Inspired by Microsoft's Fluent Design Guidelines and Rayfield's sidebar architecture, Lyra UI Library provides a gorgeous, responsive, and incredibly smooth user interface for exploit utilities, cheat hubs, and admin systems.</p>
-            
-            <div class="card">
-                <h3>Core Philosophy</h3>
-                <p>Most Roblox libraries suffer from performance drops, blocky layouts, or outdated color palettes. Lyra UI Library addresses these issues with custom rendering utilities, built-in layout scales, dynamic themes, and a clean, responsive navigation layout.</p>
+    <main>
+        <div class="search-empty" id="search-empty">
+            <i data-lucide="search-x"></i>
+            <div>No documentation matches that search.</div>
+        </div>
+
+        <section class="section searchable" id="intro" data-search="overview introduction v4 responsive resize montserrat lucide mobile touch backward compatible">
+            <div class="section-kicker"><i data-lucide="sparkles"></i><span>Current documentation</span></div>
+            <h1>Lyra UI Library V4</h1>
+            <p class="lede">A compact Roblox interface library with responsive windows, mouse and touch input, runtime themes, optional key verification, notifications, and Lucide icon support. V4 keeps the original positional API while adding table-style configuration.</p>
+
+            <div class="fact-grid">
+                <div class="fact"><strong>API style</strong><span>Table and positional</span></div>
+                <div class="fact"><strong>Window input</strong><span>Drag, resize, toggle</span></div>
+                <div class="fact"><strong>Typography</strong><span>Montserrat interface</span></div>
+                <div class="fact"><strong>Icon system</strong><span>Lucide and asset IDs</span></div>
             </div>
-            
-            <div class="card">
-                <h3>Feature Checklist</h3>
-                <p>✔ Smooth sliding animations for tabs and window transitions</p>
-                <p>✔ Comprehensive elements: Buttons, Toggles, Sliders, Dropdowns, Textboxes, and Labels</p>
-                <p>✔ Multi-theme system: Switch seamlessly between Lyra, BloodMoon, Nebula, and Emerald palettes</p>
-                <p>✔ Dynamic Notification Engine built-in</p>
-                <p>✔ Optional FNV-1a HWID-Locked Key System with automated caching</p>
+
+            <div class="notice">
+                <i data-lucide="check-circle-2"></i>
+                <span>Existing scripts using calls such as <span class="inline-code">CreateButton("Run", callback)</span> remain compatible. Table configuration is recommended for new code because it supports icons and named options.</span>
             </div>
         </section>
 
-        <!-- Getting Started Section -->
-        <section class="doc-section" id="start">
-            <h2>Getting Started</h2>
-            <div class="accent-bar"></div>
-            <p>To use Lyra UI Library in your Roblox script, import the library using the global loadstring below. This fetches the latest production build from the official GitHub repository.</p>
-            
-            <div class="card">
-                <h3>Loader Script</h3>
-                <p>Copy and paste this script directly into your Roblox executor:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> Lyra = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"</span>))()</code></pre>
-                </div>
+        <section class="section searchable" id="install" data-search="install loader loadstring httpget require module script lyra v2 raw github">
+            <div class="section-kicker"><i data-lucide="download"></i><span>Installation</span></div>
+            <h2>Load the library</h2>
+            <p>The library source is <span class="inline-code">LyraV2.lua</span>. The Universal script is a consumer of the library, not the UI module itself.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>HTTP loader</span><button class="copy-button" type="button" aria-label="Copy HTTP loader" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Lyra = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua"
+))()</code></pre>
+            </div>
+
+            <div class="code-block">
+                <div class="code-head"><span>ModuleScript</span><button class="copy-button" type="button" aria-label="Copy ModuleScript example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Lyra = require(path.To.LyraV2)</code></pre>
+            </div>
+
+            <div class="notice warning">
+                <i data-lucide="triangle-alert"></i>
+                <span>The HTTP form requires an environment that exposes both <span class="inline-code">game:HttpGet</span> and <span class="inline-code">loadstring</span>. Use a ModuleScript in environments where those APIs are unavailable.</span>
             </div>
         </section>
 
-        <!-- Windows and Tabs Section -->
-        <section class="doc-section" id="window-tab">
-            <h2>Windows & Tabs</h2>
-            <div class="accent-bar"></div>
-            <p>Every hub begins with a Window. Windows hold the global configurations, title, subtitle, optional key verification gate, and tabs.</p>
-            
-            <div class="card">
-                <h3>Creating a Window <span>Lyra:CreateWindow()</span></h3>
-                <p>Use the <code>CreateWindow</code> method to configure the UI window properties. You can pass either a simple title string or a complete configuration table.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Standard configuration table</span>
-<span class="c-keyword">local</span> Window = Lyra:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Lyra UI Library"</span>,
-    Subtitle = <span class="c-string">"Universal Cheats"</span>
+        <section class="section searchable" id="window" data-search="window createwindow size maxwidth maxheight resize drag toggle rightshift destroy settheme setsize getsize setkey icon provider">
+            <div class="section-kicker"><i data-lucide="panel-left"></i><span>Window API</span></div>
+            <h2>Create and manage a window</h2>
+            <p><span class="inline-code">Lyra:CreateWindow()</span> creates the ScreenGui, sidebar, top bar, content host, resize grip, mobile toggle, and optional key gate.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>Table configuration</span><button class="copy-button" type="button" aria-label="Copy window example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Window = Lyra:CreateWindow({
+    Name = "Lyra Tools",
+    Subtitle = "Utilities",
+    Icon = "command",
+    Size = Vector2.new(760, 500),
+    MaxWidth = 1200,
+    MaxHeight = 800,
 })</code></pre>
-                </div>
+            </div>
 
-                <h4 style="color: var(--accent-2); margin-top: 20px; margin-bottom: 8px; font-size: 14px;">Window Properties Table:</h4>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; text-align: left;">
-                    <thead>
-                        <tr style="border-bottom: 1px solid var(--stroke-color); color: var(--text-main);">
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Property</th>
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Type</th>
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Description</th>
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Default</th>
-                        </tr>
-                    </thead>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Property</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Name</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">Main title displayed at the top-left of the window header.</td>
-                            <td style="padding: 8px;">"Lyra UI Library"</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Subtitle</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">Smaller caption displayed directly below the main title.</td>
-                            <td style="padding: 8px;">"Universal V2"</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">KeySettings</td>
-                            <td style="padding: 8px;">table</td>
-                            <td style="padding: 8px;">Configuration block to enable the HWID gate locks (see Key System Gate tab).</td>
-                            <td style="padding: 8px;">nil</td>
-                        </tr>
+                        <tr><td class="method-name">Name</td><td class="type">string</td><td>Lyra</td><td>Window and brand title.</td></tr>
+                        <tr><td class="method-name">Subtitle</td><td class="type">string</td><td>Interface</td><td>Brand and active-page subtitle.</td></tr>
+                        <tr><td class="method-name">Icon</td><td class="type">IconValue</td><td>command</td><td>Brand and mobile-toggle icon.</td></tr>
+                        <tr><td class="method-name">Size</td><td class="type">Vector2 | table</td><td>viewport based</td><td>Initial width and height. A table can use X/Y or array indexes.</td></tr>
+                        <tr><td class="method-name">MaxWidth</td><td class="type">number</td><td>1200</td><td>Largest width accepted by programmatic or pointer resizing.</td></tr>
+                        <tr><td class="method-name">MaxHeight</td><td class="type">number</td><td>800</td><td>Largest height accepted by programmatic or pointer resizing.</td></tr>
+                        <tr><td class="method-name">IconProvider</td><td class="type">table | function</td><td>nil</td><td>Optional provider used for Lucide names outside the built-in set.</td></tr>
+                        <tr><td class="method-name">Lucide</td><td class="type">table | ModuleScript</td><td>nil</td><td>Alias for IconProvider, intended for tijnepema/lucide-roblox.</td></tr>
+                        <tr><td class="method-name">KeySettings</td><td class="type">table</td><td>nil</td><td>Enables the key gate when the table contains a Key value.</td></tr>
                     </tbody>
                 </table>
             </div>
 
-            <div class="card">
-                <h3>Creating Tabs <span>Window:CreateTab()</span></h3>
-                <p>Tabs let you separate your components into categorized columns. Active tabs feature a left accent bar indicating selected state.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Create several tabs on the sidebar navigation</span>
-<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong> <code>title</code> (string) - Name of the tab shown in the sidebar menu.</p>
-                <p><strong>Returns:</strong> A Tab Object that exposes element-creation methods (CreateButton, CreateToggle, etc.).</p>
+            <div class="interaction-grid">
+                <div class="interaction"><i data-lucide="move"></i><strong>Move</strong><span>Drag the top bar.</span></div>
+                <div class="interaction"><i data-lucide="scaling"></i><strong>Resize</strong><span>Drag the lower-right grip.</span></div>
+                <div class="interaction"><i data-lucide="minimize-2"></i><strong>Minimize</strong><span>Animation completes before hiding.</span></div>
+                <div class="interaction"><i data-lucide="smartphone"></i><strong>Touch</strong><span>Drag and resize on mobile.</span></div>
             </div>
 
-            <div class="card">
-                <h3>Global Window Actions</h3>
-                <p>Once you have a window, you can run global management functions on it:</p>
-                <ul style="margin-left: 20px; list-style: disc; color: var(--text-dark); line-height: 1.6;">
-                    <li><strong><code>Window:Notify(title, description, duration)</code></strong> - Triggers a glassmorphic notification banner featuring a shrinking neon timer progress bar, manual dismiss close button, and automatic vertical stacking support.</li>
-                    <li><strong><code>Window:SetToggleKey(Enum.KeyCode)</code></strong> - Binds a custom keyboard hotkey to minimize/maximize the window interface dynamically (Default: <code>RightShift</code>).</li>
-                    <li><strong><code>Window:Destroy()</code></strong> - Cleanly removes the UI elements from CoreGui/PlayerGui.</li>
-                </ul>
-            </div>
-        </section>
-
-        <!-- UI Elements Section -->
-        <section class="doc-section" id="elements">
-            <h2>UI Elements</h2>
-            <div class="accent-bar"></div>
-            <p>UI Elements are interactive controls added to tabs. All elements scale automatically to fit content cleanly.</p>
-            
-            <!-- Button -->
-            <div class="card">
-                <h3>Buttons <span>Tab:CreateButton()</span></h3>
-                <p>Executes a block of code immediately upon user click. Features a clean card style and dynamic outline highlight transitions.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> MyButton = MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Click Me!"</span>, <span class="c-keyword">function</span>()
-    print(<span class="c-string">"Button clicked!"</span>)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong></p>
-                <ul>
-                    <li><code>text</code> (string) - Display text.</li>
-                    <li><code>callback</code> (function) - Executed on click.</li>
-                </ul>
-                <p><strong>Returns:</strong> A table containing <code>UpdateButtonText(newText)</code> to dynamically change the text of the button.</p>
-            </div>
-
-            <!-- Toggle -->
-            <div class="card">
-                <h3>Toggles <span>Tab:CreateToggle()</span></h3>
-                <p>A compact switch control that maintains an ON/OFF state. Sends a boolean state to the callback. Implements a fluid sliding knob switch animation.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> MyToggle = MainTab:<span class="c-function">CreateToggle</span>(<span class="c-string">"Enable Autofarm"</span>, <span class="c-boolean">false</span>, <span class="c-keyword">function</span>(state)
-    print(<span class="c-string">"Autofarm active:"</span>, state)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong></p>
-                <ul>
-                    <li><code>toggleText</code> (string) - Label text.</li>
-                    <li><code>default</code> (boolean) - Initial state (true = ON, false = OFF).</li>
-                    <li><code>callback</code> (function) - Executed when state shifts, receiving the new boolean state.</li>
-                </ul>
-                <p><strong>Returns:</strong> A table containing <code>SetToggle(boolean)</code> to programmatically trigger toggling.</p>
-            </div>
-
-            <!-- Slider -->
-            <div class="card">
-                <h3>Sliders <span>Tab:CreateSlider()</span></h3>
-                <p>Lets users slide across a range of numbers. Perfect for walkspeed, jump power, or range sliders. Includes a sliding pointer handle that moves smoothly alongside the progress bar.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> MySlider = MovementTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed"</span>, <span class="c-number">16</span>, <span class="c-number">200</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(value)
-    game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = value
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong></p>
-                <ul>
-                    <li><code>sliderText</code> (string) - Label text.</li>
-                    <li><code>min</code> (number) - Smallest allowed value.</li>
-                    <li><code>max</code> (number) - Largest allowed value.</li>
-                    <li><code>default</code> (number) - Starting value.</li>
-                    <li><code>callback</code> (function) - Executed during drag, receiving the current value.</li>
-                </ul>
-                <p><strong>Returns:</strong> A table containing <code>SetValue(number)</code> to force set a specific value programmatically.</p>
-            </div>
-
-            <!-- Dropdown -->
-            <div class="card">
-                <h3>Dropdowns <span>Tab:CreateDropdown()</span></h3>
-                <p>Collapsible lists allowing the user to pick a single string value from an array of choices. Smoothly expands downward with a clip-fade animation.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Choose Region"</span>, {<span class="c-string">"US-East"</span>, <span class="c-string">"EU-West"</span>, <span class="c-string">"Asia"</span>}, <span class="c-string">"US-East"</span>, <span class="c-keyword">function</span>(selected)
-    print(<span class="c-string">"Region chosen:"</span>, selected)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong></p>
-                <ul>
-                    <li><code>dropdownText</code> (string) - Label text.</li>
-                    <li><code>list</code> (table) - Array of strings options.</li>
-                    <li><code>default</code> (string) - Initial selected option.</li>
-                    <li><code>callback</code> (function) - Executed on selection, receiving selected item text.</li>
-                </ul>
-            </div>
-
-            <!-- Textbox -->
-            <div class="card">
-                <h3>Textboxes <span>Tab:CreateTextbox()</span></h3>
-                <p>Accepts custom text input. Fires when the user presses Enter. Features clear-on-focus toggling and smooth focus indicators.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MovementTab:<span class="c-function">CreateTextbox</span>(<span class="c-string">"Custom Tag"</span>, <span class="c-string">"Type here..."</span>, <span class="c-keyword">function</span>(text)
-    print(<span class="c-string">"User entered:"</span>, text)
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong></p>
-                <ul>
-                    <li><code>textboxText</code> (string) - Label text.</li>
-                    <li><code>placeholder</code> (string) - Text to display when box is empty.</li>
-                    <li><code>callback</code> (function) - Executed on enter press, receiving the current text.</li>
-                </ul>
-            </div>
-
-            <!-- Label -->
-            <div class="card">
-                <h3>Labels <span>Tab:CreateLabel()</span></h3>
-                <p>Static headers or notice boxes used to organize elements or list info. Supports full multiline wrapping text blocks.</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code>MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Version 2.1.0 Update"</span>)</code></pre>
-                </div>
-                <p><strong>Parameters:</strong> <code>labelText</code> (string) - Display content.</p>
-            </div>
-        </section>
-
-        <!-- Themes Section -->
-        <section class="doc-section" id="themes">
-            <h2>Themes & Styling</h2>
-            <div class="accent-bar"></div>
-            <p>Lyra UI Library features a dynamic, run-time theme modifier. Themes update all labels, backgrounds, accent gradients, and borders in real-time without needing to redraw the UI.</p>
-            
-            <div class="card">
-                <h3>Pre-made Theme Palettes</h3>
-                <p>Lyra UI Library includes several premium themes preloaded:</p>
-                <ul>
-                    <li><code>Lyra.Themes.Lyra</code> (Default Dark Acrylic Cyan)</li>
-                    <li><code>Lyra.Themes.Nebula</code> (Purple Galaxy Theme)</li>
-                    <li><code>Lyra.Themes.BloodMoon</code> (Dark Red Theme)</li>
-                    <li><code>Lyra.Themes.Emerald</code> (Deep Jade Green Theme)</li>
-                    <li><code>Lyra.Themes.Midnight</code> (Contrast Black Theme)</li>
-                </ul>
-            </div>
-
-            <div class="card">
-                <h3>Applying a Theme <span>Window:SetTheme()</span></h3>
-                <p>Use the theme changer inside your code or bind it to a theme selector dropdown:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-comment">-- Dynamically load and apply a different palette</span>
-Window:<span class="c-function">SetTheme</span>(Lyra.Themes.Nebula)</code></pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- Key System Section -->
-        <section class="doc-section" id="keysystem">
-            <h2>Key System Gate</h2>
-            <div class="accent-bar"></div>
-            <p>Lyra UI Library includes an integrated SHA-256 HWID key gate. Developers can easily protect their scripts without having to purchase external hosting or database services.</p>
-            
-            <div class="card">
-                <h3>Key System Configuration (Roblox Integration)</h3>
-                <p>To enable the secure dynamic key verification, pass the <code>KeySettings</code> configuration block to <code>CreateWindow</code>:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy</button>
-                    <pre><code><span class="c-keyword">local</span> Window = Lyra:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Lyra UI Library"</span>,
-    Subtitle = <span class="c-string">"Premium Edition"</span>,
-    KeySettings = {
-        Title = <span class="c-string">"Secure Key Gate"</span>,
-        Subtitle = <span class="c-string">"Lyra Protection"</span>,
-        Note = <span class="c-string">"Please pass the verification link to unlock the script."</span>,
-        SaveKey = <span class="c-boolean">true</span>,                      <span class="c-comment">-- Automatically saves key to workspace/</span>
-        Key = getDailyHWIDKey(),            <span class="c-comment">-- Validating string (can also be an array/function)</span>
-        Url = <span class="c-string">"https://jgrjgirjgo.github.io/Tungsten-Hub/key/?hwid="</span> .. getHashedHWID() .. <span class="c-string">"&amp;steps=1&amp;link1=https%3A%2F%2Floot-link.com%2Fs%3FiMpifTRO"</span>
-    }
-})</code></pre>
-                </div>
-
-                <h4 style="color: var(--accent-2); margin-top: 20px; margin-bottom: 8px; font-size: 14px;">KeySettings Properties Table:</h4>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; text-align: left;">
-                    <thead>
-                        <tr style="border-bottom: 1px solid var(--stroke-color); color: var(--text-main);">
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Property</th>
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Type</th>
-                            <th style="padding: 8px; border-bottom: 2px solid var(--stroke-color);">Description</th>
-                        </tr>
-                    </thead>
+            <h3>Window methods</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Title</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">Header title text displayed on the Key System window.</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Subtitle</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">Smaller caption displayed directly below the Key System header.</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Note</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">Instructions/description for the users explaining how to fetch the key.</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">SaveKey</td>
-                            <td style="padding: 8px;">boolean</td>
-                            <td style="padding: 8px;">If true, saves the successfully verified key locally in <code>workspace/filename</code> to bypass future loads within 24 hours.</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Key</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">The exact Daily HWID Key that the player must enter to unlock the GUI.</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text-dark);">
-                            <td style="padding: 8px; font-family: monospace; color: var(--accent-1);">Url</td>
-                            <td style="padding: 8px;">string</td>
-                            <td style="padding: 8px;">The key page URL opened when users click "Get Key".</td>
-                        </tr>
+                        <tr><td class="method-name">Window:CreateTab(config)</td><td class="type">Tab</td><td>Creates a tab and its scrolling content page.</td></tr>
+                        <tr><td class="method-name">Window:Notify(...)</td><td class="type">NoticeHandle</td><td>Shows a dismissible, stackable notification.</td></tr>
+                        <tr><td class="method-name">Window:SetTheme(theme)</td><td class="type">table</td><td>Applies and returns the normalized theme.</td></tr>
+                        <tr><td class="method-name">Window:SetToggleKey(keyCode)</td><td class="type">boolean</td><td>Changes the keyboard toggle key. Returns false for invalid values.</td></tr>
+                        <tr><td class="method-name">Window:SetSize(width, height)</td><td class="type">Vector2</td><td>Resizes the window. Also accepts a Vector2 or X/Y table.</td></tr>
+                        <tr><td class="method-name">Window:GetSize()</td><td class="type">Vector2</td><td>Returns the current unscaled window dimensions.</td></tr>
+                        <tr><td class="method-name">Window:SetIconProvider(provider)</td><td class="type">Window</td><td>Changes the provider used by controls created afterward.</td></tr>
+                        <tr><td class="method-name">Window:Toggle()</td><td class="type">nil</td><td>Runs the current show or minimize transition.</td></tr>
+                        <tr><td class="method-name">Window:Destroy()</td><td class="type">nil</td><td>Disconnects tracked events and destroys the ScreenGui.</td></tr>
                     </tbody>
                 </table>
             </div>
-
-            <div class="card">
-                <h3>Detailed Daily HWID Verification Math (SHA-256)</h3>
-                <p>The daily secure key is computed in Roblox using a secure cryptographical SHA-256 hash. This guarantees the highest level of security, preventing collision attacks or rainbow table lookups, and is fully synchronized with browser Web Crypto verification APIs.</p>
-                
-                <h4 style="color: var(--accent-2); margin-top: 15px; margin-bottom: 5px; font-size: 14px;">How the hash is constructed step-by-step:</h4>
-                <ol style="margin-left: 20px; margin-bottom: 15px; color: var(--text-dark); line-height: 1.6;">
-                    <li><strong>Gather Inputs:</strong> The system collects the player's <code>HWID</code> (or Roblox UserId as fallback), hashes it once to get the secure Hashed HWID, and appends your custom <code>Salt</code> and the current UTC date formatted as <code>DDMMYYYY</code>.</li>
-                    <li><strong>Concatenate:</strong> The string is formatted as: <code>[HashedHWID]_[Salt]_[DDMMYYYY]</code>.</li>
-                    <li><strong>Cryptographical Hashing:</strong> The concatenated string is processed through the 256-bit SHA-256 hashing function.</li>
-                    <li><strong>Hex Formatting:</strong> The final output is represented as a 64-character uppercase hexadecimal string, prefixed with <code>Lyra_</code>.</li>
-                </ol>
-
-                <div class="code-container">
-                    <button class="copy-btn">Copy Hash Logic</button>
-                    <pre><code><span class="c-comment">-- Lua mathematical reproduction of the client-side SHA-256 key matching algorithm</span>
-<span class="c-keyword">local function</span> <span class="c-function">generateDailyHWIDKey</span>(hwid, salt)
-    <span class="c-keyword">local</span> hashedHwid = sha256(hwid):upper()
-    <span class="c-keyword">local</span> dateString = <span class="c-function">os.date</span>(<span class="c-string">"!%d%m%Y"</span>) <span class="c-comment">-- UTC date formatting</span>
-    <span class="c-keyword">local</span> input = hashedHwid .. <span class="c-string">"_"</span> .. salt .. <span class="c-string">"_"</span> .. dateString
-    <span class="c-keyword">return</span> <span class="c-string">"Lyra_"</span> .. sha256(input):upper()
-<span class="c-keyword">end</span></code></pre>
-                </div>
-            </div>
         </section>
 
-        <!-- Example Section -->
-        <section class="doc-section" id="example">
-            <h2>Complete Example</h2>
-            <div class="accent-bar"></div>
-            <p>Here is a complete, copy-paste example showcasing initialization, multiple tabs, various interactive widgets, notifications, and theme modification controls.</p>
-            
-            <div class="card">
-                <h3>Copy-Paste Script Template</h3>
-                <p>Run this complete script in your Roblox executor to see all components working:</p>
-                <div class="code-container">
-                    <button class="copy-btn">Copy Script</button>
-                    <pre><code><span class="c-keyword">local</span> Lyra = <span class="c-function">loadstring</span>(game:<span class="c-function">HttpGet</span>(<span class="c-string">"https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"</span>))()
+        <section class="section searchable" id="tabs" data-search="tabs createtab name icon select setname seticon positional table">
+            <div class="section-kicker"><i data-lucide="panels-top-left"></i><span>Tab API</span></div>
+            <h2>Build the sidebar navigation</h2>
+            <p>Tabs accept a simple name or a table containing a name and icon. The first tab selects itself automatically.</p>
 
-<span class="c-comment">-- Create a window with title and subtitle</span>
-<span class="c-keyword">local</span> Window = Lyra:<span class="c-function">CreateWindow</span>({
-    Name = <span class="c-string">"Lyra UI Library"</span>,
-    Subtitle = <span class="c-string">"Combined Demo"</span>
+            <div class="code-block">
+                <div class="code-head"><span>Recommended</span><button class="copy-button" type="button" aria-label="Copy tab example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local MainTab = Window:CreateTab({
+    Name = "Main",
+    Icon = "home",
 })
 
-<span class="c-comment">-- Create tabs</span>
-<span class="c-keyword">local</span> MainTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Main"</span>)
-<span class="c-keyword">local</span> SettingsTab = Window:<span class="c-function">CreateTab</span>(<span class="c-string">"Settings"</span>)
+local SettingsTab = Window:CreateTab({
+    Name = "Settings",
+    Icon = "settings",
+})</code></pre>
+            </div>
 
-<span class="c-comment">-- Add label and notification button</span>
-MainTab:<span class="c-function">CreateLabel</span>(<span class="c-string">"Welcome to Lyra UI Library!"</span>)
-MainTab:<span class="c-function">CreateButton</span>(<span class="c-string">"Send Notification"</span>, <span class="c-keyword">function</span>()
-    Window:<span class="c-function">Notify</span>(<span class="c-string">"Notification"</span>, <span class="c-string">"Lyra UI Library UI loaded!"</span>, <span class="c-number">3</span>)
-<span class="c-keyword">end</span>)
+            <div class="code-block">
+                <div class="code-head"><span>Legacy positional form</span><button class="copy-button" type="button" aria-label="Copy legacy tab example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local MainTab = Window:CreateTab("Main")</code></pre>
+            </div>
 
-<span class="c-comment">-- Add slider</span>
-MainTab:<span class="c-function">CreateSlider</span>(<span class="c-string">"WalkSpeed Booster"</span>, <span class="c-number">16</span>, <span class="c-number">120</span>, <span class="c-number">16</span>, <span class="c-keyword">function</span>(val)
-    game:<span class="c-function">GetService</span>(<span class="c-string">"Players"</span>).LocalPlayer.Character.Humanoid.WalkSpeed = val
-<span class="c-keyword">end</span>)
-
-<span class="c-comment">-- Add dynamic theme selector dropdown</span>
-SettingsTab:<span class="c-function">CreateDropdown</span>(<span class="c-string">"Change Theme"</span>, {<span class="c-string">"Lyra"</span>, <span class="c-string">"Nebula"</span>, <span class="c-string">"BloodMoon"</span>, <span class="c-string">"Emerald"</span>}, <span class="c-string">"Lyra"</span>, <span class="c-keyword">function</span>(theme)
-    <span class="c-keyword">local</span> themeTable = Lyra.Themes[theme]
-    <span class="c-keyword">if</span> themeTable <span class="c-keyword">then</span>
-        Window:<span class="c-function">SetTheme</span>(themeTable)
-    <span class="c-keyword">end</span>
-<span class="c-keyword">end</span>)</code></pre>
-                </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Method</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td class="method-name">Tab:Select()</td><td>Selects the tab, updates the top-bar title, and shows its page.</td></tr>
+                        <tr><td class="method-name">Tab:SetName(name)</td><td>Updates the sidebar label, monogram fallback, and active-page title.</td></tr>
+                        <tr><td class="method-name">Tab:SetIcon(icon)</td><td>Replaces the current icon. An unresolved value falls back to the tab monogram.</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
 
-    </div>
+        <section class="section searchable" id="controls" data-search="controls label section button toggle slider dropdown textbox input callback handles setvalue getvalue refresh disabled update text">
+            <div class="section-kicker"><i data-lucide="sliders-horizontal"></i><span>Control API</span></div>
+            <h2>Add controls to a tab</h2>
+            <p>Every control supports the original positional call and a table configuration. The table form exposes icons, named defaults, and additional options without changing argument order.</p>
+
+            <div class="api-list">
+                <article class="api-card searchable" data-search="label section createlabel createsection updatetext settext icon">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="heading"></i></span>
+                        <div class="api-title"><h3>Label / Section</h3><p>Tab:CreateLabel(config)</p></div>
+                    </div>
+                    <p>Creates a section heading. <span class="inline-code">CreateSection</span> is an alias of <span class="inline-code">CreateLabel</span>.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Label</span><button class="copy-button" type="button" aria-label="Copy label example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local Status = MainTab:CreateLabel({
+    Text = "Ready",
+    Icon = "info",
+})
+
+Status:SetText("Recording")</code></pre>
+                    </div>
+                    <div class="config-line"><span>Text | Name</span><span>Icon</span><span>UpdateText(value)</span><span>SetText(value)</span></div>
+                </article>
+
+                <article class="api-card searchable" data-search="button createbutton callback disabled updatebuttontext setdisabled icon">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="mouse-pointer-click"></i></span>
+                        <div class="api-title"><h3>Button</h3><p>Tab:CreateButton(config)</p></div>
+                    </div>
+                    <p>Runs a command callback when clicked. Disabled buttons ignore clicks.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Button</span><button class="copy-button" type="button" aria-label="Copy button example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local RunButton = MainTab:CreateButton({
+    Name = "Run task",
+    Icon = "play",
+    Callback = function()
+        print("Running")
+    end,
+})
+
+RunButton:SetDisabled(false)</code></pre>
+                    </div>
+                    <div class="config-line"><span>Name | Text</span><span>Icon</span><span>Callback</span><span>Disabled</span><span>UpdateButtonText(value)</span><span>SetDisabled(bool)</span></div>
+                </article>
+
+                <article class="api-card searchable" data-search="toggle createtoggle currentvalue default callback settoggle setvalue getvalue icon initial callback">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="toggle-right"></i></span>
+                        <div class="api-title"><h3>Toggle</h3><p>Tab:CreateToggle(config)</p></div>
+                    </div>
+                    <p>Stores a boolean state. Its callback receives the initial state once during creation and then receives every change.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Toggle</span><button class="copy-button" type="button" aria-label="Copy toggle example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local AutoSave = MainTab:CreateToggle({
+    Name = "Auto save",
+    Icon = "save",
+    CurrentValue = true,
+    Callback = function(enabled)
+        print("Auto save:", enabled)
+    end,
+})
+
+AutoSave:SetValue(false)
+print(AutoSave:GetValue())</code></pre>
+                    </div>
+                    <div class="config-line"><span>Name | Text</span><span>Icon</span><span>CurrentValue | Default</span><span>Callback</span><span>SetToggle(bool)</span><span>SetValue(bool)</span><span>GetValue()</span></div>
+                </article>
+
+                <article class="api-card searchable" data-search="slider createslider min max range currentvalue default increment callback setvalue getvalue icon">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="sliders-horizontal"></i></span>
+                        <div class="api-title"><h3>Slider</h3><p>Tab:CreateSlider(config)</p></div>
+                    </div>
+                    <p>Produces a clamped number. Increment controls rounding and decimal display.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Slider</span><button class="copy-button" type="button" aria-label="Copy slider example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local Volume = MainTab:CreateSlider({
+    Name = "Volume",
+    Icon = "volume-2",
+    Range = { 0, 100 },
+    Increment = 5,
+    CurrentValue = 50,
+    Callback = function(value)
+        print("Volume:", value)
+    end,
+})
+
+Volume:SetValue(75)</code></pre>
+                    </div>
+                    <div class="config-line"><span>Name | Text</span><span>Icon</span><span>Min / Max | Range</span><span>Increment</span><span>CurrentValue | Default</span><span>Callback</span><span>SetValue(number)</span><span>GetValue()</span></div>
+                </article>
+
+                <article class="api-card searchable" data-search="dropdown createdropdown options list currentoption default callback select refresh getvalue centered montserrat icon">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="list-filter"></i></span>
+                        <div class="api-title"><h3>Dropdown</h3><p>Tab:CreateDropdown(config)</p></div>
+                    </div>
+                    <p>Shows a centered Montserrat option selector in an overlay popup. <span class="inline-code">CurrentOption</span> may be a value or a one-item table.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Dropdown</span><button class="copy-button" type="button" aria-label="Copy dropdown example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local Mode = MainTab:CreateDropdown({
+    Name = "Mode",
+    Icon = "list-filter",
+    Options = { "Record", "Replay", "Idle" },
+    CurrentOption = "Record",
+    Callback = function(value)
+        print("Mode:", value)
+    end,
+})
+
+Mode:Refresh({ "Record", "Replay" })
+Mode:Select("Replay")</code></pre>
+                    </div>
+                    <div class="config-line"><span>Name | Text</span><span>Icon</span><span>Options | List</span><span>CurrentOption | Default</span><span>Callback</span><span>Select(value)</span><span>Refresh(options)</span><span>GetValue()</span></div>
+                </article>
+
+                <article class="api-card searchable" data-search="textbox input createtextbox placeholder currentvalue callback focuslost enterpressed settext gettext centered montserrat icon">
+                    <div class="api-heading">
+                        <span class="api-icon"><i data-lucide="text-cursor-input"></i></span>
+                        <div class="api-title"><h3>Textbox</h3><p>Tab:CreateTextbox(config)</p></div>
+                    </div>
+                    <p>Collects centered text input. The callback runs when focus is lost and receives <span class="inline-code">text</span> plus <span class="inline-code">enterPressed</span>.</p>
+                    <div class="code-block">
+                        <div class="code-head"><span>Textbox</span><button class="copy-button" type="button" aria-label="Copy textbox example" title="Copy"><i data-lucide="copy"></i></button></div>
+                        <pre><code>local Tag = MainTab:CreateTextbox({
+    Name = "Run tag",
+    Icon = "text-cursor-input",
+    PlaceholderText = "Type a tag",
+    CurrentValue = "default",
+    Callback = function(text, enterPressed)
+        if enterPressed then
+            print("Submitted:", text)
+        end
+    end,
+})
+
+Tag:SetText("nightly")</code></pre>
+                    </div>
+                    <div class="config-line"><span>Name | Text</span><span>Icon</span><span>PlaceholderText | Placeholder</span><span>CurrentValue</span><span>Callback(text, enterPressed)</span><span>SetText(value)</span><span>GetText()</span></div>
+                </article>
+            </div>
+
+            <h3 style="margin-top: 26px;">Legacy positional calls</h3>
+            <div class="code-block">
+                <div class="code-head"><span>Backward-compatible forms</span><button class="copy-button" type="button" aria-label="Copy legacy control examples" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>Tab:CreateLabel("Section")
+Tab:CreateButton("Run", callback)
+Tab:CreateToggle("Enabled", false, callback)
+Tab:CreateSlider("Amount", 0, 100, 50, callback)
+Tab:CreateDropdown("Mode", { "A", "B" }, "A", callback)
+Tab:CreateTextbox("Tag", "Type here", callback)</code></pre>
+            </div>
+
+            <div class="notice">
+                <i data-lucide="info"></i>
+                <span>Returned handles accept both dot and colon calls. For example, <span class="inline-code">Status.SetText("Ready")</span> and <span class="inline-code">Status:SetText("Ready")</span> are both supported.</span>
+            </div>
+        </section>
+
+        <section class="section searchable" id="notifications" data-search="notifications notify title content description duration icon dismiss positional stack progress">
+            <div class="section-kicker"><i data-lucide="bell"></i><span>Notifications</span></div>
+            <h2>Show transient status</h2>
+            <p>Notifications stack from the bottom-right, include a timer bar, and can be dismissed manually. A duration of zero keeps the notification open.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>Table configuration</span><button class="copy-button" type="button" aria-label="Copy notification example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Notice = Window:Notify({
+    Title = "Recorder armed",
+    Content = "Waiting for an elevator.",
+    Duration = 4,
+    Icon = "radio-tower",
+})
+
+-- Notice:Dismiss()</code></pre>
+            </div>
+
+            <div class="code-block">
+                <div class="code-head"><span>Positional form</span><button class="copy-button" type="button" aria-label="Copy positional notification" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>Window:Notify("Saved", "Configuration updated.", 3)</code></pre>
+            </div>
+        </section>
+
+        <section class="section searchable" id="icons" data-search="lucide icons tijnepema provider getasset seticonprovider geticon createicon asset id imagerect built in">
+            <div class="section-kicker"><i data-lucide="shapes"></i><span>Icon API</span></div>
+            <h2>Use Lucide names or Roblox assets</h2>
+            <p>Lyra includes the icons used by its own interface. Register <a href="https://github.com/tijnepema/lucide-roblox" target="_blank" rel="noreferrer">tijnepema/lucide-roblox</a> to resolve the package's complete icon catalog by name.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>Provider setup</span><button class="copy-button" type="button" aria-label="Copy icon provider example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Lucide = require(path.To.Lucide)
+
+Lyra:SetIconProvider(Lucide)
+
+local Window = Lyra:CreateWindow({
+    Name = "Icon demo",
+    Icon = "command",
+    Lucide = Lucide,
+})
+
+local Tab = Window:CreateTab({
+    Name = "Dashboard",
+    Icon = "layout-dashboard",
+})</code></pre>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Icon value</th><th>Example</th><th>Behavior</th></tr></thead>
+                    <tbody>
+                        <tr><td>Lucide name</td><td class="method-name">"home"</td><td>Resolved from the built-in map or active provider.</td></tr>
+                        <tr><td>Numeric asset ID</td><td class="method-name">6031094678</td><td>Converted to an rbxassetid URL.</td></tr>
+                        <tr><td>Content string</td><td class="method-name">"rbxassetid://..."</td><td>Used directly as the Image value.</td></tr>
+                        <tr><td>Sprite descriptor</td><td class="method-name">Lucide.GetAsset(...)</td><td>Uses Url, ImageRectSize, and ImageRectOffset.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="code-block">
+                <div class="code-head"><span>Low-level helpers</span><button class="copy-button" type="button" aria-label="Copy icon helper example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local descriptor = Lyra:GetIcon("home", 48)
+
+local image = Lyra:CreateIcon("home", {
+    Parent = container,
+    Size = UDim2.fromOffset(18, 18),
+    ImageColor3 = Color3.new(1, 1, 1),
+})</code></pre>
+            </div>
+
+            <h3>Built-in names</h3>
+            <div class="icon-grid" aria-label="Built-in Lucide icon names">
+                <div class="icon-item"><i data-lucide="arrow-right"></i><span>arrow-right</span></div>
+                <div class="icon-item"><i data-lucide="bell"></i><span>bell</span></div>
+                <div class="icon-item"><i data-lucide="chevron-down"></i><span>chevron-down</span></div>
+                <div class="icon-item"><i data-lucide="circle-check"></i><span>circle-check</span></div>
+                <div class="icon-item"><i data-lucide="circle-help"></i><span>circle-help</span></div>
+                <div class="icon-item"><i data-lucide="command"></i><span>command</span></div>
+                <div class="icon-item"><i data-lucide="copy"></i><span>copy</span></div>
+                <div class="icon-item"><i data-lucide="download"></i><span>download</span></div>
+                <div class="icon-item"><i data-lucide="eye"></i><span>eye</span></div>
+                <div class="icon-item"><i data-lucide="gamepad-2"></i><span>gamepad-2</span></div>
+                <div class="icon-item"><i data-lucide="grip"></i><span>grip</span></div>
+                <div class="icon-item"><i data-lucide="home"></i><span>home</span></div>
+                <div class="icon-item"><i data-lucide="info"></i><span>info</span></div>
+                <div class="icon-item"><i data-lucide="key-round"></i><span>key-round</span></div>
+                <div class="icon-item"><i data-lucide="list-checks"></i><span>list-checks</span></div>
+                <div class="icon-item"><i data-lucide="list-filter"></i><span>list-filter</span></div>
+                <div class="icon-item"><i data-lucide="map"></i><span>map</span></div>
+                <div class="icon-item"><i data-lucide="minus"></i><span>minus</span></div>
+                <div class="icon-item"><i data-lucide="mouse-pointer-click"></i><span>mouse-pointer-click</span></div>
+                <div class="icon-item"><i data-lucide="panel-left"></i><span>panel-left</span></div>
+                <div class="icon-item"><i data-lucide="pause"></i><span>pause</span></div>
+                <div class="icon-item"><i data-lucide="play"></i><span>play</span></div>
+                <div class="icon-item"><i data-lucide="radio-tower"></i><span>radio-tower</span></div>
+                <div class="icon-item"><i data-lucide="refresh-cw"></i><span>refresh-cw</span></div>
+                <div class="icon-item"><i data-lucide="save"></i><span>save</span></div>
+                <div class="icon-item"><i data-lucide="scaling"></i><span>scaling</span></div>
+                <div class="icon-item"><i data-lucide="search"></i><span>search</span></div>
+                <div class="icon-item"><i data-lucide="settings"></i><span>settings</span></div>
+                <div class="icon-item"><i data-lucide="shield-check"></i><span>shield-check</span></div>
+                <div class="icon-item"><i data-lucide="sliders-horizontal"></i><span>sliders-horizontal</span></div>
+                <div class="icon-item"><i data-lucide="terminal"></i><span>terminal</span></div>
+                <div class="icon-item"><i data-lucide="text-cursor-input"></i><span>text-cursor-input</span></div>
+                <div class="icon-item"><i data-lucide="toggle-right"></i><span>toggle-right</span></div>
+                <div class="icon-item"><i data-lucide="trash-2"></i><span>trash-2</span></div>
+                <div class="icon-item"><i data-lucide="triangle-alert"></i><span>triangle-alert</span></div>
+                <div class="icon-item"><i data-lucide="upload"></i><span>upload</span></div>
+                <div class="icon-item"><i data-lucide="user"></i><span>user</span></div>
+                <div class="icon-item"><i data-lucide="x"></i><span>x</span></div>
+                <div class="icon-item"><i data-lucide="zap"></i><span>zap</span></div>
+            </div>
+        </section>
+
+        <section class="section searchable" id="themes" data-search="themes styling lyra nebula bloodmoon emerald midnight settheme custom palette colors">
+            <div class="section-kicker"><i data-lucide="palette"></i><span>Theme API</span></div>
+            <h2>Change colors at runtime</h2>
+            <p>Theme bindings update backgrounds, borders, text, gradients, controls, and notifications without rebuilding the window.</p>
+
+            <div class="theme-grid">
+                <div class="theme-item"><div class="theme-swatches"><i style="background:#c9abff"></i><i style="background:#70cbef"></i><i style="background:#1b1e24"></i></div><strong>Lyra</strong></div>
+                <div class="theme-item"><div class="theme-swatches"><i style="background:#bd87ff"></i><i style="background:#78bfff"></i><i style="background:#1f192a"></i></div><strong>Nebula</strong></div>
+                <div class="theme-item"><div class="theme-swatches"><i style="background:#ff6b81"></i><i style="background:#ffae69"></i><i style="background:#261a1e"></i></div><strong>BloodMoon</strong></div>
+                <div class="theme-item"><div class="theme-swatches"><i style="background:#5be0a8"></i><i style="background:#5bc2eb"></i><i style="background:#182420"></i></div><strong>Emerald</strong></div>
+                <div class="theme-item"><div class="theme-swatches"><i style="background:#68b4ff"></i><i style="background:#78e5ce"></i><i style="background:#171f2a"></i></div><strong>Midnight</strong></div>
+            </div>
+
+            <div class="code-block">
+                <div class="code-head"><span>Apply a preset</span><button class="copy-button" type="button" aria-label="Copy theme example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>Window:SetTheme(Lyra.Themes.Nebula)
+
+-- The active window can also be themed through Lyra.
+Lyra:SetTheme(Lyra.Themes.Emerald)</code></pre>
+            </div>
+
+            <div class="config-line"><span>Background</span><span>Header</span><span>Sidebar</span><span>Card</span><span>CardStroke</span><span>AccentGrad1</span><span>AccentGrad2</span><span>TextMain</span><span>TextDark</span></div>
+        </section>
+
+        <section class="section searchable" id="key-gate" data-search="key gate keysettings title subtitle note savekey url icon string table function validate sha256 cache clipboard get key">
+            <div class="section-kicker"><i data-lucide="key-round"></i><span>Optional gate</span></div>
+            <h2>Validate a local key</h2>
+            <p>The key gate compares user input with a configured string, one of several strings, or a validation function. It does not collect an HWID or perform remote verification by itself.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>KeySettings</span><button class="copy-button" type="button" aria-label="Copy key gate example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local expectedKey = "Lyra_" .. Lyra.SHA256("your-payload"):upper()
+
+local Window = Lyra:CreateWindow({
+    Name = "Protected tools",
+    Subtitle = "Verification",
+    KeySettings = {
+        Title = "Key verification",
+        Subtitle = "Protected tools",
+        Note = "Enter your key to continue.",
+        Icon = "key-round",
+        SaveKey = true,
+        Key = expectedKey,
+        Url = "https://example.com/get-key",
+    },
+})</code></pre>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Property</th><th>Type</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td class="method-name">Title</td><td class="type">string</td><td>Gate heading.</td></tr>
+                        <tr><td class="method-name">Subtitle</td><td class="type">string</td><td>Smaller heading below the title.</td></tr>
+                        <tr><td class="method-name">Note</td><td class="type">string</td><td>Instructions shown above the input.</td></tr>
+                        <tr><td class="method-name">Icon</td><td class="type">IconValue</td><td>Gate heading icon.</td></tr>
+                        <tr><td class="method-name">Key</td><td class="type">string | table | function</td><td>Expected value, accepted value list, or validator returning true.</td></tr>
+                        <tr><td class="method-name">SaveKey</td><td class="type">boolean</td><td>Uses readfile/writefile when available to cache a successfully validated key.</td></tr>
+                        <tr><td class="method-name">Url</td><td class="type">string</td><td>Copied to the clipboard when Get key is pressed.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="notice warning">
+                <i data-lucide="file-key-2"></i>
+                <span>The cache file name is derived from the window title and has no built-in expiration timer. A saved value is reused only when it still passes the current Key validator.</span>
+            </div>
+        </section>
+
+        <section class="section searchable" id="example" data-search="complete example copy paste window tabs controls notifications themes icons resize">
+            <div class="section-kicker"><i data-lucide="file-code-2"></i><span>Full example</span></div>
+            <h2>Put the APIs together</h2>
+            <p>This example uses table configuration, built-in icons, returned handles, themes, a notification, and the current loader URL.</p>
+
+            <div class="code-block">
+                <div class="code-head"><span>Complete script</span><button class="copy-button" type="button" aria-label="Copy complete example" title="Copy"><i data-lucide="copy"></i></button></div>
+                <pre><code>local Lyra = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua"
+))()
+
+local Window = Lyra:CreateWindow({
+    Name = "Lyra Demo",
+    Subtitle = "V4 controls",
+    Icon = "command",
+    Size = Vector2.new(780, 520),
+})
+
+local Main = Window:CreateTab({ Name = "Main", Icon = "home" })
+local Settings = Window:CreateTab({ Name = "Settings", Icon = "settings" })
+
+local Status = Main:CreateLabel({ Text = "Ready", Icon = "info" })
+
+Main:CreateToggle({
+    Name = "Auto save",
+    Icon = "save",
+    CurrentValue = false,
+    Callback = function(enabled)
+        Status:SetText(enabled and "Auto save enabled" or "Auto save disabled")
+    end,
+})
+
+Main:CreateSlider({
+    Name = "Volume",
+    Icon = "sliders-horizontal",
+    Range = { 0, 100 },
+    Increment = 5,
+    CurrentValue = 50,
+    Callback = function(value)
+        print("Volume:", value)
+    end,
+})
+
+Main:CreateDropdown({
+    Name = "Mode",
+    Icon = "list-filter",
+    Options = { "Record", "Replay", "Idle" },
+    CurrentOption = "Idle",
+    Callback = function(value)
+        Status:SetText("Mode: " .. value)
+    end,
+})
+
+Main:CreateTextbox({
+    Name = "Run tag",
+    Icon = "text-cursor-input",
+    PlaceholderText = "Type a tag",
+    Callback = function(text, enterPressed)
+        if enterPressed then
+            Status:SetText("Tag: " .. text)
+        end
+    end,
+})
+
+Main:CreateButton({
+    Name = "Show notification",
+    Icon = "bell",
+    Callback = function()
+        Window:Notify({
+            Title = "Lyra Demo",
+            Content = "The current V4 API is running.",
+            Duration = 4,
+            Icon = "circle-check",
+        })
+    end,
+})
+
+Settings:CreateDropdown({
+    Name = "Theme",
+    Icon = "settings",
+    Options = { "Lyra", "Nebula", "BloodMoon", "Emerald", "Midnight" },
+    CurrentOption = "Lyra",
+    Callback = function(name)
+        Window:SetTheme(Lyra.Themes[name])
+    end,
+})
+
+Settings:CreateButton({
+    Name = "Close interface",
+    Icon = "x",
+    Callback = function()
+        Window:Destroy()
+    end,
+})
+
+Window:Notify("Loaded", "Lyra UI Library V4 is ready.", 4)</code></pre>
+            </div>
+        </section>
+
+        <footer>
+            <span>Lyra UI Library V4 documentation. Updated July 12, 2026.</span>
+            <a href="../">Return to Lyra Macro</a>
+        </footer>
+    </main>
 
     <script>
-        const navLinks = document.querySelectorAll('.nav-item[href^="#"]');
-        const docSections = document.querySelectorAll('.doc-section');
-        const menuToggle = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
+        const sidebar = document.getElementById("sidebar");
+        const menuButton = document.getElementById("menu-button");
+        const mobileScrim = document.getElementById("mobile-scrim");
+        const searchInput = document.getElementById("doc-search");
+        const searchClear = document.getElementById("search-clear");
+        const searchEmpty = document.getElementById("search-empty");
+        const navLinks = [...document.querySelectorAll('.nav a[href^="#"]')];
+        const sections = [...document.querySelectorAll("main > .section")];
 
-        // Close mobile sidebar on click
-        navLinks.forEach(link => {
-            link.addEventListener('click', () => {
-                sidebar.classList.remove('open');
-                menuToggle.classList.remove('open');
-            });
-        });
-
-        // Hamburger mobile toggle
-        menuToggle.addEventListener('click', () => {
-            menuToggle.classList.toggle('open');
-            sidebar.classList.toggle('open');
-        });
-
-        // Intersection Observer Scroll Spy
-        const observerOptions = {
-            root: null,
-            rootMargin: '-10% 0px -70% 0px', // Trigger active state when section occupies the upper-middle screen
-            threshold: 0
+        const refreshIcons = () => {
+            if (window.lucide) {
+                window.lucide.createIcons();
+            }
         };
 
-        const observer = new IntersectionObserver((entries) => {
-            // Ignore observer updates if we are at the very bottom of the page
-            if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 60) return;
+        const setMenuOpen = (open) => {
+            sidebar.classList.toggle("open", open);
+            mobileScrim.classList.toggle("visible", open);
+            menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+            menuButton.innerHTML = open ? '<i data-lucide="x"></i>' : '<i data-lucide="menu"></i>';
+            refreshIcons();
+        };
 
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const id = entry.target.getAttribute('id');
-                    
-                    navLinks.forEach(link => {
-                        link.classList.remove('active');
-                        if (link.getAttribute('href') === `#${id}`) {
-                            link.classList.add('active');
-                        }
-                    });
-                }
-            });
-        }, observerOptions);
+        menuButton.addEventListener("click", () => setMenuOpen(!sidebar.classList.contains("open")));
+        mobileScrim.addEventListener("click", () => setMenuOpen(false));
+        navLinks.forEach((link) => link.addEventListener("click", () => setMenuOpen(false)));
 
-        docSections.forEach(section => {
-            observer.observe(section);
-        });
-
-        // Fallback for reaching the very bottom of the page (highlights the last section)
-        window.addEventListener('scroll', () => {
-            if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 60) {
-                navLinks.forEach(link => link.classList.remove('active'));
-                navLinks[navLinks.length - 1].classList.add('active');
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                setMenuOpen(false);
             }
         });
 
-        // --- Copy to Clipboard Handler ---
-        const copyBtns = document.querySelectorAll('.copy-btn');
-        copyBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const codeBlock = btn.nextElementSibling.querySelector('code');
-                const rawText = codeBlock.innerText;
-                
-                navigator.clipboard.writeText(rawText).then(() => {
-                    btn.innerText = "Copied!";
-                    btn.classList.add('copied');
-                    setTimeout(() => {
-                        btn.innerText = "Copy";
-                        btn.classList.remove('copied');
-                    }, 2000);
-                }).catch(err => {
-                    alert("Unable to copy automatically. Please copy manually.");
-                });
+        const observer = new IntersectionObserver((entries) => {
+            const visible = entries
+                .filter((entry) => entry.isIntersecting)
+                .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+            if (!visible || searchInput.value.trim()) {
+                return;
+            }
+
+            navLinks.forEach((link) => {
+                link.classList.toggle("active", link.getAttribute("href") === `#${visible.target.id}`);
+            });
+        }, {
+            rootMargin: "-18% 0px -68% 0px",
+            threshold: [0, 0.1, 0.4],
+        });
+
+        sections.forEach((section) => observer.observe(section));
+
+        const applySearch = () => {
+            const query = searchInput.value.trim().toLowerCase();
+            searchClear.classList.toggle("visible", Boolean(query));
+            let visibleSections = 0;
+
+            sections.forEach((section) => {
+                const sectionMatches = !query || section.textContent.toLowerCase().includes(query) || (section.dataset.search || "").includes(query);
+                section.hidden = !sectionMatches;
+
+                if (sectionMatches) {
+                    visibleSections += 1;
+                }
+            });
+
+            searchEmpty.classList.toggle("visible", visibleSections === 0);
+        };
+
+        searchInput.addEventListener("input", applySearch);
+        searchClear.addEventListener("click", () => {
+            searchInput.value = "";
+            searchInput.focus();
+            applySearch();
+        });
+
+        document.querySelectorAll(".copy-button").forEach((button) => {
+            button.addEventListener("click", async () => {
+                const block = button.closest(".code-block");
+                const code = block.querySelector("code").innerText;
+
+                try {
+                    await navigator.clipboard.writeText(code);
+                    button.classList.add("copied");
+                    button.innerHTML = '<i data-lucide="check"></i>';
+                    refreshIcons();
+
+                    window.setTimeout(() => {
+                        button.classList.remove("copied");
+                        button.innerHTML = '<i data-lucide="copy"></i>';
+                        refreshIcons();
+                    }, 1400);
+                } catch {
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(block.querySelector("code"));
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
             });
         });
+
+        refreshIcons();
     </script>
 </body>
 </html>
