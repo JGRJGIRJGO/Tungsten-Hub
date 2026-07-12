@@ -7,7 +7,7 @@
     - Utilities (Anti-AFK, Rejoin Game, Dynamic Theme Swapping)
     
     Loadstring to execute:
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Lyra-Hub/main/UniversalV2.lua"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/UniversalV2.lua"))()
 ]]
 
 local Players = game:GetService("Players")
@@ -32,15 +32,27 @@ local function getRoot()
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- Load the Lyra UI Library UI Library from GitHub (with cache buster)
-local success, Lyra = pcall(function()
-    return loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Lyra-Hub/main/LyraV2.lua?t=" .. tostring(os.time())))()
+-- Load the Lyra UI Library from the active repository with a cache buster.
+local LYRA_LIBRARY_URL = "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraV2.lua?t="
+local success, lyraOrError = pcall(function()
+    if type(loadstring) ~= "function" then
+        error("loadstring is unavailable in this environment.")
+    end
+
+    local source = game:HttpGet(LYRA_LIBRARY_URL .. tostring(os.time()))
+    local chunk, compileError = loadstring(source)
+    if not chunk then
+        error("could not compile LyraV2.lua: " .. tostring(compileError))
+    end
+
+    return chunk()
 end)
 
-if not success or not Lyra then
-    warn("Failed to load Lyra UI Library UI Library. Falling back to local require or erroring.")
-    error("Lyra UI Library: Library load failed. Make sure you are connected to the internet.")
+if not success or not lyraOrError then
+    error("Lyra UI Library: failed to load LyraV2.lua: " .. tostring(lyraOrError))
 end
+
+local Lyra = lyraOrError
 
 -- HWID-based dynamic daily key generation (prevents key sharing)
 local function getHardwareID()
