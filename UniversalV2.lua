@@ -170,6 +170,7 @@ end
 local Window = Lyra:CreateWindow({
     Name = "Lyra UI Library",
     Subtitle = "Universal",
+    Icon = "command",
     KeySettings = {
         Title = "Lyra Key Verification",
         Subtitle = "Lyra UI Library",
@@ -181,10 +182,10 @@ local Window = Lyra:CreateWindow({
 })
 
 -- Create Tabs
-local PlayerTab = Window:CreateTab("Player")
-local VisualsTab = Window:CreateTab("Visuals")
-local TeleportTab = Window:CreateTab("Teleport")
-local SettingsTab = Window:CreateTab("Settings")
+local PlayerTab = Window:CreateTab({ Name = "Player", Icon = "user" })
+local VisualsTab = Window:CreateTab({ Name = "Visuals", Icon = "eye" })
+local TeleportTab = Window:CreateTab({ Name = "Teleport", Icon = "map" })
+local SettingsTab = Window:CreateTab({ Name = "Settings", Icon = "settings" })
 
 -- =========================================================================
 -- PLAYER TAB FEATURES

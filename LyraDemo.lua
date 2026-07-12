@@ -17,13 +17,14 @@ local Lyra = require(script:WaitForChild("Lyra"))
 -- Create Window
 local Window = Lyra:CreateWindow({
     Name = "Lyra UI Library",
-    Subtitle = "Universal"
+    Subtitle = "Universal",
+    Icon = "command",
 })
 
 -- Create Tabs
-local MainTab = Window:CreateTab("Main")
-local MovementTab = Window:CreateTab("Movement")
-local SettingsTab = Window:CreateTab("Settings")
+local MainTab = Window:CreateTab({ Name = "Main", Icon = "home" })
+local MovementTab = Window:CreateTab({ Name = "Movement", Icon = "mouse-pointer-click" })
+local SettingsTab = Window:CreateTab({ Name = "Settings", Icon = "settings" })
 
 -- --- Main Tab Components ---
 MainTab:CreateLabel("Welcome to Lyra UI Library!")

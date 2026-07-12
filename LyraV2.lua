@@ -14,6 +14,56 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local Lyra = {}
 
+local MONTSERRAT_FAMILY = "rbxasset://fonts/families/Montserrat.json"
+local MONTSERRAT_MEDIUM = Font.new(MONTSERRAT_FAMILY, Enum.FontWeight.Medium, Enum.FontStyle.Normal)
+local MONTSERRAT_SEMIBOLD = Font.new(MONTSERRAT_FAMILY, Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+local MONTSERRAT_BOLD = Font.new(MONTSERRAT_FAMILY, Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+
+-- Core sprite metadata from tijnepema/lucide-roblox (MIT); Lucide icons are ISC licensed.
+-- A tijnepema/lucide-roblox GetAsset provider unlocks names outside this built-in set.
+local LUCIDE_ICONS = {
+    ["arrow-right"] = { 18786021641, 48, 48, 845, 783 },
+    bell = { 18786022917, 48, 48, 343, 343 },
+    ["chevron-down"] = { 18786022917, 48, 48, 833, 294 },
+    ["chevron-up"] = { 18786022917, 48, 48, 294, 833 },
+    ["circle-check"] = { 18786022917, 48, 48, 686, 539 },
+    ["circle-help"] = { 18786022917, 48, 48, 637, 637 },
+    command = { 18786022917, 48, 48, 784, 931 },
+    copy = { 18786024251, 48, 48, 98, 98 },
+    download = { 18786024251, 48, 48, 245, 294 },
+    eye = { 18786024251, 48, 48, 196, 441 },
+    ["gamepad-2"] = { 18786024251, 48, 48, 98, 931 },
+    grip = { 18786024251, 48, 48, 588, 588 },
+    home = { 18786024251, 48, 48, 784, 539 },
+    info = { 18786024251, 48, 48, 490, 931 },
+    ["key-round"] = { 18786024251, 48, 48, 882, 637 },
+    ["list-checks"] = { 18786025432, 48, 48, 98, 98 },
+    ["list-filter"] = { 18786025432, 48, 48, 245, 0 },
+    map = { 18786025432, 48, 48, 441, 98 },
+    minus = { 18786025432, 48, 48, 686, 49 },
+    ["mouse-pointer-click"] = { 18786025432, 48, 48, 392, 392 },
+    ["panel-left"] = { 18786025432, 48, 48, 784, 196 },
+    pause = { 18786025432, 48, 48, 637, 392 },
+    play = { 18786025432, 48, 48, 784, 392 },
+    ["radio-tower"] = { 18786025432, 48, 48, 539, 735 },
+    ["refresh-cw"] = { 18786025432, 48, 48, 490, 882 },
+    save = { 18786025432, 48, 48, 882, 735 },
+    scaling = { 18786025432, 48, 48, 735, 882 },
+    search = { 18786026913, 48, 48, 98, 49 },
+    settings = { 18786026913, 48, 48, 49, 196 },
+    ["shield-check"] = { 18786026913, 48, 48, 0, 294 },
+    ["sliders-horizontal"] = { 18786026913, 48, 48, 0, 490 },
+    terminal = { 18786026913, 48, 48, 196, 735 },
+    ["text-cursor-input"] = { 18786026913, 48, 48, 931, 49 },
+    ["toggle-right"] = { 18786026913, 48, 48, 735, 294 },
+    ["trash-2"] = { 18786026913, 48, 48, 98, 931 },
+    ["triangle-alert"] = { 18786026913, 48, 48, 539, 539 },
+    upload = { 18786026913, 48, 48, 686, 490 },
+    user = { 18786026913, 48, 48, 588, 637 },
+    x = { 18786026913, 48, 48, 735, 735 },
+    zap = { 18786026913, 48, 48, 588, 882 },
+}
+
 Lyra.Themes = {
     Lyra = {
         Background = Color3.fromRGB(13, 15, 19),
@@ -290,6 +340,197 @@ local function makeElement(className, properties)
     return element
 end
 
+local function normalizeIconName(iconName)
+    return tostring(iconName or "")
+        :lower()
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+        :gsub("[%s_]", "-")
+end
+
+local function normalizeImageUrl(value)
+    local image = tostring(value or "")
+
+    if image == "" then
+        return nil
+    end
+
+    if tonumber(image) then
+        return "rbxassetid://" .. image
+    end
+
+    return image
+end
+
+local function callIconProvider(provider, iconName, size)
+    if type(provider) == "function" then
+        local ok, result = pcall(provider, iconName, size)
+        return ok and result or nil
+    end
+
+    if type(provider) ~= "table" then
+        return nil
+    end
+
+    if type(provider.GetAsset) == "function" then
+        local ok, result = pcall(provider.GetAsset, iconName, size)
+
+        if not ok then
+            ok, result = pcall(provider.GetAsset, provider, iconName, size)
+        end
+
+        if ok and result then
+            return result
+        end
+    end
+
+    if type(provider.GetIcon) == "function" then
+        local ok, result = pcall(provider.GetIcon, provider, iconName, "Lucide")
+
+        if not ok then
+            ok, result = pcall(provider.GetIcon, iconName, "Lucide")
+        end
+
+        if ok and result then
+            return result
+        end
+    end
+
+    return provider[iconName]
+end
+
+local function resolveIcon(icon, provider, size)
+    local iconType = type(icon)
+
+    if icon == nil or icon == false then
+        return nil
+    end
+
+    if iconType == "number" then
+        return {
+            Image = "rbxassetid://" .. tostring(icon),
+        }
+    end
+
+    if iconType == "table" then
+        local image = normalizeImageUrl(icon.Image or icon.Url or icon.URL or icon.Id or icon.AssetId)
+
+        if image then
+            local rectSize = icon.ImageRectSize
+            local rectOffset = icon.ImageRectOffset
+
+            if type(rectSize) == "table" then
+                rectSize = Vector2.new(rectSize.X or rectSize[1] or 0, rectSize.Y or rectSize[2] or 0)
+            end
+
+            if type(rectOffset) == "table" then
+                rectOffset = Vector2.new(rectOffset.X or rectOffset[1] or 0, rectOffset.Y or rectOffset[2] or 0)
+            end
+
+            return {
+                Image = image,
+                ImageRectSize = rectSize,
+                ImageRectOffset = rectOffset,
+            }
+        end
+
+        return nil
+    end
+
+    if iconType ~= "string" then
+        return nil
+    end
+
+    local directImage = normalizeImageUrl(icon)
+
+    if directImage and (tonumber(icon) or icon:find("://", 1, true) or icon:match("^rbx")) then
+        return {
+            Image = directImage,
+        }
+    end
+
+    local iconName = normalizeIconName(icon)
+    local builtIn = LUCIDE_ICONS[iconName]
+
+    if builtIn then
+        return {
+            Image = "rbxassetid://" .. tostring(builtIn[1]),
+            ImageRectSize = Vector2.new(builtIn[2], builtIn[3]),
+            ImageRectOffset = Vector2.new(builtIn[4], builtIn[5]),
+        }
+    end
+
+    local provided = callIconProvider(provider, iconName, size or 48)
+
+    if provided and provided ~= icon then
+        return resolveIcon(provided, nil, size)
+    end
+
+    return nil
+end
+
+local function makeIcon(parent, icon, properties, provider)
+    local asset = resolveIcon(icon, provider, properties and properties.IconSize or 48)
+
+    if not asset then
+        return nil
+    end
+
+    local iconProperties = {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Image = asset.Image,
+        ScaleType = Enum.ScaleType.Fit,
+        Parent = parent,
+    }
+
+    if asset.ImageRectSize then
+        iconProperties.ImageRectSize = asset.ImageRectSize
+    end
+
+    if asset.ImageRectOffset then
+        iconProperties.ImageRectOffset = asset.ImageRectOffset
+    end
+
+    for property, value in pairs(properties or {}) do
+        if property ~= "IconSize" then
+            iconProperties[property] = value
+        end
+    end
+
+    return makeElement("ImageLabel", iconProperties)
+end
+
+local function prepareIconProvider(provider)
+    if typeof(provider) == "Instance" and provider:IsA("ModuleScript") then
+        local ok, module = pcall(require, provider)
+
+        if ok then
+            return module
+        end
+
+        return nil
+    end
+
+    return provider
+end
+
+Lyra.IconProvider = nil
+
+function Lyra:SetIconProvider(provider)
+    self.IconProvider = prepareIconProvider(provider)
+    return self
+end
+
+function Lyra:GetIcon(icon, size)
+    return resolveIcon(icon, self.IconProvider, size)
+end
+
+function Lyra:CreateIcon(icon, properties)
+    properties = properties or {}
+    return makeIcon(properties.Parent, icon, properties, self.IconProvider)
+end
+
 local function addCorner(parent, radius)
     return makeElement("UICorner", {
         CornerRadius = UDim.new(0, radius or 5),
@@ -419,11 +660,30 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
     local titleText = type(titleOrConfig) == "table" and (config.Name or "Lyra") or (titleOrConfig or "Lyra")
     local subtitleText = type(titleOrConfig) == "table" and (config.Subtitle or "Interface") or (subtitle or "Interface")
     local keySettings = config.KeySettings
+    local iconProvider = prepareIconProvider(config.IconProvider or config.Lucide or Lyra.IconProvider)
     local viewport = getViewport()
-    local compact = viewport.X < 600
     local windowWidth = math.min(760, math.max(300, viewport.X - 16))
     local windowHeight = math.min(500, math.max(300, viewport.Y - 40))
-    local sidebarWidth = windowWidth < 380 and 96 or (windowWidth < 520 and 112 or 174)
+
+    if typeof(config.Size) == "Vector2" then
+        windowWidth = math.max(300, config.Size.X)
+        windowHeight = math.max(260, config.Size.Y)
+    elseif type(config.Size) == "table" then
+        windowWidth = math.max(300, tonumber(config.Size.X or config.Size[1]) or windowWidth)
+        windowHeight = math.max(260, tonumber(config.Size.Y or config.Size[2]) or windowHeight)
+    end
+
+    local compact = windowWidth < 600
+    local minWindowWidth = math.min(360, windowWidth)
+    local minWindowHeight = math.min(300, windowHeight)
+    local maxWindowWidth = math.max(minWindowWidth, tonumber(config.MaxWidth) or 1200)
+    local maxWindowHeight = math.max(minWindowHeight, tonumber(config.MaxHeight) or 800)
+
+    local function getSidebarWidth(width)
+        return width < 380 and 96 or (width < 520 and 112 or 174)
+    end
+
+    local sidebarWidth = getSidebarWidth(windowWidth)
     local topbarHeight = 50
     local connections = {}
     local themeBindings = {}
@@ -582,17 +842,27 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
     addCorner(BrandIcon, 7)
     addAccentGradient(BrandIcon, 35)
 
-    makeElement("TextLabel", {
-        Name = "Mark",
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Text = "L",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        TextSize = 15,
-        Font = Enum.Font.GothamBold,
+    local BrandGlyph = makeIcon(BrandIcon, config.Icon == false and nil or (config.Icon or "command"), {
+        Name = "Glyph",
+        Size = UDim2.fromOffset(17, 17),
+        Position = UDim2.new(0.5, -8.5, 0.5, -8.5),
+        ImageColor3 = Color3.fromRGB(255, 255, 255),
         ZIndex = 5,
-        Parent = BrandIcon,
-    })
+    }, iconProvider)
+
+    if not BrandGlyph then
+        makeElement("TextLabel", {
+            Name = "Mark",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = "L",
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            TextSize = 15,
+            FontFace = MONTSERRAT_BOLD,
+            ZIndex = 5,
+            Parent = BrandIcon,
+        })
+    end
 
     local BrandTitle = makeElement("TextLabel", {
         Name = "Title",
@@ -602,7 +872,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         Text = tostring(titleText),
         TextColor3 = currentTheme.TextMain,
         TextSize = compact and 12 or 13,
-        Font = Enum.Font.GothamBold,
+        FontFace = MONTSERRAT_BOLD,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 4,
@@ -618,7 +888,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         Text = tostring(subtitleText),
         TextColor3 = currentTheme.TextDark,
         TextSize = 10,
-        Font = Enum.Font.GothamMedium,
+        FontFace = MONTSERRAT_MEDIUM,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 4,
@@ -685,7 +955,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         BackgroundTransparency = 1,
         Text = LocalPlayer.DisplayName,
         TextSize = 10.5,
-        Font = Enum.Font.GothamSemibold,
+        FontFace = MONTSERRAT_SEMIBOLD,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 4,
@@ -699,7 +969,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         BackgroundTransparency = 1,
         Text = "@" .. LocalPlayer.Name,
         TextSize = 9.5,
-        Font = Enum.Font.GothamMedium,
+        FontFace = MONTSERRAT_MEDIUM,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 4,
@@ -759,7 +1029,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         BackgroundTransparency = 1,
         Text = "Overview",
         TextSize = 12.5,
-        Font = Enum.Font.GothamBold,
+        FontFace = MONTSERRAT_BOLD,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 5,
@@ -774,7 +1044,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         BackgroundTransparency = 1,
         Text = tostring(subtitleText),
         TextSize = 9.5,
-        Font = Enum.Font.GothamMedium,
+        FontFace = MONTSERRAT_MEDIUM,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         ZIndex = 5,
@@ -800,50 +1070,65 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         Parent = Topbar,
     })
 
-    local function makeWindowControl(name, text, x)
+    local function makeWindowControl(name, iconName, fallbackText, x)
         local button = makeElement("TextButton", {
             Name = name,
             Size = UDim2.fromOffset(30, 28),
             Position = UDim2.fromOffset(x, 2),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Text = text,
-            TextSize = 14,
-            Font = Enum.Font.GothamMedium,
+            Text = "",
             AutoButtonColor = false,
             ZIndex = 8,
             Parent = Controls,
         })
         addCorner(button, 5)
         bindTheme(button, "BackgroundColor3", "Card")
-        bindTheme(button, "TextColor3", "TextDark")
+
+        local glyph = makeIcon(button, iconName, {
+            Name = "Icon",
+            Size = UDim2.fromOffset(14, 14),
+            Position = UDim2.new(0.5, -7, 0.5, -7),
+            ZIndex = 9,
+        }, iconProvider)
+
+        if glyph then
+            bindTheme(glyph, "ImageColor3", "TextDark")
+        else
+            local fallback = makeElement("TextLabel", {
+                Name = "Fallback",
+                Size = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1,
+                Text = fallbackText,
+                TextSize = 13,
+                FontFace = MONTSERRAT_BOLD,
+                ZIndex = 9,
+                Parent = button,
+            })
+            bindTheme(fallback, "TextColor3", "TextDark")
+            glyph = fallback
+        end
 
         track(button.MouseEnter:Connect(function()
-            tween(button, 0.12, {
-                BackgroundTransparency = 0,
-                TextColor3 = currentTheme.TextMain,
+            local hoverColor = name == "Close" and currentTheme.Danger or currentTheme.TextMain
+            tween(button, 0.12, { BackgroundTransparency = 0 })
+            tween(glyph, 0.12, {
+                [glyph:IsA("ImageLabel") and "ImageColor3" or "TextColor3"] = hoverColor,
             })
         end))
 
         track(button.MouseLeave:Connect(function()
-            tween(button, 0.12, {
-                BackgroundTransparency = 1,
-                TextColor3 = currentTheme.TextDark,
+            tween(button, 0.12, { BackgroundTransparency = 1 })
+            tween(glyph, 0.12, {
+                [glyph:IsA("ImageLabel") and "ImageColor3" or "TextColor3"] = currentTheme.TextDark,
             })
         end))
 
-        return button
+        return button, glyph
     end
 
-    local MinimizeButton = makeWindowControl("Minimize", "-", 2)
-    local CloseButton = makeWindowControl("Close", "x", 38)
-
-    track(CloseButton.MouseEnter:Connect(function()
-        tween(CloseButton, 0.12, {
-            BackgroundTransparency = 0,
-            TextColor3 = currentTheme.Danger,
-        })
-    end))
+    local MinimizeButton = makeWindowControl("Minimize", "minus", "-", 2)
+    local CloseButton = makeWindowControl("Close", "x", "x", 38)
 
     local PageHost = makeElement("Frame", {
         Name = "PageHost",
@@ -856,17 +1141,61 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         Parent = Content,
     })
 
+    local ResizeHandle = makeElement("TextButton", {
+        Name = "ResizeHandle",
+        Size = UDim2.fromOffset(24, 24),
+        Position = UDim2.new(1, -27, 1, -27),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        Active = true,
+        ZIndex = 20,
+        Parent = MainFrame,
+    })
+    addCorner(ResizeHandle, 5)
+    bindTheme(ResizeHandle, "BackgroundColor3", "Card")
+
+    local ResizeGlyph = makeIcon(ResizeHandle, "scaling", {
+        Name = "Icon",
+        Size = UDim2.fromOffset(14, 14),
+        Position = UDim2.new(0.5, -7, 0.5, -7),
+        ZIndex = 21,
+    }, iconProvider)
+
+    if ResizeGlyph then
+        bindTheme(ResizeGlyph, "ImageColor3", "TextDark")
+    end
+
+    track(ResizeHandle.MouseEnter:Connect(function()
+        tween(ResizeHandle, 0.12, { BackgroundTransparency = 0 })
+
+        if ResizeGlyph then
+            tween(ResizeGlyph, 0.12, { ImageColor3 = currentTheme.AccentGrad2 })
+        end
+    end))
+
+    track(ResizeHandle.MouseLeave:Connect(function()
+        tween(ResizeHandle, 0.12, { BackgroundTransparency = 1 })
+
+        if ResizeGlyph then
+            tween(ResizeGlyph, 0.12, { ImageColor3 = currentTheme.TextDark })
+        end
+    end))
+
     local Window = {
         Tabs = {},
         ActiveTab = nil,
         ScreenGui = ScreenGui,
         MainContainer = MainContainer,
+        IconProvider = iconProvider,
         _openDropdown = nil,
     }
 
     local unlocked = false
     local isVisible = false
     local isAnimating = false
+    local transitionId = 0
     local fitScale = 1
     local toggleKey = Lyra.ToggleKey or Enum.KeyCode.RightShift
 
@@ -927,6 +1256,51 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         return false
     end
 
+    local function applyWindowSize(width, height)
+        windowWidth = math.floor(math.clamp(tonumber(width) or windowWidth, minWindowWidth, maxWindowWidth) + 0.5)
+        windowHeight = math.floor(math.clamp(tonumber(height) or windowHeight, minWindowHeight, maxWindowHeight) + 0.5)
+        compact = windowWidth < 600
+        MainContainer.Size = UDim2.fromOffset(windowWidth, windowHeight)
+
+        local nextSidebarWidth = getSidebarWidth(windowWidth)
+
+        if nextSidebarWidth ~= sidebarWidth then
+            sidebarWidth = nextSidebarWidth
+            Sidebar.Size = UDim2.new(0, sidebarWidth, 1, 0)
+            Content.Size = UDim2.new(1, -sidebarWidth, 1, 0)
+            Content.Position = UDim2.fromOffset(sidebarWidth, 0)
+        end
+
+        Window.Size = Vector2.new(windowWidth, windowHeight)
+        return Window.Size
+    end
+
+    function Window:SetSize(widthOrSize, height)
+        closeOpenDropdown()
+
+        if typeof(widthOrSize) == "Vector2" then
+            return applyWindowSize(widthOrSize.X, widthOrSize.Y)
+        end
+
+        if type(widthOrSize) == "table" then
+            return applyWindowSize(widthOrSize.X or widthOrSize[1], widthOrSize.Y or widthOrSize[2])
+        end
+
+        return applyWindowSize(widthOrSize, height)
+    end
+
+    function Window:GetSize()
+        return Vector2.new(windowWidth, windowHeight)
+    end
+
+    function Window:SetIconProvider(provider)
+        iconProvider = prepareIconProvider(provider)
+        self.IconProvider = iconProvider
+        return self
+    end
+
+    applyWindowSize(windowWidth, windowHeight)
+
     local MobileButton
 
     local function showWindow()
@@ -935,14 +1309,28 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         end
 
         isAnimating = true
+        transitionId = transitionId + 1
+        local currentTransition = transitionId
         isVisible = true
         MainContainer.Visible = true
-        WindowScale.Scale = fitScale * 0.965
-        tween(WindowScale, 0.22, { Scale = fitScale }, Enum.EasingStyle.Quint)
+        WindowScale.Scale = fitScale * 0.9
+        local showTween = tween(WindowScale, 0.24, { Scale = fitScale }, Enum.EasingStyle.Quint)
 
-        task.delay(0.23, function()
+        if not showTween then
             isAnimating = false
+            return
+        end
+
+        local completedConnection
+        completedConnection = showTween.Completed:Connect(function()
+            completedConnection:Disconnect()
+
+            if currentTransition == transitionId then
+                WindowScale.Scale = fitScale
+                isAnimating = false
+            end
         end)
+        track(completedConnection)
     end
 
     local function hideWindow()
@@ -951,21 +1339,36 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         end
 
         isAnimating = true
+        transitionId = transitionId + 1
+        local currentTransition = transitionId
         closeOpenDropdown()
         local hideTween = tween(
             WindowScale,
-            0.16,
-            { Scale = fitScale * 0.97 },
-            Enum.EasingStyle.Quad,
+            0.24,
+            { Scale = fitScale * 0.9 },
+            Enum.EasingStyle.Quint,
             Enum.EasingDirection.In
         )
 
         if hideTween then
-            track(hideTween.Completed:Connect(function()
-                MainContainer.Visible = false
-                isVisible = false
+            local completedConnection
+            completedConnection = hideTween.Completed:Connect(function(playbackState)
+                completedConnection:Disconnect()
+
+                if currentTransition ~= transitionId then
+                    return
+                end
+
+                if playbackState == Enum.PlaybackState.Completed then
+                    MainContainer.Visible = false
+                    isVisible = false
+                else
+                    WindowScale.Scale = fitScale
+                end
+
                 isAnimating = false
-            end))
+            end)
+            track(completedConnection)
         else
             MainContainer.Visible = false
             isVisible = false
@@ -988,6 +1391,10 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
 
     track(DragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if isAnimating then
+                return
+            end
+
             dragging = true
             dragStart = input.Position
             dragOrigin = MainContainer.Position
@@ -1018,6 +1425,61 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             local y = math.clamp(dragOrigin.Y.Offset + delta.Y, minY, maxY)
             MainContainer.Position = UDim2.fromOffset(x, y)
         end
+    end))
+
+    local resizing = false
+    local resizeInput
+    local resizeStart
+    local resizeOrigin
+
+    track(ResizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if isAnimating then
+                return
+            end
+
+            resizing = true
+            resizeStart = input.Position
+            resizeOrigin = Vector2.new(windowWidth, windowHeight)
+            closeOpenDropdown()
+
+            if ResizeGlyph then
+                ResizeGlyph.ImageColor3 = currentTheme.AccentGrad2
+            end
+
+            track(input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    resizing = false
+
+                    if ResizeGlyph and ResizeHandle.Parent then
+                        tween(ResizeGlyph, 0.12, { ImageColor3 = currentTheme.TextDark })
+                    end
+                end
+            end))
+        end
+    end))
+
+    track(ResizeHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            resizeInput = input
+        end
+    end))
+
+    track(UserInputService.InputChanged:Connect(function(input)
+        if not resizing or input ~= resizeInput then
+            return
+        end
+
+        local currentViewport = getViewport()
+        local scale = math.max(fitScale, 0.01)
+        local delta = (input.Position - resizeStart) / scale
+        local availableWidth = (currentViewport.X - MainContainer.Position.X.Offset - 8) / scale
+        local availableHeight = (currentViewport.Y - MainContainer.Position.Y.Offset - 8) / scale
+        local widthLimit = math.max(minWindowWidth, math.min(maxWindowWidth, availableWidth))
+        local heightLimit = math.max(minWindowHeight, math.min(maxWindowHeight, availableHeight))
+        local nextWidth = math.clamp(resizeOrigin.X + delta.X, minWindowWidth, widthLimit)
+        local nextHeight = math.clamp(resizeOrigin.Y + delta.Y, minWindowHeight, heightLimit)
+        applyWindowSize(nextWidth, nextHeight)
     end))
 
     track(MinimizeButton.MouseButton1Click:Connect(hideWindow))
@@ -1053,9 +1515,9 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Position = UDim2.fromOffset(14, math.max(14, math.floor(viewport.Y * 0.18))),
             BackgroundTransparency = 0,
             BorderSizePixel = 0,
-            Text = "L",
+            Text = "",
             TextSize = 15,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             TextColor3 = Color3.fromRGB(255, 255, 255),
             AutoButtonColor = false,
             Visible = false,
@@ -1066,6 +1528,18 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         local MobileStroke = addStroke(MobileButton, currentTheme.CardStroke, 0.15, 1)
         addAccentGradient(MobileButton, 35)
         bindTheme(MobileStroke, "Color", "CardStroke")
+
+        local MobileGlyph = makeIcon(MobileButton, config.Icon or "command", {
+            Name = "Icon",
+            Size = UDim2.fromOffset(20, 20),
+            Position = UDim2.new(0.5, -10, 0.5, -10),
+            ImageColor3 = Color3.fromRGB(255, 255, 255),
+            ZIndex = 91,
+        }, iconProvider)
+
+        if not MobileGlyph then
+            MobileButton.Text = "L"
+        end
 
         local mobileDragging = false
         local mobileMoved = false
@@ -1186,16 +1660,29 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         return row, rowStroke, accent
     end
 
-    local function createRowLabel(row, text, rightPadding)
+    local function createRowLabel(row, text, rightPadding, icon)
+        local rowIcon = makeIcon(row, icon, {
+            Name = "ControlIcon",
+            Size = UDim2.fromOffset(16, 16),
+            Position = UDim2.fromOffset(12, 13),
+            ZIndex = 3,
+        }, iconProvider)
+        local leftPadding = rowIcon and 36 or 12
+
+        if rowIcon then
+            bindTheme(rowIcon, "ImageColor3", "TextDark")
+        end
+
         local label = makeElement("TextLabel", {
             Name = "Label",
-            Size = UDim2.new(1, -(rightPadding or 56), 1, 0),
-            Position = UDim2.fromOffset(12, 0),
+            Size = UDim2.new(1, -leftPadding - (rightPadding or 44), 1, 0),
+            Position = UDim2.fromOffset(leftPadding, 0),
             BackgroundTransparency = 1,
             Text = tostring(text or "Control"),
             TextSize = 11.5,
-            Font = Enum.Font.GothamSemibold,
+            FontFace = MONTSERRAT_SEMIBOLD,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 3,
             Parent = row,
@@ -1244,12 +1731,24 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         addCorner(Monogram, 5)
         bindTheme(Monogram, "BackgroundColor3", "Card")
 
+        local TabGlyph = makeIcon(Monogram, tabConfig.Icon, {
+            Name = "Icon",
+            Size = UDim2.fromOffset(14, 14),
+            Position = UDim2.new(0.5, -7, 0.5, -7),
+            ZIndex = 7,
+        }, iconProvider)
+
+        if TabGlyph then
+            bindTheme(TabGlyph, "ImageColor3", "TextDark")
+        end
+
         local MonogramText = makeElement("TextLabel", {
             Size = UDim2.fromScale(1, 1),
             BackgroundTransparency = 1,
             Text = string.upper(tostring(tabName):sub(1, 1)),
             TextSize = 10,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
+            Visible = TabGlyph == nil,
             ZIndex = 7,
             Parent = Monogram,
         })
@@ -1262,7 +1761,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = tostring(tabName),
             TextSize = compact and 10.5 or 11,
-            Font = Enum.Font.GothamSemibold,
+            FontFace = MONTSERRAT_BOLD,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 7,
@@ -1299,6 +1798,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Name = tostring(tabName),
             Button = TabButton,
             Page = Page,
+            Icon = TabGlyph,
             _order = 0,
         }
 
@@ -1308,12 +1808,22 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 tween(ActiveFill, 0.18, { BackgroundTransparency = 0.1 })
                 tween(TabLabel, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
                 tween(Monogram, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0.84 })
-                tween(MonogramText, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+
+                if TabGlyph then
+                    tween(TabGlyph, 0.15, { ImageColor3 = Color3.fromRGB(255, 255, 255) })
+                else
+                    tween(MonogramText, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+                end
             else
                 tween(ActiveFill, 0.15, { BackgroundTransparency = 1 })
                 tween(TabLabel, 0.15, { TextColor3 = currentTheme.TextDark })
                 tween(Monogram, 0.15, { BackgroundColor3 = currentTheme.Card, BackgroundTransparency = 0 })
-                tween(MonogramText, 0.15, { TextColor3 = currentTheme.TextDark })
+
+                if TabGlyph then
+                    tween(TabGlyph, 0.15, { ImageColor3 = currentTheme.TextDark })
+                else
+                    tween(MonogramText, 0.15, { TextColor3 = currentTheme.TextDark })
+                end
             end
         end
 
@@ -1349,6 +1859,29 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             end
         end
 
+        function Tab:SetIcon(icon)
+            if TabGlyph and TabGlyph.Parent then
+                TabGlyph:Destroy()
+            end
+
+            TabGlyph = makeIcon(Monogram, icon, {
+                Name = "Icon",
+                Size = UDim2.fromOffset(14, 14),
+                Position = UDim2.new(0.5, -7, 0.5, -7),
+                ZIndex = 7,
+            }, iconProvider)
+            MonogramText.Visible = TabGlyph == nil
+            self.Icon = TabGlyph
+
+            if TabGlyph then
+                bindTheme(TabGlyph, "ImageColor3", "TextDark")
+                TabGlyph.ImageColor3 = Window.ActiveTab == self and Color3.fromRGB(255, 255, 255)
+                    or currentTheme.TextDark
+            end
+
+            return TabGlyph
+        end
+
         track(TabButton.MouseButton1Click:Connect(function()
             Tab:Select()
         end))
@@ -1372,7 +1905,12 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             if Window.ActiveTab ~= Tab then
                 TabLabel.TextColor3 = theme.TextDark
                 Monogram.BackgroundColor3 = theme.Card
-                MonogramText.TextColor3 = theme.TextDark
+
+                if TabGlyph then
+                    TabGlyph.ImageColor3 = theme.TextDark
+                else
+                    MonogramText.TextColor3 = theme.TextDark
+                end
             end
         end)
 
@@ -1400,13 +1938,26 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             addCorner(marker, 2)
             addAccentGradient(marker, 90)
 
+            local sectionIcon = makeIcon(holder, labelConfig.Icon, {
+                Name = "Icon",
+                Size = UDim2.fromOffset(15, 15),
+                Position = UDim2.new(0, 12, 0.5, -7.5),
+                ZIndex = 2,
+            }, iconProvider)
+
+            if sectionIcon then
+                bindTheme(sectionIcon, "ImageColor3", "TextDark")
+            end
+
+            local labelLeft = sectionIcon and 36 or 12
+
             local label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -14, 1, 0),
-                Position = UDim2.fromOffset(12, 0),
+                Size = UDim2.new(1, -labelLeft - 2, 1, 0),
+                Position = UDim2.fromOffset(labelLeft, 0),
                 BackgroundTransparency = 1,
                 Text = tostring(text),
                 TextSize = 10.5,
-                Font = Enum.Font.GothamBold,
+                FontFace = MONTSERRAT_BOLD,
                 TextWrapped = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 TextYAlignment = Enum.TextYAlignment.Center,
@@ -1431,7 +1982,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             callback = type(textOrConfig) == "table" and (buttonConfig.Callback or callback) or callback
 
             local row = createRow(self, "Button", 42)
-            local label = createRowLabel(row, text, 52)
+            local label = createRowLabel(row, text, 52, buttonConfig.Icon)
             local action = makeElement("Frame", {
                 Size = UDim2.fromOffset(26, 26),
                 Position = UDim2.new(1, -34, 0.5, -13),
@@ -1443,16 +1994,26 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             addCorner(action, 5)
             bindTheme(action, "BackgroundColor3", "Header")
 
-            local actionLabel = makeElement("TextLabel", {
-                Size = UDim2.fromScale(1, 1),
-                BackgroundTransparency = 1,
-                Text = ">",
-                TextSize = 12,
-                Font = Enum.Font.GothamBold,
+            local actionLabel = makeIcon(action, "arrow-right", {
+                Size = UDim2.fromOffset(13, 13),
+                Position = UDim2.new(0.5, -6.5, 0.5, -6.5),
                 ZIndex = 4,
-                Parent = action,
-            })
-            bindTheme(actionLabel, "TextColor3", "TextDark")
+            }, iconProvider)
+
+            if actionLabel then
+                bindTheme(actionLabel, "ImageColor3", "TextDark")
+            else
+                actionLabel = makeElement("TextLabel", {
+                    Size = UDim2.fromScale(1, 1),
+                    BackgroundTransparency = 1,
+                    Text = ">",
+                    TextSize = 12,
+                    FontFace = MONTSERRAT_BOLD,
+                    ZIndex = 4,
+                    Parent = action,
+                })
+                bindTheme(actionLabel, "TextColor3", "TextDark")
+            end
 
             local click = makeElement("TextButton", {
                 Size = UDim2.fromScale(1, 1),
@@ -1485,7 +2046,12 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             control.SetDisabled = function(first, second)
                 disabled = methodValue(control, first, second) == true
                 label.TextTransparency = disabled and 0.45 or 0
-                actionLabel.TextTransparency = disabled and 0.45 or 0
+
+                if actionLabel:IsA("ImageLabel") then
+                    actionLabel.ImageTransparency = disabled and 0.45 or 0
+                else
+                    actionLabel.TextTransparency = disabled and 0.45 or 0
+                end
             end
             return control
         end
@@ -1507,7 +2073,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
 
             local state = default == true
             local row = createRow(self, "Toggle", 42)
-            createRowLabel(row, text, 68)
+            createRowLabel(row, text, 68, toggleConfig.Icon)
 
             local switch = makeElement("Frame", {
                 Name = "Switch",
@@ -1621,7 +2187,8 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
 
             local value = default
             local row = createRow(self, "Slider", 58)
-            createRowLabel(row, text, 82).Size = UDim2.new(1, -94, 0, 28)
+            local sliderLabel = createRowLabel(row, text, 82, sliderConfig.Icon)
+            sliderLabel.Size = UDim2.new(1, -sliderLabel.Position.X.Offset - 82, 0, 28)
 
             local valueBox = makeElement("TextLabel", {
                 Size = UDim2.fromOffset(62, 22),
@@ -1629,7 +2196,9 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 BackgroundTransparency = 0,
                 BorderSizePixel = 0,
                 TextSize = 10.5,
-                Font = Enum.Font.GothamBold,
+                FontFace = MONTSERRAT_BOLD,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextYAlignment = Enum.TextYAlignment.Center,
                 ZIndex = 3,
                 Parent = row,
             })
@@ -1794,7 +2363,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             end
 
             local row = createRow(self, "Dropdown", 42)
-            createRowLabel(row, text, 150)
+            createRowLabel(row, text, 150, dropdownConfig.Icon)
 
             local selected = makeElement("TextLabel", {
                 Size = UDim2.fromOffset(104, 26),
@@ -1803,8 +2372,9 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 BorderSizePixel = 0,
                 Text = tostring(active or "None"),
                 TextSize = 10.5,
-                Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Right,
+                FontFace = MONTSERRAT_BOLD,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextYAlignment = Enum.TextYAlignment.Center,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 ZIndex = 3,
                 Parent = row,
@@ -1813,17 +2383,27 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             bindTheme(selected, "BackgroundColor3", "Input")
             bindTheme(selected, "TextColor3", "AccentGrad2")
 
-            local arrow = makeElement("TextLabel", {
-                Size = UDim2.fromOffset(24, 24),
-                Position = UDim2.new(1, -30, 0.5, -12),
-                BackgroundTransparency = 1,
-                Text = "v",
-                TextSize = 10,
-                Font = Enum.Font.GothamBold,
+            local arrow = makeIcon(row, "chevron-down", {
+                Size = UDim2.fromOffset(14, 14),
+                Position = UDim2.new(1, -25, 0.5, -7),
                 ZIndex = 4,
-                Parent = row,
-            })
-            bindTheme(arrow, "TextColor3", "TextDark")
+            }, iconProvider)
+
+            if arrow then
+                bindTheme(arrow, "ImageColor3", "TextDark")
+            else
+                arrow = makeElement("TextLabel", {
+                    Size = UDim2.fromOffset(24, 24),
+                    Position = UDim2.new(1, -30, 0.5, -12),
+                    BackgroundTransparency = 1,
+                    Text = "v",
+                    TextSize = 10,
+                    FontFace = MONTSERRAT_BOLD,
+                    ZIndex = 4,
+                    Parent = row,
+                })
+                bindTheme(arrow, "TextColor3", "TextDark")
+            end
 
             local click = makeElement("TextButton", {
                 Size = UDim2.fromScale(1, 1),
@@ -1903,7 +2483,13 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 open = false
                 closeToken = closeToken + 1
                 local token = closeToken
-                arrow.Text = "v"
+
+                if arrow:IsA("ImageLabel") then
+                    tween(arrow, 0.14, { Rotation = 0 })
+                else
+                    arrow.Text = "v"
+                end
+
                 tween(popup, 0.14, { Size = UDim2.fromOffset(popup.Size.X.Offset, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
                 task.delay(0.15, function()
@@ -1924,7 +2510,13 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
 
                 open = true
                 closeToken = closeToken + 1
-                arrow.Text = "^"
+
+                if arrow:IsA("ImageLabel") then
+                    tween(arrow, 0.14, { Rotation = 180 })
+                else
+                    arrow.Text = "^"
+                end
+
                 positionPopup()
                 popup.Size = UDim2.fromOffset(popup.Size.X.Offset, 0)
                 popup.Visible = true
@@ -1968,19 +2560,15 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                         BorderSizePixel = 0,
                         Text = tostring(option),
                         TextSize = 10.5,
-                        Font = option == active and Enum.Font.GothamSemibold or Enum.Font.GothamMedium,
-                        TextXAlignment = Enum.TextXAlignment.Left,
+                        FontFace = MONTSERRAT_BOLD,
+                        TextXAlignment = Enum.TextXAlignment.Center,
+                        TextYAlignment = Enum.TextYAlignment.Center,
                         AutoButtonColor = false,
                         LayoutOrder = index,
                         ZIndex = 112,
                         Parent = options,
                     })
                     addCorner(optionButton, 4)
-                    makeElement("UIPadding", {
-                        PaddingLeft = UDim.new(0, 9),
-                        PaddingRight = UDim.new(0, 7),
-                        Parent = optionButton,
-                    })
                     bindTheme(optionButton, "BackgroundColor3", "Card")
                     bindTheme(optionButton, "TextColor3", option == active and "TextMain" or "TextDark")
 
@@ -2060,7 +2648,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
 
             placeholder = placeholder or "Type here"
             local row, rowStroke = createRow(self, "Textbox", 42)
-            createRowLabel(row, text, 144)
+            createRowLabel(row, text, 144, textboxConfig.Icon)
 
             local inputFrame = makeElement("Frame", {
                 Size = UDim2.fromOffset(122, 26),
@@ -2082,9 +2670,10 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 Text = textboxConfig.CurrentValue or "",
                 PlaceholderText = tostring(placeholder),
                 TextSize = 10.5,
-                Font = Enum.Font.GothamMedium,
+                FontFace = MONTSERRAT_SEMIBOLD,
                 ClearTextOnFocus = false,
-                TextXAlignment = Enum.TextXAlignment.Left,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextYAlignment = Enum.TextYAlignment.Center,
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 ZIndex = 4,
                 Parent = inputFrame,
@@ -2150,6 +2739,14 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
     end
 
     function Window:Notify(title, description, duration)
+        local notificationConfig = type(title) == "table" and title or {}
+
+        if type(title) == "table" then
+            description = notificationConfig.Content or notificationConfig.Description or ""
+            duration = notificationConfig.Duration or duration
+            title = notificationConfig.Title or notificationConfig.Name or "Notification"
+        end
+
         title = tostring(title or "Notification")
         description = tostring(description or "")
         duration = tonumber(duration) or 4
@@ -2192,16 +2789,26 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         addCorner(icon, 6)
         bindTheme(icon, "BackgroundColor3", "Card")
 
-        local iconText = makeElement("TextLabel", {
-            Size = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            Text = string.upper(title:sub(1, 1)),
-            TextSize = 11,
-            Font = Enum.Font.GothamBold,
+        local iconText = makeIcon(icon, notificationConfig.Icon or "bell", {
+            Size = UDim2.fromOffset(16, 16),
+            Position = UDim2.new(0.5, -8, 0.5, -8),
             ZIndex = 132,
-            Parent = icon,
-        })
-        bindTheme(iconText, "TextColor3", "AccentGrad2")
+        }, iconProvider)
+
+        if iconText then
+            bindTheme(iconText, "ImageColor3", "AccentGrad2")
+        else
+            iconText = makeElement("TextLabel", {
+                Size = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1,
+                Text = string.upper(title:sub(1, 1)),
+                TextSize = 11,
+                FontFace = MONTSERRAT_BOLD,
+                ZIndex = 132,
+                Parent = icon,
+            })
+            bindTheme(iconText, "TextColor3", "AccentGrad2")
+        end
 
         local titleLabel = makeElement("TextLabel", {
             Size = UDim2.new(1, -82, 0, 18),
@@ -2209,7 +2816,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = title,
             TextSize = 11.5,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 131,
@@ -2223,7 +2830,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = description,
             TextSize = 9.8,
-            Font = Enum.Font.GothamMedium,
+            FontFace = MONTSERRAT_MEDIUM,
             TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
@@ -2236,14 +2843,26 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Size = UDim2.fromOffset(22, 22),
             Position = UDim2.new(1, -28, 0, 6),
             BackgroundTransparency = 1,
-            Text = "x",
+            Text = "",
             TextSize = 11,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             AutoButtonColor = false,
             ZIndex = 133,
             Parent = notification,
         })
         bindTheme(dismissButton, "TextColor3", "TextDark")
+
+        local dismissGlyph = makeIcon(dismissButton, "x", {
+            Size = UDim2.fromOffset(11, 11),
+            Position = UDim2.new(0.5, -5.5, 0.5, -5.5),
+            ZIndex = 134,
+        }, iconProvider)
+
+        if dismissGlyph then
+            bindTheme(dismissGlyph, "ImageColor3", "TextDark")
+        else
+            dismissButton.Text = "x"
+        end
 
         local progress = makeElement("Frame", {
             Size = UDim2.new(1, 0, 0, 2),
@@ -2408,16 +3027,12 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
         addCorner(gateIcon, 6)
         addAccentGradient(gateIcon, 35)
 
-        makeElement("TextLabel", {
-            Size = UDim2.fromScale(1, 1),
-            BackgroundTransparency = 1,
-            Text = "L",
-            TextColor3 = Color3.fromRGB(255, 255, 255),
-            TextSize = 13,
-            Font = Enum.Font.GothamBold,
+        makeIcon(gateIcon, keySettings.Icon or "key-round", {
+            Size = UDim2.fromOffset(16, 16),
+            Position = UDim2.new(0.5, -8, 0.5, -8),
+            ImageColor3 = Color3.fromRGB(255, 255, 255),
             ZIndex = 204,
-            Parent = gateIcon,
-        })
+        }, iconProvider)
 
         local keyTitle = makeElement("TextLabel", {
             Size = UDim2.new(1, -92, 0, 18),
@@ -2425,7 +3040,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = keySettings.Title or "Key verification",
             TextSize = 12,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 203,
@@ -2439,7 +3054,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = keySettings.Subtitle or subtitleText,
             TextSize = 9.5,
-            Font = Enum.Font.GothamMedium,
+            FontFace = MONTSERRAT_MEDIUM,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 203,
@@ -2451,14 +3066,26 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Size = UDim2.fromOffset(28, 28),
             Position = UDim2.new(1, -38, 0, 15),
             BackgroundTransparency = 1,
-            Text = "x",
+            Text = "",
             TextSize = 12,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             AutoButtonColor = false,
             ZIndex = 204,
             Parent = gateTopbar,
         })
         bindTheme(gateClose, "TextColor3", "TextDark")
+
+        local gateCloseGlyph = makeIcon(gateClose, "x", {
+            Size = UDim2.fromOffset(12, 12),
+            Position = UDim2.new(0.5, -6, 0.5, -6),
+            ZIndex = 205,
+        }, iconProvider)
+
+        if gateCloseGlyph then
+            bindTheme(gateCloseGlyph, "ImageColor3", "TextDark")
+        else
+            gateClose.Text = "x"
+        end
 
         local note = makeElement("TextLabel", {
             Size = UDim2.new(1, -28, 0, 44),
@@ -2466,7 +3093,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = keySettings.Note or "Enter your key to continue.",
             TextSize = 10,
-            Font = Enum.Font.GothamMedium,
+            FontFace = MONTSERRAT_MEDIUM,
             TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
@@ -2495,9 +3122,10 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Text = "",
             PlaceholderText = "Enter key",
             TextSize = 11,
-            Font = Enum.Font.GothamMedium,
+            FontFace = MONTSERRAT_SEMIBOLD,
             ClearTextOnFocus = false,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center,
             ZIndex = 203,
             Parent = inputFrame,
         })
@@ -2510,7 +3138,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             BackgroundTransparency = 1,
             Text = "",
             TextSize = 9.5,
-            Font = Enum.Font.GothamMedium,
+            FontFace = MONTSERRAT_MEDIUM,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 202,
             Parent = card,
@@ -2533,7 +3161,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
             Text = "Verify",
             TextColor3 = Color3.fromRGB(255, 255, 255),
             TextSize = 11,
-            Font = Enum.Font.GothamBold,
+            FontFace = MONTSERRAT_BOLD,
             AutoButtonColor = false,
             ZIndex = 203,
             Parent = actions,
@@ -2551,7 +3179,7 @@ function Lyra:CreateWindow(titleOrConfig, subtitle)
                 BorderSizePixel = 0,
                 Text = "Get key",
                 TextSize = 11,
-                Font = Enum.Font.GothamSemibold,
+                FontFace = MONTSERRAT_BOLD,
                 AutoButtonColor = false,
                 ZIndex = 203,
                 Parent = actions,

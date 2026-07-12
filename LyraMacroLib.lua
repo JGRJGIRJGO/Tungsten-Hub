@@ -3465,9 +3465,13 @@ function LyraMacro:CreateRecorderWindow(config)
         local window = LyraUI:CreateWindow({
             Name = config.Name or "Lyra Strategy Recorder",
             Subtitle = config.Subtitle or "Macro Tools",
+            Icon = config.Icon or "radio-tower",
         })
 
-        local strategyTab = window:CreateTab(config.TabName or "Strategy")
+        local strategyTab = window:CreateTab({
+            Name = config.TabName or "Strategy",
+            Icon = config.TabIcon or "list-checks",
+        })
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
