@@ -100,6 +100,7 @@ local DYNAMIC_CONTAINER_NAMES = {
 
 local MAP_FINGERPRINT_PART_LIMIT = 500
 local CHAIN_COA_INTERVAL = 10.2
+local CHAIN_COA_REQUIRED_TOWERS = 3
 
 local TRACKED_ABILITIES = {
     callofarms = "Call Of Arms",
@@ -1244,29 +1245,31 @@ function LyraMacro:SetChainCOA(enabled)
 
     self.ChainCOANextIndex = 0
     local chainToken = self._chainCOAToken
-    print("[LyraMacro] Chain COA armed. Waiting for a Commander or Lifeguard, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
 
     task.spawn(function()
-        local detectedCommander = false
+        local rotationActive = false
         local lastTowerCount = 0
 
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers = self:_getCallOfArmsTowers()
 
-            if #callOfArmsTowers == 0 then
-                if detectedCommander then
-                    print("[LyraMacro] Chain COA is waiting for another Commander or Lifeguard.")
+            if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
+                if rotationActive then
+                    print("[LyraMacro] Chain COA paused; waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers again.")
+                elseif lastTowerCount ~= #callOfArmsTowers then
+                    print("[LyraMacro] Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers.")
                 end
 
-                detectedCommander = false
-                lastTowerCount = 0
+                rotationActive = false
+                lastTowerCount = #callOfArmsTowers
                 self.ChainCOANextIndex = 0
                 task.wait(0.15)
             else
-                if not detectedCommander then
-                    detectedCommander = true
+                if not rotationActive then
+                    rotationActive = true
                     self.ChainCOANextIndex = 0
-                    print("[LyraMacro] Chain COA detected " .. tostring(#callOfArmsTowers) .. " Commander/Lifeguard tower(s); starting rotation.")
+                    print("[LyraMacro] Chain COA detected " .. tostring(#callOfArmsTowers) .. " Commander/Lifeguard towers; starting rotation.")
                 elseif lastTowerCount ~= #callOfArmsTowers then
                     self.ChainCOANextIndex = 0
                     print("[LyraMacro] Chain COA refreshed its Commander/Lifeguard rotation.")
@@ -2672,7 +2675,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
