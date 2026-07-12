@@ -112,6 +112,8 @@ local PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN = 3
 local PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN = 30
 local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
 local PRIVATE_SERVER_START_TIMEOUT = 35
+local MODE_VOTE_RETRY_INTERVAL = 0.25
+local MODE_VOTE_RETRY_TIMEOUT = 10
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
@@ -153,6 +155,7 @@ local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
     SpawnedTowers = {},
+    SpawnedTowerUpgradeLevels = {},
     KnownTowerTroops = {},
     CallOfArmsTowerCache = {},
     NextTowerIndex = 0,
@@ -164,6 +167,7 @@ local LyraMacro = {
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
+    RecordedTowerUpgradeLevels = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
     LastStrategyExport = nil,
@@ -1245,19 +1249,19 @@ local function getTowerMaximumUpgrade(tower)
             local maximum = tonumber(readAttribute(instance, key))
 
             if maximum then
-                return maximum
+                return maximum, true
             end
 
             local maximumValue = safeFindFirstChild(instance, key)
             maximum = maximumValue and tonumber(readInstanceValue(maximumValue))
 
             if maximum then
-                return maximum
+                return maximum, true
             end
         end
     end
 
-    return DEFAULT_MAX_TOWER_UPGRADE
+    return DEFAULT_MAX_TOWER_UPGRADE, false
 end
 
 local function getTowerWorldPosition(tower)
@@ -1894,10 +1898,49 @@ function LyraMacro:Mode(modeName)
 end
 
 function LyraMacro:VoteMode(modeName, confirmed)
-    confirmed = confirmed ~= false
     self:Mode(modeName)
     print("[LyraMacro] Voting for difficulty: " .. tostring(modeName))
-    RemoteFunction:InvokeServer("Difficulty", "Vote", modeName, confirmed)
+
+    local deadline = os.clock() + MODE_VOTE_RETRY_TIMEOUT
+    local attempt = 0
+    local lastError = "The difficulty vote was not attempted."
+
+    while os.clock() < deadline do
+        attempt += 1
+
+        local invoked, responseOrError = pcall(function()
+            -- Preserve the recorded call exactly; nil means there was no fourth argument.
+            if confirmed == nil then
+                return RemoteFunction:InvokeServer("Difficulty", "Vote", modeName)
+            end
+
+            return RemoteFunction:InvokeServer("Difficulty", "Vote", modeName, confirmed)
+        end)
+
+        if invoked and responseOrError ~= false then
+            print("[LyraMacro] Difficulty vote accepted (attempt " .. tostring(attempt) .. ").")
+            return responseOrError
+        end
+
+        lastError = invoked and "The difficulty server rejected the vote." or tostring(responseOrError)
+        print(
+            "[LyraMacro] Difficulty vote is waiting for player data (attempt "
+                .. tostring(attempt)
+                .. "): "
+                .. tostring(lastError)
+        )
+        task.wait(MODE_VOTE_RETRY_INTERVAL)
+    end
+
+    error(
+        "[LyraMacro] Difficulty vote for "
+            .. tostring(modeName)
+            .. " failed after "
+            .. tostring(MODE_VOTE_RETRY_TIMEOUT)
+            .. " seconds: "
+            .. tostring(lastError),
+        2
+    )
 end
 
 local function normalizePrivateServerLinkCode(value)
@@ -2010,6 +2053,7 @@ end
 -- Clears only this strategy's stable tower IDs for a fresh solo match.
 function LyraMacro:RemoveIndex()
     table.clear(self.SpawnedTowers)
+    table.clear(self.SpawnedTowerUpgradeLevels)
     self.NextTowerIndex = 0
     print("[LyraMacro] Tower tracking reset.")
 end
@@ -3175,6 +3219,7 @@ function LyraMacro:_trackNextRecordedTower(troopType, position)
         end
 
         self.RecordedTowerIndexes[tower] = towerIndex
+        self.RecordedTowerUpgradeLevels[tower] = 0
 
         if type(troopType) == "string" and troopType ~= "" then
             self.KnownTowerTroops[tower] = troopType
@@ -3334,13 +3379,14 @@ function LyraMacro:_recordRemoteInvoke(args)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
-        local currentLevel = getTowerUpgradeLevel(upgradeInfo.Troop)
 
         if towerIndex then
+            local recordedLevel = (tonumber(self.RecordedTowerUpgradeLevels[upgradeInfo.Troop]) or 0) + 1
+            self.RecordedTowerUpgradeLevels[upgradeInfo.Troop] = recordedLevel
             self:_appendRecordedStep({
                 action = "upgrade",
                 tower = towerIndex,
-                level = currentLevel and currentLevel + 1 or nil,
+                level = recordedLevel,
             })
         end
     elseif action == "Sell" then
@@ -3467,6 +3513,7 @@ function LyraMacro:StartRecording()
 
     table.clear(self.RecordedStrategy)
     table.clear(self.RecordedTowerIndexes)
+    table.clear(self.RecordedTowerUpgradeLevels)
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
     self.SelectedMapFingerprint = ""
@@ -4046,6 +4093,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
         if placedTower then
             self.NextTowerIndex += 1
             self.SpawnedTowers[self.NextTowerIndex] = placedTower
+            self.SpawnedTowerUpgradeLevels[self.NextTowerIndex] = getTowerUpgradeLevel(placedTower) or 0
             self.KnownTowerTroops[placedTower] = troopType
             print("[LyraMacro] Registered tower #" .. self.NextTowerIndex .. " (" .. tostring(troopType) .. " / " .. skin .. ").")
             return placedTower
@@ -4070,10 +4118,30 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
     local targetLevel = tonumber(expectedLevel)
     local attempt = 0
 
+    local function rememberConfirmedLevel(fallbackLevel)
+        local replicatedLevel = getTowerUpgradeLevel(targetTower)
+        local confirmedLevel = tonumber(replicatedLevel) or tonumber(fallbackLevel)
+
+        if confirmedLevel then
+            self.SpawnedTowerUpgradeLevels[towerIndex] = math.max(
+                tonumber(self.SpawnedTowerUpgradeLevels[towerIndex]) or 0,
+                confirmedLevel
+            )
+        end
+
+        return confirmedLevel
+    end
+
     while true do
         attempt += 1
-        local levelBeforeRequest = getTowerUpgradeLevel(targetTower)
-        local maximumLevel = getTowerMaximumUpgrade(targetTower)
+        local replicatedLevelBeforeRequest = getTowerUpgradeLevel(targetTower)
+        local trackedLevelBeforeRequest = tonumber(self.SpawnedTowerUpgradeLevels[towerIndex]) or 0
+        local levelBeforeRequest = replicatedLevelBeforeRequest or trackedLevelBeforeRequest
+        local maximumLevel, hasKnownMaximumLevel = getTowerMaximumUpgrade(targetTower)
+
+        if replicatedLevelBeforeRequest then
+            self.SpawnedTowerUpgradeLevels[towerIndex] = replicatedLevelBeforeRequest
+        end
 
         if targetLevel and levelBeforeRequest and levelBeforeRequest >= targetLevel then
             if levelBeforeRequest == targetLevel then
@@ -4084,7 +4152,10 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             error("[LyraMacro] Tower #" .. tostring(towerIndex) .. " is already level " .. tostring(levelBeforeRequest) .. ", beyond recorded target level " .. tostring(targetLevel) .. ". Replay stopped to prevent further desync.", 2)
         end
 
-        if not targetLevel and levelBeforeRequest and levelBeforeRequest >= maximumLevel then
+        if not targetLevel
+            and hasKnownMaximumLevel
+            and replicatedLevelBeforeRequest
+            and replicatedLevelBeforeRequest >= maximumLevel then
             print("[LyraMacro] Tower #" .. towerIndex .. " is already fully upgraded; skipping the legacy upgrade step.")
             return
         end
@@ -4113,13 +4184,14 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
                 return currentLevel and currentLevel >= targetLevel
             end
 
-            return levelBeforeRequest and currentLevel and currentLevel > levelBeforeRequest
+            return currentLevel and currentLevel > levelBeforeRequest
         end
 
         local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
         local upgraded = waitForCondition(confirmationTimeout, reachedRecordedLevel)
 
         if upgraded then
+            rememberConfirmedLevel(targetLevel or (levelBeforeRequest + 1))
             print("[LyraMacro] Upgraded tower #" .. towerIndex .. ".")
             return
         end
@@ -4129,9 +4201,22 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             or (tonumber(cashAfterRequest) and tonumber(cashBeforeRequest) and cashAfterRequest < cashBeforeRequest)
 
         if requestWasAccepted then
+            if replicatedLevelBeforeRequest == nil then
+                local confirmedLevel = rememberConfirmedLevel(targetLevel or (levelBeforeRequest + 1))
+                print(
+                    "[LyraMacro] Upgraded tower #"
+                        .. tostring(towerIndex)
+                        .. " (server-confirmed; tracking level "
+                        .. tostring(confirmedLevel or "unknown")
+                        .. ")."
+                )
+                return
+            end
+
             print("[LyraMacro] Upgrade tower #" .. tostring(towerIndex) .. " was accepted; reconciling its replicated level.")
 
             if waitForCondition(REPLAY_ACCEPTED_RECOVERY_TIMEOUT, reachedRecordedLevel) then
+                rememberConfirmedLevel(targetLevel or (levelBeforeRequest + 1))
                 print("[LyraMacro] Upgraded tower #" .. towerIndex .. ".")
                 return
             end
@@ -4190,6 +4275,7 @@ function LyraMacro:Sell(towerIndex)
 
     -- Keep IDs stable: selling #1 never changes the ID of tower #2.
     self.SpawnedTowers[towerIndex] = nil
+    self.SpawnedTowerUpgradeLevels[towerIndex] = nil
     print("[LyraMacro] Sold tower #" .. towerIndex .. ".")
 end
 
