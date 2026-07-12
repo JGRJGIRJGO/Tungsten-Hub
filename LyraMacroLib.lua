@@ -106,6 +106,12 @@ local CHAIN_COA_RETRY_DELAY = 0.75
 local CHAIN_COA_POLL_INTERVAL = 0.15
 local PRIVATE_SERVER_REFRESH_INTERVAL = 1
 local PRIVATE_SERVER_START_DELAY = 0.35
+local PRIVATE_SERVER_MARKER_NAMES = {
+    "IsPrivateServer",
+    "PrivateServer",
+    "PrivateServerEnabled",
+    "VIPServer",
+}
 
 local TRACKED_ABILITIES = {
     callofarms = "Call Of Arms",
@@ -142,6 +148,7 @@ local LyraMacro = {
     SelectedMode = "Normal",
     SelectedMap = "",
     SelectedPrivateServerLinkCode = nil,
+    PrivateServerStatusProvider = nil,
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
@@ -1634,12 +1641,55 @@ function LyraMacro:SetPrivateServerLinkCode(linkCode)
     return self.SelectedPrivateServerLinkCode
 end
 
-function LyraMacro:IsPrivateServer()
-    local gotPrivateServerId, privateServerId = pcall(function()
-        return game.PrivateServerId
-    end)
+function LyraMacro:SetPrivateServerStatusProvider(provider)
+    assert(
+        provider == nil or type(provider) == "function",
+        "[LyraMacro] Private server status provider must be a function or nil."
+    )
 
-    return gotPrivateServerId and type(privateServerId) == "string" and privateServerId ~= ""
+    self.PrivateServerStatusProvider = provider
+end
+
+local function isReplicatedPrivateServerMarker(value)
+    if value == true then
+        return true
+    end
+
+    if type(value) == "string" then
+        local normalized = normalizeLookupKey(value)
+        return normalized == "true" or normalized == "private" or normalized == "vip"
+    end
+
+    return false
+end
+
+function LyraMacro:IsPrivateServer()
+    if type(self.PrivateServerStatusProvider) == "function" then
+        local checked, isPrivate = pcall(self.PrivateServerStatusProvider)
+
+        if checked then
+            return isPrivate == true
+        end
+
+        warn("[LyraMacro] Private server status provider failed: " .. tostring(isPrivate))
+        return false
+    end
+
+    for _, root in ipairs({ LocalPlayer, ReplicatedStorage, workspace }) do
+        for _, markerName in ipairs(PRIVATE_SERVER_MARKER_NAMES) do
+            if isReplicatedPrivateServerMarker(readAttribute(root, markerName)) then
+                return true
+            end
+
+            local marker = safeFindFirstChild(root, markerName)
+
+            if marker and isReplicatedPrivateServerMarker(readInstanceValue(marker)) then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
