@@ -6,7 +6,8 @@
     <meta name="description" content="Lyra developer dashboard for scripts, key systems, and verification analytics.">
     <meta name="theme-color" content="#0c0e12">
     <title>Lyra Developer Console</title>
-    <link rel="icon" type="image/webp" href="../assets/towers/commander.webp">
+    <link rel="icon" type="image/png" href="../assets/branding/lyra-icon.png">
+    <link rel="apple-touch-icon" href="../assets/branding/lyra-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
@@ -1156,15 +1157,17 @@
             height: 34px;
             display: grid;
             place-items: center;
+            overflow: hidden;
             border: 1px solid rgba(195, 166, 255, 0.42);
             border-radius: 5px;
-            background: rgba(195, 166, 255, 0.1);
-            color: var(--accent-1);
+            background: #07080a;
         }
 
-        .sidebar-mark svg {
-            width: 17px;
-            height: 17px;
+        .sidebar-mark img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scale(1.08);
         }
 
         .brand h1 {
@@ -1816,7 +1819,7 @@
 
     <header class="mobile-header" aria-label="Dashboard header">
         <div class="mobile-brand">
-            <span class="sidebar-mark" aria-hidden="true"><i data-lucide="command"></i></span>
+            <span class="sidebar-mark" aria-hidden="true"><img src="../assets/branding/lyra-icon.png" alt=""></span>
             <strong id="mobile-panel-title">Analytics Overview</strong>
         </div>
         <button class="mobile-menu-button" id="sidebar-toggle" type="button" aria-label="Open dashboard navigation" aria-expanded="false" aria-controls="dashboard-sidebar"><i data-lucide="menu"></i></button>
@@ -1931,7 +1934,7 @@ create table public.key_redeems (
         <!-- Sidebar Navigation -->
         <aside class="sidebar" id="dashboard-sidebar">
             <div class="brand">
-                <span class="sidebar-mark" aria-hidden="true"><i data-lucide="command"></i></span>
+                <span class="sidebar-mark" aria-hidden="true"><img src="../assets/branding/lyra-icon.png" alt=""></span>
                 <div><h1>Lyra UI Library</h1><p>Developer Console</p></div>
             </div>
             <nav class="sidebar-nav" aria-label="Dashboard navigation">

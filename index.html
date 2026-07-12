@@ -6,7 +6,8 @@
     <meta name="description" content="Lyra Macro records and replays complete tower defense strategies with map-aware lobby automation.">
     <meta name="theme-color" content="#0c0e12">
     <title>Lyra Macro | Autostrategy Toolkit</title>
-    <link rel="icon" type="image/webp" href="assets/towers/commander.webp">
+    <link rel="icon" type="image/png" href="assets/branding/lyra-icon.png">
+    <link rel="apple-touch-icon" href="assets/branding/lyra-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
@@ -134,15 +135,16 @@
             height: 30px;
             display: grid;
             place-items: center;
+            overflow: hidden;
             border: 1px solid rgba(195, 166, 255, 0.52);
-            background: rgba(195, 166, 255, 0.12);
-            color: var(--lavender);
+            background: #07080a;
         }
 
-        .brand-mark svg {
-            width: 17px;
-            height: 17px;
-            stroke-width: 2.6;
+        .brand-mark img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scale(1.08);
         }
 
         .brand-copy {
@@ -1510,7 +1512,7 @@
     <header class="topbar">
         <div class="shell nav-inner">
             <a class="brand" href="#top" aria-label="Lyra Macro home">
-                <span class="brand-mark" aria-hidden="true"><i data-lucide="scan-line"></i></span>
+                <span class="brand-mark" aria-hidden="true"><img src="assets/branding/lyra-icon.png" alt=""></span>
                 <span class="brand-copy"><strong>LYRA MACRO</strong><span>AUTOSTRATEGY SYSTEM</span></span>
             </a>
 
