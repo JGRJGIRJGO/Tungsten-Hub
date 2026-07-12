@@ -1849,7 +1849,9 @@ function LyraMacro:FindElevatorForMap(mapName)
     return nil, "No elevator currently has map " .. tostring(mapName) .. "."
 end
 
-function LyraMacro:EnterElevatorForMap(mapName)
+function LyraMacro:EnterElevatorForMap(mapName, options)
+    options = options or {}
+
     if game.PlaceId ~= LOBBY_PLACE_ID then
         return false, "Elevators can only be entered from lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
     end
@@ -1861,25 +1863,32 @@ function LyraMacro:EnterElevatorForMap(mapName)
     end
 
     local character = LocalPlayer.Character
-    local touch = elevator:FindFirstChild("Touch")
 
-    if not character or not touch then
-        return false, "The selected elevator is missing its character or Touch part."
+    if not character then
+        return false, "The local character is not available for elevator entry."
     end
 
-    local movedToTouch, moveError = pcall(function()
-        character:PivotTo(touch.CFrame + Vector3.new(0, 3, 0))
-    end)
+    if options.UseTouch ~= false then
+        local touch = elevator:FindFirstChild("Touch")
 
-    if not movedToTouch then
-        return false, "Could not move to elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(moveError)
-    end
+        if not touch then
+            return false, "The selected elevator is missing its Touch part."
+        end
 
-    -- Let the game's Touch listener perform its normal entry flow first.
-    task.wait(0.35)
+        local movedToTouch, moveError = pcall(function()
+            character:PivotTo(touch.CFrame + Vector3.new(0, 3, 0))
+        end)
 
-    if self.AutoRecordTeleportArmed then
-        return true, elevatorMapTitle
+        if not movedToTouch then
+            return false, "Could not move to elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(moveError)
+        end
+
+        -- Preserve the game controller's normal touch-first behavior for manual entry.
+        task.wait(0.35)
+
+        if self.AutoRecordTeleportArmed then
+            return true, elevatorMapTitle
+        end
     end
 
     local invoked, acceptedOrError = pcall(function()
@@ -1928,7 +1937,11 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 end
             end
 
-            local entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap)
+            -- Avoid the lobby Touch controller here: its wrapper misbinds the raw
+            -- RemoteFunction and errors before the normal server entry is reached.
+            local entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap, {
+                UseTouch = false,
+            })
 
             if entered then
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
