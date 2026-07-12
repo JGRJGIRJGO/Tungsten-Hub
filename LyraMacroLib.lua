@@ -1824,6 +1824,18 @@ function LyraMacro:IsPrivateServer()
     return false
 end
 
+function LyraMacro:ShouldUsePrivateServerWorkflow()
+    if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
+        return true, "configured privateServerLinkCode"
+    end
+
+    if self:IsPrivateServer() then
+        return true, "replicated private-server status"
+    end
+
+    return false, "private-server status is unavailable and no privateServerLinkCode is configured"
+end
+
 function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
     local options
     local privateServerLinkCode
@@ -1871,8 +1883,10 @@ local function getTeleportQueueFunction()
 end
 
 function LyraMacro:_sendPrivateServerCommand(command)
-    if not self:IsPrivateServer() then
-        return false, "Private-server commands are disabled outside private servers."
+    local privateWorkflowEnabled, privateWorkflowReason = self:ShouldUsePrivateServerWorkflow()
+
+    if not privateWorkflowEnabled then
+        return false, "Private-server commands are disabled: " .. tostring(privateWorkflowReason) .. "."
     end
 
     if type(command) ~= "string" or command == "" then
@@ -2049,9 +2063,13 @@ end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
-        local privateServer = self:IsPrivateServer()
+        local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
         local lastRefreshAt = -math.huge
         local lastRefreshError
+
+        if privateServer then
+            print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
+        end
 
         while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
             local elevator = self:FindElevatorForMap(replay.TargetMap)
