@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Lyra Key</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --ink: #101413;
+            --panel: #17201d;
+            --panel-raised: #1d2925;
+            --line: #384a43;
+            --paper: #eff5ef;
+            --muted: #a8b4ae;
+            --mint: #55dfae;
+            --sky: #5bb9e8;
+            --amber: #f0c36d;
+            --danger: #f37566;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            min-width: 320px;
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            overflow-x: hidden;
+            background: var(--ink);
+            color: var(--paper);
+            font-family: "Montserrat", sans-serif;
+        }
+
+        .shell {
+            width: min(560px, calc(100% - 32px));
+            padding: 24px 0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            color: var(--paper);
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+
+        .brand-mark {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            background: var(--mint);
+            color: var(--ink);
+        }
+
+        .brand-mark svg { width: 17px; height: 17px; stroke-width: 3; }
+
+        .key-panel {
+            position: relative;
+            padding: clamp(24px, 6vw, 42px);
+            overflow: hidden;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: 12px 12px 0 rgba(0, 0, 0, 0.24);
+        }
+
+        .key-panel::before {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            content: "";
+            background: var(--mint);
+        }
+
+        .eyebrow {
+            margin: 0 0 10px;
+            color: var(--mint);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0;
+        }
+
+        h1 {
+            max-width: 12ch;
+            margin: 0;
+            font-size: clamp(30px, 8vw, 48px);
+            line-height: 1.05;
+            letter-spacing: 0;
+        }
+
+        .date {
+            margin: 14px 0 28px;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 12px;
+        }
+
+        .key-field {
+            min-height: 88px;
+            display: grid;
+            align-items: center;
+            padding: 16px;
+            overflow-wrap: anywhere;
+            background: var(--panel-raised);
+            border: 1px solid var(--line);
+            color: var(--paper);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: clamp(13px, 3.2vw, 16px);
+            font-weight: 600;
+            line-height: 1.5;
+        }
+
+        .key-field.error {
+            color: var(--danger);
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        button {
+            min-height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0 16px;
+            border: 1px solid var(--mint);
+            background: var(--mint);
+            color: var(--ink);
+            cursor: pointer;
+            font: 800 13px "Montserrat", sans-serif;
+        }
+
+        button:hover { background: var(--sky); border-color: var(--sky); }
+        button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+        button:disabled { cursor: not-allowed; opacity: 0.45; }
+        button svg { width: 16px; height: 16px; stroke-width: 2.5; }
+
+        .status {
+            min-height: 18px;
+            margin: 0;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 11px;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 18px;
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 10px;
+        }
+
+        .footer a { color: var(--sky); text-decoration: none; }
+        .footer a:hover { color: var(--mint); }
+
+        @media (max-width: 420px) {
+            .shell { width: min(100% - 24px, 560px); }
+            .key-panel { padding: 24px; }
+            .footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <div class="brand" aria-label="Lyra">
+            <span class="brand-mark" aria-hidden="true"><i data-lucide="key-round"></i></span>
+            <span>LYRA ACCESS</span>
+        </div>
+
+        <section class="key-panel" aria-labelledby="key-title">
+            <p class="eyebrow">DAILY DEVICE KEY</p>
+            <h1 id="key-title">Your Lyra key</h1>
+            <p class="date" id="date-label">Preparing key...</p>
+            <output class="key-field" id="key-output" aria-live="polite">Preparing key...</output>
+            <div class="actions">
+                <button type="button" id="copy-button" disabled>
+                    <i data-lucide="copy" aria-hidden="true"></i>
+                    <span>Copy key</span>
+                </button>
+                <p class="status" id="status-message" aria-live="polite"></p>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <span>UTC daily rotation</span>
+            <a href="../">Return to Lyra Macro</a>
+        </footer>
+    </main>
+
+    <script>
+        const SALT = "LyraSecureKeySystem_V3_Reset_8F2D";
+        const output = document.getElementById("key-output");
+        const copyButton = document.getElementById("copy-button");
+        const statusMessage = document.getElementById("status-message");
+        const dateLabel = document.getElementById("date-label");
+        let generatedKey = "";
+
+        function getUtcDateCode(date) {
+            const day = String(date.getUTCDate()).padStart(2, "0");
+            const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+            return `${day}${month}${date.getUTCFullYear()}`;
+        }
+
+        function getUtcDateLabel(date) {
+            return new Intl.DateTimeFormat("en-US", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                timeZone: "UTC"
+            }).format(date) + " UTC";
+        }
+
+        async function sha256(value) {
+            const bytes = new TextEncoder().encode(value);
+            const digest = await crypto.subtle.digest("SHA-256", bytes);
+            return Array.from(new Uint8Array(digest))
+                .map((byte) => byte.toString(16).padStart(2, "0"))
+                .join("")
+                .toUpperCase();
+        }
+
+        async function copyKey() {
+            if (!generatedKey) return;
+
+            try {
+                await navigator.clipboard.writeText(generatedKey);
+            } catch (_) {
+                const fallback = document.createElement("textarea");
+                fallback.value = generatedKey;
+                fallback.style.position = "fixed";
+                fallback.style.opacity = "0";
+                document.body.appendChild(fallback);
+                fallback.select();
+                document.execCommand("copy");
+                fallback.remove();
+            }
+
+            statusMessage.textContent = "Key copied";
+            window.setTimeout(() => { statusMessage.textContent = ""; }, 1600);
+        }
+
+        async function initialize() {
+            const query = new URLSearchParams(window.location.search);
+            const hwid = (query.get("hwid") || "").trim().toUpperCase();
+            const now = new Date();
+            dateLabel.textContent = getUtcDateLabel(now);
+
+            if (!/^[A-F0-9]{64}$/.test(hwid)) {
+                output.textContent = "This key link is missing a valid device token. Reopen Get Key from Lyra.";
+                output.classList.add("error");
+                return;
+            }
+
+            generatedKey = "Lyra_" + await sha256(`${hwid}_${SALT}_${getUtcDateCode(now)}`);
+            output.textContent = generatedKey;
+            copyButton.disabled = false;
+        }
+
+        copyButton.addEventListener("click", copyKey);
+        initialize().catch(() => {
+            output.textContent = "The key could not be generated in this browser.";
+            output.classList.add("error");
+        });
+        lucide.createIcons();
+    </script>
+</body>
+</html>
