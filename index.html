@@ -85,13 +85,33 @@
         }
 
         .topbar {
-            position: absolute;
+            position: fixed;
             inset: 0 0 auto;
             z-index: 30;
             height: var(--nav-height);
             border-bottom: 1px solid rgba(243, 245, 248, 0.12);
             background: rgba(12, 14, 18, 0.84);
             backdrop-filter: blur(18px);
+            transition: border-color 180ms ease, box-shadow 180ms ease;
+        }
+
+        .topbar.scrolled {
+            border-color: var(--line-strong);
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+        }
+
+        .scroll-progress {
+            width: 100%;
+            height: 2px;
+            position: fixed;
+            inset: 0 auto auto 0;
+            z-index: 60;
+            background: var(--lavender);
+            box-shadow: 0 0 12px rgba(195, 166, 255, 0.42);
+            pointer-events: none;
+            transform: scaleX(0);
+            transform-origin: left center;
+            will-change: transform;
         }
 
         .nav-inner {
@@ -220,6 +240,16 @@
             z-index: 5;
             padding-top: var(--nav-height);
         }
+
+        .hero-copy-block > * {
+            animation: hero-enter 560ms ease both;
+        }
+
+        .hero-copy-block > :nth-child(2) { animation-delay: 70ms; }
+        .hero-copy-block > :nth-child(3) { animation-delay: 140ms; }
+        .hero-copy-block > :nth-child(4) { animation-delay: 210ms; }
+        .hero-copy-block > :nth-child(5) { animation-delay: 280ms; }
+        .hero-copy-block > :nth-child(6) { animation-delay: 350ms; }
 
         .eyebrow,
         .section-kicker {
@@ -385,6 +415,7 @@
             z-index: 1;
             overflow: hidden;
             pointer-events: none;
+            animation: battlefield-enter 760ms ease both;
         }
 
         .field-grid {
@@ -411,6 +442,8 @@
 
         .field-grid span.path {
             background: rgba(105, 202, 237, 0.14);
+            animation: route-pulse 3.2s ease-in-out infinite;
+            animation-delay: var(--pulse-delay, 0s);
         }
 
         .field-grid span.target {
@@ -429,6 +462,8 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            transition: transform 180ms ease-out;
+            will-change: transform;
         }
 
         .tower-figure.commander {
@@ -468,6 +503,77 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            transition: transform 220ms ease-out;
+            will-change: transform;
+        }
+
+        .field-scan {
+            width: 74%;
+            height: 1px;
+            position: absolute;
+            top: 14%;
+            left: 15%;
+            z-index: 3;
+            background: rgba(105, 202, 237, 0.72);
+            box-shadow: 0 0 12px rgba(105, 202, 237, 0.45);
+            opacity: 0;
+            transform: rotate(-16deg);
+            animation: field-scan 4.8s linear infinite;
+        }
+
+        .tracer {
+            position: absolute;
+            z-index: 4;
+            display: block;
+            transform-origin: left center;
+        }
+
+        .tracer > span {
+            width: 100%;
+            height: 1px;
+            position: relative;
+            display: block;
+            background: var(--amber);
+            opacity: 0;
+            transform: scaleX(0);
+            transform-origin: left center;
+            animation: tracer-fire 2.8s ease-out infinite;
+        }
+
+        .tracer > span::after {
+            width: 4px;
+            height: 4px;
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            content: "";
+            border-radius: 50%;
+            background: var(--amber);
+            box-shadow: 0 0 8px rgba(239, 197, 105, 0.72);
+        }
+
+        .tracer-a {
+            width: 164px;
+            right: 27%;
+            bottom: 42%;
+            transform: rotate(-21deg);
+        }
+
+        .tracer-b {
+            width: 124px;
+            right: 43%;
+            top: 37%;
+            transform: rotate(14deg);
+        }
+
+        .tracer-b > span {
+            background: var(--cyan);
+            animation-delay: -1.35s;
+        }
+
+        .tracer-b > span::after {
+            background: var(--cyan);
+            box-shadow: 0 0 8px rgba(105, 202, 237, 0.72);
         }
 
         .enemy-figure.normal {
@@ -758,10 +864,24 @@
             align-items: center;
             border-bottom: 1px solid var(--line);
             font: 500 10px "JetBrains Mono", monospace;
+            transition: background 180ms ease, opacity 180ms ease;
         }
 
         .log-row:last-child {
             border-bottom: 0;
+        }
+
+        .log-row.is-active {
+            background: rgba(195, 166, 255, 0.08);
+        }
+
+        .log-row.is-active .log-type {
+            border-color: rgba(195, 166, 255, 0.55);
+            color: var(--lavender);
+        }
+
+        .log-row.is-complete {
+            opacity: 0.56;
         }
 
         .log-index,
@@ -997,6 +1117,16 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
+        @keyframes hero-enter {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes battlefield-enter {
+            from { transform: translateX(26px); }
+            to { transform: translateX(0); }
+        }
+
         @keyframes tower-float {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-8px); }
@@ -1015,6 +1145,25 @@
         @keyframes status-blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.35; }
+        }
+
+        @keyframes route-pulse {
+            0%, 68%, 100% { background: rgba(105, 202, 237, 0.14); }
+            78% { background: rgba(105, 202, 237, 0.32); }
+        }
+
+        @keyframes field-scan {
+            0% { opacity: 0; translate: 0 -26px; }
+            12% { opacity: 0.72; }
+            78% { opacity: 0.34; }
+            100% { opacity: 0; translate: 0 460px; }
+        }
+
+        @keyframes tracer-fire {
+            0%, 66% { opacity: 0; transform: scaleX(0); }
+            70% { opacity: 1; transform: scaleX(0); }
+            83% { opacity: 0.9; transform: scaleX(1); }
+            90%, 100% { opacity: 0; transform: scaleX(1); }
         }
 
         @media (max-width: 900px) {
@@ -1198,6 +1347,10 @@
                 display: none;
             }
 
+            .scene-status {
+                display: none;
+            }
+
             .target-ring {
                 right: 29%;
             }
@@ -1353,6 +1506,7 @@
     </style>
 </head>
 <body>
+    <span class="scroll-progress" id="scroll-progress" aria-hidden="true"></span>
     <header class="topbar">
         <div class="shell nav-inner">
             <a class="brand" href="#top" aria-label="Lyra Macro home">
@@ -1386,11 +1540,14 @@
             <div class="battlefield" aria-hidden="true">
                 <span class="scene-status">Strategy surface online</span>
                 <div class="field-grid" id="field-grid"></div>
-                <figure class="tower-figure commander"><img src="assets/towers/commander.webp" alt=""></figure>
-                <figure class="tower-figure minigunner"><img src="assets/towers/minigunner.webp" alt=""></figure>
-                <figure class="tower-figure commando"><img src="assets/towers/commando.webp" alt=""></figure>
-                <figure class="enemy-figure normal"><img src="assets/enemies/normal.webp" alt=""></figure>
-                <figure class="enemy-figure fallen-king"><img src="assets/enemies/fallen-king.webp" alt=""></figure>
+                <span class="field-scan"></span>
+                <span class="tracer tracer-a"><span></span></span>
+                <span class="tracer tracer-b"><span></span></span>
+                <figure class="tower-figure commander" data-depth="0.45"><img src="assets/towers/commander.webp" alt=""></figure>
+                <figure class="tower-figure minigunner" data-depth="0.68"><img src="assets/towers/minigunner.webp" alt=""></figure>
+                <figure class="tower-figure commando" data-depth="0.34"><img src="assets/towers/commando.webp" alt=""></figure>
+                <figure class="enemy-figure normal" data-depth="0.24"><img src="assets/enemies/normal.webp" alt=""></figure>
+                <figure class="enemy-figure fallen-king" data-depth="0.18"><img src="assets/enemies/fallen-king.webp" alt=""></figure>
                 <span class="target-ring"></span>
             </div>
 
@@ -1572,14 +1729,57 @@
         const menuButton = document.getElementById("menu-button");
         const mobileMenu = document.getElementById("mobile-menu");
         const fieldGrid = document.getElementById("field-grid");
+        const topbar = document.querySelector(".topbar");
+        const scrollProgress = document.getElementById("scroll-progress");
+        const hero = document.querySelector(".hero");
+        const battlefield = document.querySelector(".battlefield");
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const pathCells = new Set([2, 3, 4, 12, 20, 21, 22, 23, 31, 39, 40, 41, 42, 43]);
         const targetCells = new Set([11, 28, 46]);
+        let pathIndex = 0;
 
         for (let index = 1; index <= 48; index += 1) {
             const cell = document.createElement("span");
-            if (pathCells.has(index)) cell.classList.add("path");
+            if (pathCells.has(index)) {
+                cell.classList.add("path");
+                cell.style.setProperty("--pulse-delay", `${pathIndex * 0.13}s`);
+                pathIndex += 1;
+            }
             if (targetCells.has(index)) cell.classList.add("target");
             fieldGrid.appendChild(cell);
+        }
+
+        function updateScrollEffects() {
+            const scrollRange = document.documentElement.scrollHeight - window.innerHeight;
+            const progress = scrollRange > 0 ? Math.min(window.scrollY / scrollRange, 1) : 0;
+            scrollProgress.style.transform = `scaleX(${progress})`;
+            topbar.classList.toggle("scrolled", window.scrollY > 18);
+        }
+
+        window.addEventListener("scroll", updateScrollEffects, { passive: true });
+        window.addEventListener("resize", updateScrollEffects);
+        updateScrollEffects();
+
+        if (!reducedMotion && window.matchMedia("(pointer: fine)").matches) {
+            const parallaxImages = Array.from(battlefield.querySelectorAll("[data-depth] img"));
+            let parallaxFrame = 0;
+
+            hero.addEventListener("pointermove", (event) => {
+                const rect = hero.getBoundingClientRect();
+                const offsetX = (event.clientX - rect.left) / rect.width - 0.5;
+                const offsetY = (event.clientY - rect.top) / rect.height - 0.5;
+                window.cancelAnimationFrame(parallaxFrame);
+                parallaxFrame = window.requestAnimationFrame(() => {
+                    parallaxImages.forEach((image) => {
+                        const depth = Number(image.parentElement.dataset.depth || 0.2);
+                        image.style.transform = `translate(${offsetX * depth * 24}px, ${offsetY * depth * 18}px)`;
+                    });
+                });
+            });
+
+            hero.addEventListener("pointerleave", () => {
+                parallaxImages.forEach((image) => { image.style.transform = "translate(0, 0)"; });
+            });
         }
 
         async function copyLoader(button) {
@@ -1634,6 +1834,26 @@
         }, { threshold: 0.14 });
 
         document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
+
+        const logRows = Array.from(document.querySelectorAll(".log-row"));
+        if (!reducedMotion && logRows.length) {
+            let activeLogRow = 0;
+            const advanceLog = () => {
+                logRows.forEach((row, index) => {
+                    row.classList.toggle("is-active", index === activeLogRow);
+                    row.classList.toggle("is-complete", index < activeLogRow);
+                });
+                activeLogRow = (activeLogRow + 1) % logRows.length;
+                if (activeLogRow === 0) {
+                    logRows.forEach((row) => row.classList.remove("is-complete"));
+                }
+            };
+            advanceLog();
+            window.setInterval(() => {
+                if (!document.hidden) advanceLog();
+            }, 1250);
+        }
+
         lucide.createIcons();
     </script>
 </body>

@@ -1010,6 +1010,118 @@
             background: var(--surface-hover);
         }
 
+        .google-btn:disabled {
+            border-color: var(--stroke-color);
+            background: #111419;
+            color: var(--text-muted);
+            cursor: not-allowed;
+            opacity: 0.58;
+        }
+
+        .provider-status-row {
+            min-height: 30px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 28px;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .provider-status {
+            margin: 0;
+            color: var(--text-muted);
+            font: 500 9px/1.5 "JetBrains Mono", monospace;
+        }
+
+        .provider-status.ready {
+            color: var(--success);
+        }
+
+        .provider-status.unavailable {
+            color: var(--warning);
+        }
+
+        .provider-status a {
+            color: var(--accent-2);
+            font: inherit;
+            text-decoration: none;
+        }
+
+        .provider-status a:hover {
+            color: var(--text-main);
+        }
+
+        .provider-refresh {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            background: #111419;
+            color: var(--text-dark);
+            cursor: pointer;
+        }
+
+        .provider-refresh:hover {
+            border-color: var(--stroke-strong);
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .provider-refresh:disabled {
+            cursor: wait;
+            opacity: 0.48;
+        }
+
+        .provider-refresh svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        .oauth-note {
+            min-height: 54px;
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) auto;
+            gap: 11px;
+            align-items: center;
+            margin: -5px 0 22px;
+            padding-bottom: 17px;
+            border-bottom: 1px solid var(--stroke-color);
+        }
+
+        .oauth-note > svg {
+            width: 17px;
+            height: 17px;
+            color: var(--accent-1);
+        }
+
+        .oauth-note strong,
+        .oauth-note span {
+            display: block;
+        }
+
+        .oauth-note strong {
+            color: var(--text-main);
+            font-size: 10px;
+        }
+
+        .oauth-note span {
+            margin-top: 3px;
+            color: var(--text-muted);
+            font-size: 9px;
+        }
+
+        .oauth-note a {
+            color: var(--accent-2);
+            font: 600 9px "JetBrains Mono", monospace;
+            text-decoration: none;
+        }
+
+        .oauth-note a:hover {
+            color: var(--text-main);
+        }
+
         .dashboard-wrapper {
             width: 100%;
             min-height: 100svh;
@@ -1618,6 +1730,14 @@
                 padding: 14px;
             }
 
+            .oauth-note {
+                grid-template-columns: 24px minmax(0, 1fr);
+            }
+
+            .oauth-note a {
+                grid-column: 2;
+            }
+
             .stats-grid {
                 grid-template-columns: 1fr;
             }
@@ -1747,6 +1867,12 @@ create table public.key_redeems (
                 </div>
             </div>
 
+            <div class="oauth-note">
+                <i data-lucide="badge-check"></i>
+                <div><strong>Google sign-in requires provider setup</strong><span>Enable Google under Supabase Authentication &gt; Providers before using OAuth.</span></div>
+                <a href="https://supabase.com/docs/guides/auth/social-login/auth-google" target="_blank" rel="noreferrer">Setup guide</a>
+            </div>
+
             <div class="input-group">
                 <label>Supabase Project URL (Settings -> API)</label>
                 <input type="text" class="input-field" id="setup-url" placeholder="https://your-project.supabase.co">
@@ -1783,7 +1909,7 @@ create table public.key_redeems (
 
             <div class="divider">or</div>
 
-            <button class="google-btn" id="google-login-btn">
+            <button class="google-btn" id="google-login-btn" disabled>
                 <svg class="google-icon" viewBox="0 0 24 24">
                     <path fill="#EA4335" d="M12 5.04c1.67 0 3.19.57 4.38 1.69l3.27-3.27C17.67 1.58 15.01 1 12 1 7.37 1 3.4 3.63 1.45 7.45l3.86 3C6.26 7.4 8.87 5.04 12 5.04z"/>
                     <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.47h6.47c-.28 1.48-1.12 2.74-2.38 3.58l3.7 2.87c2.16-2 3.7-4.94 3.7-8.56z"/>
@@ -1792,6 +1918,10 @@ create table public.key_redeems (
                 </svg>
                 <span>Continue with Google</span>
             </button>
+            <div class="provider-status-row">
+                <p class="provider-status" id="google-provider-status" aria-live="polite">Checking Google provider...</p>
+                <button class="provider-refresh" id="google-provider-refresh" type="button" aria-label="Recheck Google provider" title="Recheck provider"><i data-lucide="refresh-cw"></i></button>
+            </div>
         </div>
     </div>
 
@@ -1983,6 +2113,10 @@ create table public.key_redeems (
         const sidebarToggle = document.getElementById('sidebar-toggle');
         const sidebarScrim = document.getElementById('sidebar-scrim');
         const mobilePanelTitle = document.getElementById('mobile-panel-title');
+        const googleLoginButton = document.getElementById('google-login-btn');
+        const googleProviderStatus = document.getElementById('google-provider-status');
+        const googleProviderRefresh = document.getElementById('google-provider-refresh');
+        let googleProviderEnabled = false;
 
         function setSidebarOpen(open) {
             dashboardSidebar.classList.toggle('open', open);
@@ -2009,6 +2143,83 @@ create table public.key_redeems (
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
+        function getGoogleProviderSetupUrl(projectUrl) {
+            try {
+                const projectRef = new URL(projectUrl).hostname.split('.')[0];
+                if (projectRef) {
+                    return `https://supabase.com/dashboard/project/${projectRef}/auth/providers`;
+                }
+            } catch (_) {}
+            return 'https://supabase.com/docs/guides/auth/social-login/auth-google';
+        }
+
+        function setGoogleProviderState(state, message, projectUrl = '') {
+            googleProviderEnabled = state === 'ready';
+            googleLoginButton.disabled = !googleProviderEnabled;
+            googleProviderStatus.classList.remove('ready', 'unavailable');
+            googleProviderStatus.textContent = message;
+
+            if (state === 'ready') {
+                googleProviderStatus.classList.add('ready');
+            } else if (state === 'unavailable') {
+                googleProviderStatus.classList.add('unavailable');
+                const link = document.createElement('a');
+                link.href = getGoogleProviderSetupUrl(projectUrl);
+                link.target = '_blank';
+                link.rel = 'noreferrer';
+                link.textContent = projectUrl ? ' Open providers.' : ' Setup guide.';
+                googleProviderStatus.appendChild(link);
+            }
+        }
+
+        async function refreshGoogleProviderStatus() {
+            const url = localStorage.getItem('lyra_sb_url') || '';
+            const key = localStorage.getItem('lyra_sb_key') || '';
+
+            if (!url || !key) {
+                setGoogleProviderState('unavailable', 'Connect a Supabase project to check Google sign-in.');
+                return false;
+            }
+
+            googleLoginButton.disabled = true;
+            googleProviderRefresh.disabled = true;
+            googleProviderStatus.classList.remove('ready', 'unavailable');
+            googleProviderStatus.textContent = 'Checking Google provider...';
+
+            try {
+                const settingsUrl = new URL('/auth/v1/settings', url).href;
+                const response = await fetch(settingsUrl, {
+                    headers: { apikey: key }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Provider check returned ${response.status}`);
+                }
+
+                const settings = await response.json();
+                if (settings.external && settings.external.google === true) {
+                    setGoogleProviderState('ready', 'Google provider ready.');
+                    return true;
+                }
+
+                setGoogleProviderState(
+                    'unavailable',
+                    'Google is disabled for this Supabase project.',
+                    url
+                );
+                return false;
+            } catch (_) {
+                setGoogleProviderState(
+                    'unavailable',
+                    'Google provider status could not be verified.',
+                    url
+                );
+                return false;
+            } finally {
+                googleProviderRefresh.disabled = false;
+            }
+        }
+
         // --- Initialize Connection to Supabase ---
         function initSupabase() {
             const url = localStorage.getItem('lyra_sb_url');
@@ -2018,6 +2229,7 @@ create table public.key_redeems (
                 try {
                     supabaseClient = supabase.createClient(url, key);
                     setupScreen.classList.add('hidden');
+                    refreshGoogleProviderStatus();
                     checkSession();
                 } catch(e) {
                     showToast("Invalid credentials format", false);
@@ -2051,6 +2263,7 @@ create table public.key_redeems (
             setupScreen.classList.remove('hidden');
             loginScreen.classList.add('hidden');
             dashboardWrapper.classList.remove('visible');
+            setGoogleProviderState('unavailable', 'Connect a Supabase project to check Google sign-in.');
         });
 
         // --- Session check ---
@@ -2105,14 +2318,35 @@ create table public.key_redeems (
             }
         });
 
-        document.getElementById('google-login-btn').addEventListener('click', async () => {
-            const { error } = await supabaseClient.auth.signInWithOAuth({
+        googleProviderRefresh.addEventListener('click', refreshGoogleProviderStatus);
+
+        googleLoginButton.addEventListener('click', async () => {
+            const providerReady = await refreshGoogleProviderStatus();
+            if (!providerReady || !googleProviderEnabled) {
+                showToast('Enable Google in Supabase Authentication > Providers first.', false);
+                return;
+            }
+
+            googleLoginButton.disabled = true;
+            googleProviderStatus.textContent = 'Opening Google sign-in...';
+            googleProviderStatus.classList.add('ready');
+
+            const redirectTo = new URL(window.location.pathname, window.location.origin).href;
+            const { data, error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: window.location.href
+                    redirectTo,
+                    skipBrowserRedirect: true
                 }
             });
-            if (error) showToast(error.message, false);
+
+            if (error || !data || !data.url) {
+                showToast(error ? error.message : 'Google sign-in could not be started.', false);
+                setGoogleProviderState('ready', 'Google provider ready.');
+                return;
+            }
+
+            window.location.assign(data.url);
         });
 
         document.getElementById('logout-btn').addEventListener('click', async () => {
