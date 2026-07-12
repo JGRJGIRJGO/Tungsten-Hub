@@ -1,7 +1,7 @@
 --[[
-    Lyra UI Library UI Library (V2 - Fluent & Rayfield Redesign)
-    A professional, modern, and draggable dark-themed UI library for Roblox.
-    Designed with a Fluent Windows 11 style structure, smooth bouncing transitions, and modular themes.
+    Lyra UI Library (V3)
+    A compact, high-contrast command surface for Lyra's strategy tools.
+    The public API intentionally remains compatible with the prior library.
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -28,18 +28,18 @@ end
 
 local Lyra = {}
 
--- Pre-defined Premium Themes (Fluent inspired)
+-- Pre-defined theme presets. Lyra defaults to a graphite command-surface palette.
 Lyra.Themes = {
     Lyra = {
-        Background = Color3.fromRGB(20, 20, 22),       -- Fluent Dark Slate
-        Header = Color3.fromRGB(25, 25, 28),           -- Header/Sidebar Gray
-        Sidebar = Color3.fromRGB(25, 25, 28),          -- Sidebar Gray
-        Card = Color3.fromRGB(28, 28, 31),             -- Inner card panels
-        CardStroke = Color3.fromRGB(42, 42, 46),       -- Fluent card border
-        AccentGrad1 = Color3.fromRGB(0, 150, 255),     -- Windows 11 Blue
-        AccentGrad2 = Color3.fromRGB(0, 204, 255),     -- Light Blue
-        TextMain = Color3.fromRGB(245, 245, 250),      -- White
-        TextDark = Color3.fromRGB(160, 160, 165),      -- Muted Gray
+        Background = Color3.fromRGB(14, 16, 22),
+        Header = Color3.fromRGB(19, 22, 30),
+        Sidebar = Color3.fromRGB(17, 19, 27),
+        Card = Color3.fromRGB(27, 31, 42),
+        CardStroke = Color3.fromRGB(53, 61, 78),
+        AccentGrad1 = Color3.fromRGB(93, 238, 207),
+        AccentGrad2 = Color3.fromRGB(103, 183, 255),
+        TextMain = Color3.fromRGB(244, 247, 255),
+        TextDark = Color3.fromRGB(164, 173, 193),
     },
     Nebula = {
         Background = Color3.fromRGB(14, 11, 22),
@@ -252,6 +252,12 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         subText = subtitleText or "Roblox Edition"
     end
 
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(700, 460)
+    local windowWidth = math.clamp(viewportSize.X - 32, 360, 700)
+    local windowHeight = math.clamp(viewportSize.Y - 80, 300, 460)
+    local railWidth = windowWidth >= 600 and 184 or 120
+
     -- Registry of instances to update dynamically on theme change
     local themeObjects = {
         Backgrounds = {},
@@ -269,20 +275,22 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         Name = "Lyra",
         Parent = Parent,
         ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        DisplayOrder = 999,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     })
 
     -- Main Container (handles non-clipped shadow drawing)
     local MainContainer = makeElement("Frame", {
         Name = "MainContainer",
-        Size = UDim2.new(0, 560, 0, 390), -- Fluent-spec size ratio
-        Position = UDim2.new(0.5, -280, 0.5, -195),
+        Size = UDim2.fromOffset(windowWidth, windowHeight),
+        Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
         BackgroundTransparency = 1,
         ClipsDescendants = false,
         Parent = ScreenGui
     })
 
-    -- Large Frosted Drop Shadow Decal
+    -- Soft framed shadow
     local Shadow = makeElement("ImageLabel", {
         Name = "Shadow",
         Size = UDim2.new(1, 40, 1, 40),
@@ -290,20 +298,20 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         BackgroundTransparency = 1,
         Image = "rbxassetid://6014261993",
         ImageColor3 = Color3.fromRGB(0, 0, 0),
-        ImageTransparency = 0.5,
+        ImageTransparency = 0.35,
         ScaleType = Enum.ScaleType.Slice,
         SliceCenter = Rect.new(10, 10, 20, 20),
         ZIndex = 0,
         Parent = MainContainer
     })
 
-    -- Main Frame (Sleek Glassmorphic Acrylic style)
+    -- Main shell
     local MainFrame = makeElement("Frame", {
         Name = "MainFrame",
         Size = UDim2.new(1, 0, 1, 0),
         Position = UDim2.new(0, 0, 0, 0),
         BackgroundColor3 = Lyra.Theme.Background,
-        BackgroundTransparency = 0.04, -- Semi-translucent glass
+        BackgroundTransparency = 0.01,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 1,
@@ -312,26 +320,27 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     table.insert(themeObjects.Backgrounds, MainFrame)
 
     local MainCorner = makeElement("UICorner", {
-        CornerRadius = UDim.new(0, 10), -- Sleek rounded edges
+        CornerRadius = UDim.new(0, 8),
         Parent = MainFrame
     })
 
     -- Thin transparent outline stroke
     local MainStroke = makeElement("UIStroke", {
-        Color = Color3.fromRGB(255, 255, 255),
-        Transparency = 0.88,
+        Color = Lyra.Theme.CardStroke,
+        Transparency = 0.25,
         Thickness = 1,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
         Parent = MainFrame
     })
     table.insert(themeObjects.Strokes, MainStroke)
 
-    -- Sidebar (Navigation Panel on the Left)
+    -- Compact navigation rail
     local Sidebar = makeElement("Frame", {
         Name = "Sidebar",
-        Size = UDim2.new(0, 160, 1, 0),
+        Size = UDim2.new(0, railWidth, 1, 0),
         Position = UDim2.new(0, 0, 0, 0),
-        BackgroundTransparency = 1,
+        BackgroundColor3 = Lyra.Theme.Sidebar,
+        BackgroundTransparency = 0,
         BorderSizePixel = 0,
         ZIndex = 3,
         Parent = MainFrame
@@ -343,11 +352,11 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         Parent = Sidebar
     })
 
-    -- Clean divider between Sidebar and Content (Glowing Neon Divider)
+    -- Rail divider
     local Separator = makeElement("Frame", {
         Name = "Separator",
-        Size = UDim2.new(0, 1, 1, 0),
-        Position = UDim2.new(1, -1, 0, 0),
+        Size = UDim2.new(0, 1, 1, -20),
+        Position = UDim2.new(1, -1, 0, 10),
         BorderSizePixel = 0,
         ZIndex = 4,
         Parent = Sidebar
@@ -363,23 +372,40 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     })
     table.insert(themeObjects.Gradients, SeparatorGrad)
 
-    -- App Brand/Title block in Sidebar
+    -- Lyra brand block
     local BrandContainer = makeElement("Frame", {
         Name = "Brand",
-        Size = UDim2.new(1, -10, 0, 50),
-        Position = UDim2.new(0, 10, 0, 10),
+        Size = UDim2.new(1, -24, 0, 58),
+        Position = UDim2.new(0, 12, 0, 12),
         BackgroundTransparency = 1,
         Parent = Sidebar
     })
 
+    local BrandMark = makeElement("Frame", {
+        Size = UDim2.new(0, 4, 0, 32),
+        Position = UDim2.new(0, 0, 0, 11),
+        BackgroundColor3 = Lyra.Theme.AccentGrad1,
+        BorderSizePixel = 0,
+        Parent = BrandContainer
+    })
+
+    makeElement("UICorner", {
+        CornerRadius = UDim.new(1, 0),
+        Parent = BrandMark
+    })
+
+    table.insert(themeObjects.Updaters, function(newTheme)
+        BrandMark.BackgroundColor3 = newTheme.AccentGrad1
+    end)
+
     local TitleLabel = makeElement("TextLabel", {
         Name = "Title",
-        Size = UDim2.new(1, 0, 0, 20),
-        Position = UDim2.new(0, 5, 0, 5),
+        Size = UDim2.new(1, -18, 0, 22),
+        Position = UDim2.new(0, 14, 0, 9),
         BackgroundTransparency = 1,
         Text = titleText,
         TextColor3 = Lyra.Theme.TextMain,
-        TextSize = 15,
+        TextSize = 16,
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = BrandContainer
@@ -388,8 +414,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
     local SubtitleLabel = makeElement("TextLabel", {
         Name = "Subtitle",
-        Size = UDim2.new(1, 0, 0, 15),
-        Position = UDim2.new(0, 5, 0, 22),
+        Size = UDim2.new(1, -18, 0, 15),
+        Position = UDim2.new(0, 14, 0, 31),
         BackgroundTransparency = 1,
         Text = subText,
         TextColor3 = Lyra.Theme.TextDark,
@@ -403,8 +429,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     -- Scrolling Frame for Tab List
     local SidebarScroll = makeElement("ScrollingFrame", {
         Name = "TabsList",
-        Size = UDim2.new(1, -10, 1, -75),
-        Position = UDim2.new(0, 5, 0, 65),
+        Size = UDim2.new(1, -16, 1, -92),
+        Position = UDim2.new(0, 8, 0, 82),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 0,
@@ -414,7 +440,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
     local SidebarScrollLayout = makeElement("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 3),
+        Padding = UDim.new(0, 6),
         Parent = SidebarScroll
     })
 
@@ -422,15 +448,17 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, SidebarScrollLayout.AbsoluteContentSize.Y)
     end)
 
-    -- Header Panel (Thin drag bar next to sidebar)
+    -- Utility header
     local DragBar = makeElement("Frame", {
         Name = "DragBar",
-        Size = UDim2.new(1, -160, 0, 35),
-        Position = UDim2.new(0, 160, 0, 0),
-        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -railWidth, 0, 42),
+        Position = UDim2.new(0, railWidth, 0, 0),
+        BackgroundColor3 = Lyra.Theme.Header,
+        BackgroundTransparency = 0,
         ZIndex = 2,
         Parent = MainFrame
     })
+    table.insert(themeObjects.Headers, DragBar)
 
     local HeaderGlowLine = makeElement("Frame", {
         Name = "HeaderGlowLine",
@@ -440,15 +468,10 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         Parent = DragBar
     })
     local HeaderGlowGrad = makeElement("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Lyra.Theme.AccentGrad1),
-            ColorSequenceKeypoint.new(0.5, Lyra.Theme.AccentGrad2),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
-        }),
+        Color = ColorSequence.new(Lyra.Theme.AccentGrad1, Lyra.Theme.AccentGrad2),
         Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.1),
-            NumberSequenceKeypoint.new(0.8, 0.4),
-            NumberSequenceKeypoint.new(1, 1)
+            NumberSequenceKeypoint.new(0, 0.15),
+            NumberSequenceKeypoint.new(1, 0.45)
         }),
         Parent = HeaderGlowLine
     })
@@ -457,8 +480,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     -- Window Controls Container (Minimize & Close buttons)
     local WindowControls = makeElement("Frame", {
         Name = "Controls",
-        Size = UDim2.new(0, 65, 1, 0),
-        Position = UDim2.new(1, -70, 0, 0),
+        Size = UDim2.new(0, 74, 1, 0),
+        Position = UDim2.new(1, -82, 0, 0),
         BackgroundTransparency = 1,
         Parent = DragBar
     })
@@ -466,12 +489,12 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     -- Minimize Button
     local MinBtn = makeElement("TextButton", {
         Name = "MinBtn",
-        Size = UDim2.new(0, 25, 0, 25),
-        Position = UDim2.new(0, 5, 0.5, -12),
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0, 5, 0.5, -15),
         BackgroundTransparency = 1,
         Text = "—",
         TextColor3 = Lyra.Theme.TextDark,
-        TextSize = 12,
+        TextSize = 16,
         Font = Enum.Font.GothamMedium,
         Parent = WindowControls
     })
@@ -480,12 +503,12 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     -- Close Button
     local CloseBtn = makeElement("TextButton", {
         Name = "CloseBtn",
-        Size = UDim2.new(0, 25, 0, 25),
-        Position = UDim2.new(0, 35, 0.5, -12),
+        Size = UDim2.new(0, 30, 0, 30),
+        Position = UDim2.new(0, 40, 0.5, -15),
         BackgroundTransparency = 1,
         Text = "×",
         TextColor3 = Lyra.Theme.TextDark,
-        TextSize = 18,
+        TextSize = 20,
         Font = Enum.Font.GothamMedium,
         Parent = WindowControls
     })
@@ -510,11 +533,11 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             lastPosition.X.Scale,
             lastPosition.X.Offset,
             lastPosition.Y.Scale,
-            lastPosition.Y.Offset + 195
+            lastPosition.Y.Offset + windowHeight / 2
         )
         
         local tween = TweenService:Create(MainContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Size = UDim2.new(0, 560, 0, 0),
+            Size = UDim2.fromOffset(windowWidth, 0),
             Position = targetPos
         })
         
@@ -535,15 +558,15 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             targetPos.X.Scale,
             targetPos.X.Offset,
             targetPos.Y.Scale,
-            targetPos.Y.Offset + 195
+            targetPos.Y.Offset + windowHeight / 2
         )
         
-        MainContainer.Size = UDim2.new(0, 560, 0, 0)
+        MainContainer.Size = UDim2.fromOffset(windowWidth, 0)
         MainContainer.Position = startPos
         MainContainer.Visible = true
         
         local tween = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 560, 0, 390),
+            Size = UDim2.fromOffset(windowWidth, windowHeight),
             Position = targetPos
         })
         
@@ -561,21 +584,28 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
     makeDraggable(DragBar, MainContainer)
 
-    -- Content Container (Right Panel)
+    -- Content work surface
     local PageContainer = makeElement("Frame", {
         Name = "PageContainer",
-        Size = UDim2.new(1, -170, 1, -45),
-        Position = UDim2.new(0, 170, 0, 45),
-        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -railWidth - 20, 1, -58),
+        Position = UDim2.new(0, railWidth + 10, 0, 50),
+        BackgroundColor3 = Lyra.Theme.Header,
+        BackgroundTransparency = 0.26,
         Parent = MainFrame
+    })
+    table.insert(themeObjects.Headers, PageContainer)
+
+    makeElement("UICorner", {
+        CornerRadius = UDim.new(0, 6),
+        Parent = PageContainer
     })
 
     -- Entrance Animation Definition
-    MainContainer.Size = UDim2.new(0, 560, 0, 0)
-    MainContainer.Position = UDim2.new(0.5, -280, 0.5, 0)
+    MainContainer.Size = UDim2.fromOffset(windowWidth, 0)
+    MainContainer.Position = UDim2.new(0.5, -windowWidth / 2, 0.5, 0)
     local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 560, 0, 390),
-        Position = UDim2.new(0.5, -280, 0.5, -195),
+        Size = UDim2.fromOffset(windowWidth, windowHeight),
+        Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
     })
 
     -- Helper functions for local Key caching
@@ -665,7 +695,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 Name = "KeyFrame",
                 Size = UDim2.new(1, 0, 1, 0),
                 BackgroundColor3 = Lyra.Theme.Background,
-                BackgroundTransparency = 0.04, -- Semi-translucent glass
+                BackgroundTransparency = 0.01,
                 BorderSizePixel = 0,
                 ClipsDescendants = true,
                 ZIndex = 1,
@@ -673,13 +703,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             
             local KeyCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 10),
+                CornerRadius = UDim.new(0, 8),
                 Parent = KeyFrame
             })
             
             local KeyStroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.28,
                 Thickness = 1,
                 Parent = KeyFrame
             })
@@ -689,7 +719,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             -- Header title
             local KeyHeader = makeElement("Frame", {
                 Size = UDim2.new(1, 0, 0, 35),
-                BackgroundTransparency = 1,
+                BackgroundColor3 = Lyra.Theme.Header,
+                BackgroundTransparency = 0,
                 Parent = KeyFrame
             })
             
@@ -740,7 +771,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 Size = UDim2.new(1, -30, 0, 34),
                 Position = UDim2.new(0, 15, 0, 85),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 Parent = KeyFrame
             })
@@ -751,8 +782,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             
             local BoxStroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.9,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.4,
                 Thickness = 1,
                 Parent = BoxFrame
             })
@@ -772,10 +803,10 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             
             KeyInput.Focused:Connect(function()
-                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
+                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
             end)
             KeyInput.FocusLost:Connect(function()
-                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.9}):Play()
+                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.4}):Play()
             end)
             
             -- Actions (Verify / Get Key Link)
@@ -928,7 +959,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     if UserInputService.TouchEnabled then
         local MobileButton = makeElement("ImageButton", {
             Name = "MobileToggle",
-            Size = UDim2.new(0, 45, 0, 45),
+            Size = UDim2.new(0, 42, 0, 42),
             Position = UDim2.new(0.05, 0, 0.15, 0),
             BackgroundColor3 = Lyra.Theme.Header,
             BorderSizePixel = 0,
@@ -952,7 +983,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         local ButtonLabel = makeElement("TextLabel", {
             Size = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
-            Text = "T",
+            Text = "L",
             TextColor3 = Lyra.Theme.TextMain,
             TextSize = 16,
             Font = Enum.Font.GothamBold,
@@ -1029,13 +1060,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
     function Window:CreateTab(tabName)
         tabName = tabName or "Tab"
-        
-        -- Fluent Sidebar Button (Glowing capsule style)
+
+        -- Dense rail item with a clear active state.
         local TabButton = makeElement("TextButton", {
             Name = tabName .. "_Btn",
-            Size = UDim2.new(1, -14, 0, 32),
-            Position = UDim2.new(0, 7, 0, 0),
-            BackgroundColor3 = Lyra.Theme.AccentGrad1,
+            Size = UDim2.new(1, -16, 0, 38),
+            Position = UDim2.new(0, 8, 0, 0),
+            BackgroundColor3 = Lyra.Theme.Card,
             BackgroundTransparency = 1,
             Text = "",
             AutoButtonColor = false,
@@ -1043,7 +1074,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         })
 
         local TabBtnCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 6),
+            CornerRadius = UDim.new(0, 5),
             Parent = TabButton
         })
 
@@ -1054,11 +1085,11 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             Parent = TabButton
         })
 
-        -- Rayfield-style Left Accent Bar Indicator
+        -- Left accent rail for the active tab.
         local ActiveIndicator = makeElement("Frame", {
             Name = "Indicator",
-            Size = UDim2.new(0, 3.5, 0.5, 0),
-            Position = UDim2.new(0, 0, 0.25, 0),
+            Size = UDim2.new(0, 3, 0, 20),
+            Position = UDim2.new(0, 0, 0.5, -10),
             BackgroundColor3 = Lyra.Theme.AccentGrad1,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -1082,13 +1113,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
         local TabLabel = makeElement("TextLabel", {
             Name = "Label",
-            Size = UDim2.new(1, -20, 1, 0),
-            Position = UDim2.new(0, 12, 0, 0),
+            Size = UDim2.new(1, -28, 1, 0),
+            Position = UDim2.new(0, 14, 0, 0),
             BackgroundTransparency = 1,
             Text = tabName,
             TextColor3 = Lyra.Theme.TextDark,
-            TextSize = 12.5,
-            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            Font = Enum.Font.GothamSemibold,
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = TabButton
         })
@@ -1097,20 +1128,20 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         -- Tab Content Scrolling Page
         local TabPage = makeElement("ScrollingFrame", {
             Name = tabName .. "_Page",
-            Size = UDim2.new(1, -10, 1, -10),
-            Position = UDim2.new(0, 5, 0, 5),
+            Size = UDim2.new(1, -20, 1, -20),
+            Position = UDim2.new(0, 10, 0, 10),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Visible = false,
-            ScrollBarThickness = 2,
-            ScrollBarImageColor3 = Lyra.Theme.CardStroke,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = Lyra.Theme.AccentGrad2,
             CanvasSize = UDim2.new(0, 0, 0, 0),
             Parent = PageContainer
         })
 
         local TabPageLayout = makeElement("UIListLayout", {
             SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 5),
+            Padding = UDim.new(0, 8),
             Parent = TabPage
         })
 
@@ -1129,7 +1160,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             if Window.ActiveTab then
                 TweenService:Create(Window.ActiveTab.Button.Label, TweenInfo.new(0.2), {TextColor3 = Lyra.Theme.TextDark}):Play()
                 TweenService:Create(Window.ActiveTab.Button.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-                TweenService:Create(Window.ActiveTab.Button, TweenInfo.new(0.2), {BackgroundTransparency = 1, BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+                TweenService:Create(Window.ActiveTab.Button, TweenInfo.new(0.2), {BackgroundTransparency = 1, BackgroundColor3 = Lyra.Theme.Card}):Play()
                 if Window.ActiveTab.Button:FindFirstChildOfClass("UIStroke") then
                     TweenService:Create(Window.ActiveTab.Button:FindFirstChildOfClass("UIStroke"), TweenInfo.new(0.2), {Transparency = 1}):Play()
                 end
@@ -1140,9 +1171,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             TweenService:Create(TabLabel, TweenInfo.new(0.2), {TextColor3 = Lyra.Theme.TextMain}):Play()
             TweenService:Create(ActiveIndicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
             
-            -- Soft card fill and glowing capsule for active tab button
-            TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.88, BackgroundColor3 = Lyra.Theme.AccentGrad1}):Play()
-            TweenService:Create(TabBtnStroke, TweenInfo.new(0.2), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.6}):Play()
+            TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.55, BackgroundColor3 = Lyra.Theme.AccentGrad1}):Play()
+            TweenService:Create(TabBtnStroke, TweenInfo.new(0.2), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.42}):Play()
             TabPage.Visible = true
         end
 
@@ -1151,7 +1181,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         TabButton.MouseEnter:Connect(function()
             if Window.ActiveTab ~= Tab then
                 TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = Lyra.Theme.TextMain}):Play()
-                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.94, BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.82, BackgroundColor3 = Lyra.Theme.Card}):Play()
             end
         end)
 
@@ -1167,29 +1197,29 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         end
 
         -- =====================================================================
-        -- COMPONENT CREATORS (Fluent Design Specs)
+        -- COMPONENT CREATORS
         -- =====================================================================
 
         function Tab:CreateLabel(textString)
             local LabelFrame = makeElement("Frame", {
                 Name = "LabelFrame",
-                Size = UDim2.new(1, -6, 0, 22),
+                Size = UDim2.new(1, -4, 0, 28),
                 BackgroundTransparency = 1,
                 Parent = TabPage
             })
 
             local TextLabel = makeElement("TextLabel", {
-                Size = UDim2.new(1, -10, 1, 0),
-                Position = UDim2.new(0, 5, 0, 0),
+                Size = UDim2.new(1, -12, 1, 0),
+                Position = UDim2.new(0, 6, 0, 0),
                 BackgroundTransparency = 1,
                 Text = textString,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamMedium,
+                TextColor3 = Lyra.Theme.TextDark,
+                TextSize = 11,
+                Font = Enum.Font.GothamSemibold,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = LabelFrame
             })
-            table.insert(themeObjects.MainText, TextLabel)
+            table.insert(themeObjects.DarkText, TextLabel)
 
             return {
                 UpdateText = function(newText)
@@ -1203,9 +1233,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local BtnFrame = makeElement("Frame", {
                 Name = "ButtonFrame",
-                Size = UDim2.new(1, -6, 0, 34),
+                Size = UDim2.new(1, -4, 0, 38),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
@@ -1217,8 +1247,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local Stroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.38,
                 Thickness = 1,
                 Parent = BtnFrame
             })
@@ -1228,29 +1258,29 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 BackgroundTransparency = 1,
                 Text = btnText,
                 TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12.5,
-                Font = Enum.Font.GothamMedium,
+                TextSize = 12,
+                Font = Enum.Font.GothamSemibold,
                 AutoButtonColor = false,
                 Parent = BtnFrame
             })
             table.insert(themeObjects.MainText, Button)
 
             Button.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
+                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
             end)
 
             Button.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88}):Play()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.78}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
+                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
             end)
 
             Button.MouseButton1Down:Connect(function()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.05), {Size = UDim2.new(1, -12, 0, 32), Position = UDim2.new(0, 3, 0, 1)}):Play()
+                TweenService:Create(BtnFrame, TweenInfo.new(0.05), {Size = UDim2.new(1, -10, 0, 36), Position = UDim2.new(0, 3, 0, 1)}):Play()
             end)
 
             Button.MouseButton1Up:Connect(function()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.1), {Size = UDim2.new(1, -6, 0, 34), Position = UDim2.new(0, 0, 0, 0)}):Play()
+                TweenService:Create(BtnFrame, TweenInfo.new(0.1), {Size = UDim2.new(1, -4, 0, 38), Position = UDim2.new(0, 0, 0, 0)}):Play()
                 task.spawn(callback)
             end)
 
@@ -1268,9 +1298,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local ToggleFrame = makeElement("Frame", {
                 Name = "ToggleFrame",
-                Size = UDim2.new(1, -6, 0, 36),
+                Size = UDim2.new(1, -4, 0, 42),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
@@ -1282,31 +1312,31 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local Stroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.38,
                 Thickness = 1,
                 Parent = ToggleFrame
             })
 
             local Label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -60, 1, 0),
+                Size = UDim2.new(1, -68, 1, 0),
                 Position = UDim2.new(0, 12, 0, 0),
                 BackgroundTransparency = 1,
                 Text = toggleText,
                 TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12.5,
-                Font = Enum.Font.GothamMedium,
+                TextSize = 12,
+                Font = Enum.Font.GothamSemibold,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = ToggleFrame
             })
             table.insert(themeObjects.MainText, Label)
 
-            -- Fluent Pill Switch Frame
+            -- Compact pill switch.
             local Switch = makeElement("Frame", {
                 Name = "Switch",
-                Size = UDim2.new(0, 34, 0, 18),
-                Position = UDim2.new(1, -46, 0.5, -9),
-                BackgroundColor3 = Color3.fromRGB(40, 40, 44),
+                Size = UDim2.new(0, 38, 0, 20),
+                Position = UDim2.new(1, -50, 0.5, -10),
+                BackgroundColor3 = Lyra.Theme.Header,
                 BorderSizePixel = 0,
                 Parent = ToggleFrame
             })
@@ -1317,8 +1347,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local SwitchStroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.9,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.34,
                 Thickness = 1,
                 Parent = Switch
             })
@@ -1326,9 +1356,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             -- Circular Switch Knob
             local Circle = makeElement("Frame", {
                 Name = "Circle",
-                Size = UDim2.new(0, 12, 0, 12),
-                Position = UDim2.new(0, 2, 0.5, -6),
-                BackgroundColor3 = Color3.fromRGB(180, 180, 185),
+                Size = UDim2.new(0, 14, 0, 14),
+                Position = UDim2.new(0, 3, 0.5, -7),
+                BackgroundColor3 = Lyra.Theme.TextDark,
                 BorderSizePixel = 0,
                 Parent = Switch
             })
@@ -1347,9 +1377,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local function updateToggle(state)
                 toggled = state
-                local targetPos = state and UDim2.new(1, -14, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
-                local targetColor = state and Lyra.Theme.AccentGrad1 or Color3.fromRGB(40, 40, 44)
-                local targetCircleColor = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 185)
+                local targetPos = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+                local targetColor = state and Lyra.Theme.AccentGrad1 or Lyra.Theme.Header
+                local targetCircleColor = state and Color3.fromRGB(255, 255, 255) or Lyra.Theme.TextDark
 
                 -- Bouncy knob slide
                 local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
@@ -1364,21 +1394,22 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             end)
 
             ToggleBtn.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
+                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
             end)
 
             ToggleBtn.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88}):Play()
-                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.78}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
+                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
             end)
 
             updateToggle(default)
 
             table.insert(themeObjects.Updaters, function(newTheme)
-                local targetColor = toggled and newTheme.AccentGrad1 or Color3.fromRGB(40, 40, 44)
+                local targetColor = toggled and newTheme.AccentGrad1 or newTheme.Header
                 Switch.BackgroundColor3 = targetColor
                 SwitchStroke.Color = newTheme.CardStroke
+                Circle.BackgroundColor3 = toggled and Color3.fromRGB(255, 255, 255) or newTheme.TextDark
             end)
 
             return {
@@ -1398,9 +1429,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local SliderFrame = makeElement("Frame", {
                 Name = "SliderFrame",
-                Size = UDim2.new(1, -6, 0, 44),
+                Size = UDim2.new(1, -4, 0, 54),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
@@ -1412,8 +1443,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local Stroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.38,
                 Thickness = 1,
                 Parent = SliderFrame
             })
@@ -1424,8 +1455,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 BackgroundTransparency = 1,
                 Text = sliderText,
                 TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12.5,
-                Font = Enum.Font.GothamMedium,
+                TextSize = 12,
+                Font = Enum.Font.GothamSemibold,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = SliderFrame
             })
@@ -1444,12 +1475,12 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
             table.insert(themeObjects.DarkText, ValueLabel)
 
-            -- Horizontal line track (Fluent Slider Spec)
+            -- Horizontal slider track.
             local Track = makeElement("Frame", {
                 Name = "Track",
-                Size = UDim2.new(1, -24, 0, 4),
-                Position = UDim2.new(0, 12, 1, -12),
-                BackgroundColor3 = Color3.fromRGB(34, 34, 38),
+                Size = UDim2.new(1, -24, 0, 3),
+                Position = UDim2.new(0, 12, 1, -14),
+                BackgroundColor3 = Lyra.Theme.Header,
                 BorderSizePixel = 0,
                 Parent = SliderFrame
             })
@@ -1477,8 +1508,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             -- Handle knob
             local Handle = makeElement("Frame", {
                 Name = "Handle",
-                Size = UDim2.new(0, 10, 0, 10),
-                Position = UDim2.new(1, -5, 0.5, -5),
+                Size = UDim2.new(0, 12, 0, 12),
+                Position = UDim2.new(1, -6, 0.5, -6),
                 BackgroundColor3 = Color3.fromRGB(240, 240, 245),
                 BorderSizePixel = 0,
                 Parent = Progress
@@ -1521,14 +1552,14 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = true
                     moveSlider(input)
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 13, 0, 13), Position = UDim2.new(1, -6.5, 0.5, -6.5)}):Play()
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 15, 0, 15), Position = UDim2.new(1, -7.5, 0.5, -7.5)}):Play()
                 end
             end)
 
             SlidingTrigger.InputEnded:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     isDragging = false
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 10, 0, 10), Position = UDim2.new(1, -5, 0.5, -5)}):Play()
+                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(1, -6, 0.5, -6)}):Play()
                 end
             end)
 
@@ -1539,13 +1570,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             end)
 
             SlidingTrigger.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
+                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
             end)
 
             SlidingTrigger.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88}):Play()
-                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.78}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
+                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
             end)
 
             local initialPercent = math.clamp((default - min) / (max - min), 0, 1)
@@ -1577,9 +1608,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local DropdownFrame = makeElement("Frame", {
                 Name = "DropdownFrame",
-                Size = UDim2.new(1, -6, 0, 36),
+                Size = UDim2.new(1, -4, 0, 42),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 ClipsDescendants = true,
                 Parent = TabPage
@@ -1592,15 +1623,15 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local Stroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.38,
                 Thickness = 1,
                 Parent = DropdownFrame
             })
 
             local TopArea = makeElement("Frame", {
                 Name = "TopArea",
-                Size = UDim2.new(1, 0, 0, 36),
+                Size = UDim2.new(1, 0, 0, 42),
                 BackgroundTransparency = 1,
                 Parent = DropdownFrame
             })
@@ -1611,8 +1642,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 BackgroundTransparency = 1,
                 Text = dropdownText,
                 TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12.5,
-                Font = Enum.Font.GothamMedium,
+                TextSize = 12,
+                Font = Enum.Font.GothamSemibold,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = TopArea
             })
@@ -1655,7 +1686,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             local OptionsHolder = makeElement("Frame", {
                 Name = "OptionsHolder",
                 Size = UDim2.new(1, -20, 0, 0),
-                Position = UDim2.new(0, 10, 0, 36),
+                Position = UDim2.new(0, 10, 0, 42),
                 BackgroundTransparency = 1,
                 Parent = DropdownFrame
             })
@@ -1670,12 +1701,12 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local function toggleDropdown(state)
                 dropdownOpen = state
-                local targetHeight = state and (36 + HolderLayout.AbsoluteContentSize.Y + 8) or 36
+                local targetHeight = state and (42 + HolderLayout.AbsoluteContentSize.Y + 8) or 42
                 local arrowChar = state and "▲" or "▼"
                 
                 Arrow.Text = arrowChar
                 TweenService:Create(DropdownFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(1, -6, 0, targetHeight)
+                    Size = UDim2.new(1, -4, 0, targetHeight)
                 }):Play()
             end
 
@@ -1695,7 +1726,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                     local OptButton = makeElement("TextButton", {
                         Name = optionText .. "_Opt",
                         Size = UDim2.new(1, 0, 0, 26),
-                        BackgroundColor3 = Color3.fromRGB(32, 32, 36),
+                        BackgroundColor3 = Lyra.Theme.Header,
                         BorderSizePixel = 0,
                         Text = optionText,
                         TextColor3 = isSelected and Lyra.Theme.TextMain or Lyra.Theme.TextDark,
@@ -1718,10 +1749,10 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                     })
 
                     OptButton.MouseEnter:Connect(function()
-                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(38, 38, 44)}):Play()
+                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Lyra.Theme.CardStroke}):Play()
                     end)
                     OptButton.MouseLeave:Connect(function()
-                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(32, 32, 36)}):Play()
+                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Lyra.Theme.Header}):Play()
                     end)
 
                     OptButton.MouseButton1Click:Connect(function()
@@ -1737,13 +1768,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             end
 
             ClickButton.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
+                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
             end)
 
             ClickButton.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88}):Play()
-                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.78}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
+                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
             end)
 
             refreshList()
@@ -1776,9 +1807,9 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
             local BoxFrame = makeElement("Frame", {
                 Name = "BoxFrame",
-                Size = UDim2.new(1, -6, 0, 36),
+                Size = UDim2.new(1, -4, 0, 42),
                 BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.78,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
                 Parent = TabPage
             })
@@ -1790,8 +1821,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             })
 
             local Stroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.88,
+                Color = Lyra.Theme.CardStroke,
+                Transparency = 0.38,
                 Thickness = 1,
                 Parent = BoxFrame
             })
@@ -1802,8 +1833,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 BackgroundTransparency = 1,
                 Text = boxText,
                 TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12.5,
-                Font = Enum.Font.GothamMedium,
+                TextSize = 12,
+                Font = Enum.Font.GothamSemibold,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = BoxFrame
             })
@@ -1814,7 +1845,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
                 Name = "InputContainer",
                 Size = UDim2.new(0, 120, 0, 24),
                 Position = UDim2.new(1, -132, 0.5, -12),
-                BackgroundColor3 = Color3.fromRGB(34, 34, 38),
+                BackgroundColor3 = Lyra.Theme.Header,
                 BorderSizePixel = 0,
                 Parent = BoxFrame
             })
@@ -1857,13 +1888,13 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
             end)
 
             BoxFrame.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.6}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
+                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
             end)
 
             BoxFrame.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.88}):Play()
-                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.78}):Play()
+                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
+                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
             end)
 
             return {
@@ -1882,14 +1913,14 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     local activeNotifications = {}
 
     local function repositionNotifications()
-        local yOffset = -80
+        local yOffset = -94
         for i = #activeNotifications, 1, -1 do
             local notif = activeNotifications[i]
             if notif and notif.Parent then
                 TweenService:Create(notif, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Position = UDim2.new(1, -250, 1, yOffset)
+                    Position = UDim2.new(1, -294, 1, yOffset)
                 }):Play()
-                yOffset = yOffset - 72
+                yOffset = yOffset - 82
             end
         end
     end
@@ -1902,23 +1933,23 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
         local NotifyFrame = makeElement("Frame", {
             Name = "Notification",
-            Size = UDim2.new(0, 240, 0, 64),
-            Position = UDim2.new(1, 20, 1, -80),
-            BackgroundColor3 = Lyra.Theme.Background,
-            BackgroundTransparency = 0.06,
+            Size = UDim2.new(0, 282, 0, 74),
+            Position = UDim2.new(1, 20, 1, -94),
+            BackgroundColor3 = Lyra.Theme.Header,
+            BackgroundTransparency = 0.02,
             BorderSizePixel = 0,
             Parent = ScreenGui
         })
-        table.insert(themeObjects.Backgrounds, NotifyFrame)
+        table.insert(themeObjects.Headers, NotifyFrame)
 
         local NotifyCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 8),
+            CornerRadius = UDim.new(0, 6),
             Parent = NotifyFrame
         })
 
         local NotifyStroke = makeElement("UIStroke", {
-            Color = Color3.fromRGB(255, 255, 255),
-            Transparency = 0.88,
+            Color = Lyra.Theme.CardStroke,
+            Transparency = 0.22,
             Thickness = 1,
             Parent = NotifyFrame
         })
@@ -1926,8 +1957,8 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         -- Bottom shrinking gradient timer progress bar
         local ProgressBar = makeElement("Frame", {
             Name = "ProgressBar",
-            Size = UDim2.new(1, 0, 0, 2),
-            Position = UDim2.new(0, 0, 1, -2),
+            Size = UDim2.new(1, 0, 0, 3),
+            Position = UDim2.new(0, 0, 1, -3),
             BorderSizePixel = 0,
             Parent = NotifyFrame
         })
@@ -1946,7 +1977,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
         -- Left vertical neon accent line
         local LeftSideLine = makeElement("Frame", {
-            Size = UDim2.new(0, 3.5, 1, -2),
+            Size = UDim2.new(0, 3, 1, -3),
             BackgroundColor3 = Lyra.Theme.AccentGrad1,
             BorderSizePixel = 0,
             Parent = NotifyFrame
@@ -1968,21 +1999,21 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         })
 
         local NotifyTitle = makeElement("TextLabel", {
-            Size = UDim2.new(1, -40, 0, 20),
-            Position = UDim2.new(0, 12, 0, 6),
+            Size = UDim2.new(1, -48, 0, 20),
+            Position = UDim2.new(0, 14, 0, 9),
             BackgroundTransparency = 1,
             Text = title,
             TextColor3 = Lyra.Theme.TextMain,
             TextSize = 12,
-            Font = Enum.Font.GothamBold,
+            Font = Enum.Font.GothamSemibold,
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = NotifyFrame
         })
         table.insert(themeObjects.MainText, NotifyTitle)
 
         local NotifyDesc = makeElement("TextLabel", {
-            Size = UDim2.new(1, -40, 1, -30),
-            Position = UDim2.new(0, 12, 0, 24),
+            Size = UDim2.new(1, -48, 1, -34),
+            Position = UDim2.new(0, 14, 0, 28),
             BackgroundTransparency = 1,
             Text = description,
             TextColor3 = Lyra.Theme.TextDark,
@@ -1998,7 +2029,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
         -- Close button
         local CloseBtn = makeElement("TextButton", {
             Size = UDim2.new(0, 16, 0, 16),
-            Position = UDim2.new(1, -22, 0, 6),
+            Position = UDim2.new(1, -24, 0, 8),
             BackgroundTransparency = 1,
             Text = "×",
             TextColor3 = Lyra.Theme.TextDark,
@@ -2031,7 +2062,7 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
 
         -- Shrink progress bar
         local progressTween = TweenService:Create(ProgressBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-            Size = UDim2.new(0, 0, 0, 2)
+            Size = UDim2.new(0, 0, 0, 3)
         })
         progressTween:Play()
 
