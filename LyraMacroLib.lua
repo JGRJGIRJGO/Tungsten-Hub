@@ -101,7 +101,7 @@ local DYNAMIC_CONTAINER_NAMES = {
 local MAP_FINGERPRINT_PART_LIMIT = 500
 local CHAIN_COA_INTERVAL = 10.2
 local CHAIN_COA_REQUIRED_TOWERS = 3
-local CHAIN_COA_MIN_UPGRADE = 2
+local CHAIN_COA_MIN_UPGRADE = 3
 local CHAIN_COA_RETRY_DELAY = 0.75
 local CHAIN_COA_POLL_INTERVAL = 0.15
 
@@ -2909,7 +2909,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA waits for 3 owned, level 2 commanders, then rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 owned, level 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
