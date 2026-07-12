@@ -1,167 +1,258 @@
 --[[
-    Lyra UI Library (V3)
-    A compact, high-contrast command surface for Lyra's strategy tools.
-    The public API intentionally remains compatible with the prior library.
+    Lyra UI Library (V4)
+    A clean, responsive command interface inspired by the interaction density
+    of Starlight Interface Suite. This implementation is original and keeps
+    Lyra's existing public API backward compatible.
 ]]
 
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
-
--- Safe parent selection for Gui
-local Parent = game:GetService("CoreGui")
-local success, _ = pcall(function()
-    local _ = Parent.Name
-end)
-if not success then
-    Parent = LocalPlayer:WaitForChild("PlayerGui")
-end
-
--- Cleanup previous instances
-if Parent:FindFirstChild("Lyra") then
-    Parent:FindFirstChild("Lyra"):Destroy()
-end
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local Lyra = {}
 
--- Pre-defined theme presets. Lyra defaults to a graphite command-surface palette.
 Lyra.Themes = {
     Lyra = {
-        Background = Color3.fromRGB(14, 16, 22),
-        Header = Color3.fromRGB(19, 22, 30),
-        Sidebar = Color3.fromRGB(17, 19, 27),
-        Card = Color3.fromRGB(27, 31, 42),
-        CardStroke = Color3.fromRGB(53, 61, 78),
-        AccentGrad1 = Color3.fromRGB(93, 238, 207),
-        AccentGrad2 = Color3.fromRGB(103, 183, 255),
-        TextMain = Color3.fromRGB(244, 247, 255),
-        TextDark = Color3.fromRGB(164, 173, 193),
+        Background = Color3.fromRGB(13, 15, 19),
+        Header = Color3.fromRGB(20, 22, 27),
+        Sidebar = Color3.fromRGB(24, 26, 31),
+        Card = Color3.fromRGB(27, 30, 36),
+        CardStroke = Color3.fromRGB(54, 59, 69),
+        AccentGrad1 = Color3.fromRGB(201, 171, 255),
+        AccentGrad2 = Color3.fromRGB(112, 203, 239),
+        TextMain = Color3.fromRGB(244, 246, 250),
+        TextDark = Color3.fromRGB(151, 157, 170),
     },
     Nebula = {
-        Background = Color3.fromRGB(14, 11, 22),
-        Header = Color3.fromRGB(18, 14, 28),
-        Sidebar = Color3.fromRGB(18, 14, 28),
-        Card = Color3.fromRGB(22, 18, 34),
-        CardStroke = Color3.fromRGB(38, 30, 60),
-        AccentGrad1 = Color3.fromRGB(138, 43, 226),    -- Violet
-        AccentGrad2 = Color3.fromRGB(218, 112, 214),   -- Orchid
-        TextMain = Color3.fromRGB(245, 240, 255),
-        TextDark = Color3.fromRGB(150, 140, 170),
+        Background = Color3.fromRGB(15, 13, 21),
+        Header = Color3.fromRGB(23, 19, 31),
+        Sidebar = Color3.fromRGB(27, 22, 36),
+        Card = Color3.fromRGB(31, 25, 42),
+        CardStroke = Color3.fromRGB(65, 51, 82),
+        AccentGrad1 = Color3.fromRGB(189, 135, 255),
+        AccentGrad2 = Color3.fromRGB(120, 191, 255),
+        TextMain = Color3.fromRGB(247, 242, 255),
+        TextDark = Color3.fromRGB(165, 151, 184),
     },
     BloodMoon = {
-        Background = Color3.fromRGB(20, 12, 12),
-        Header = Color3.fromRGB(26, 16, 16),
-        Sidebar = Color3.fromRGB(26, 16, 16),
-        Card = Color3.fromRGB(30, 20, 20),
-        CardStroke = Color3.fromRGB(50, 32, 32),
-        AccentGrad1 = Color3.fromRGB(220, 20, 60),     -- Crimson
-        AccentGrad2 = Color3.fromRGB(255, 69, 0),      -- Orange-Red
-        TextMain = Color3.fromRGB(255, 240, 240),
-        TextDark = Color3.fromRGB(180, 150, 150),
+        Background = Color3.fromRGB(19, 14, 16),
+        Header = Color3.fromRGB(29, 20, 23),
+        Sidebar = Color3.fromRGB(33, 23, 27),
+        Card = Color3.fromRGB(38, 26, 30),
+        CardStroke = Color3.fromRGB(75, 46, 54),
+        AccentGrad1 = Color3.fromRGB(255, 107, 129),
+        AccentGrad2 = Color3.fromRGB(255, 174, 105),
+        TextMain = Color3.fromRGB(255, 243, 245),
+        TextDark = Color3.fromRGB(190, 154, 161),
     },
     Emerald = {
-        Background = Color3.fromRGB(10, 18, 14),
-        Header = Color3.fromRGB(14, 24, 19),
-        Sidebar = Color3.fromRGB(14, 24, 19),
-        Card = Color3.fromRGB(18, 28, 23),
-        CardStroke = Color3.fromRGB(30, 48, 39),
-        AccentGrad1 = Color3.fromRGB(46, 204, 113),    -- Emerald
-        AccentGrad2 = Color3.fromRGB(26, 188, 156),    -- Teal
-        TextMain = Color3.fromRGB(240, 250, 245),
-        TextDark = Color3.fromRGB(140, 170, 155),
+        Background = Color3.fromRGB(12, 18, 17),
+        Header = Color3.fromRGB(18, 27, 25),
+        Sidebar = Color3.fromRGB(21, 31, 28),
+        Card = Color3.fromRGB(24, 36, 32),
+        CardStroke = Color3.fromRGB(44, 72, 63),
+        AccentGrad1 = Color3.fromRGB(91, 224, 168),
+        AccentGrad2 = Color3.fromRGB(91, 194, 235),
+        TextMain = Color3.fromRGB(240, 251, 247),
+        TextDark = Color3.fromRGB(145, 178, 166),
     },
     Midnight = {
-        Background = Color3.fromRGB(10, 13, 20),
-        Header = Color3.fromRGB(14, 17, 26),
-        Sidebar = Color3.fromRGB(14, 17, 26),
-        Card = Color3.fromRGB(18, 21, 31),
-        CardStroke = Color3.fromRGB(30, 36, 52),
-        AccentGrad1 = Color3.fromRGB(33, 97, 140),     -- Navy
-        AccentGrad2 = Color3.fromRGB(52, 152, 219),    -- Sky Blue
-        TextMain = Color3.fromRGB(240, 245, 255),
-        TextDark = Color3.fromRGB(140, 150, 170),
-    }
+        Background = Color3.fromRGB(11, 15, 21),
+        Header = Color3.fromRGB(17, 23, 32),
+        Sidebar = Color3.fromRGB(20, 27, 37),
+        Card = Color3.fromRGB(23, 31, 42),
+        CardStroke = Color3.fromRGB(43, 60, 78),
+        AccentGrad1 = Color3.fromRGB(104, 180, 255),
+        AccentGrad2 = Color3.fromRGB(120, 229, 206),
+        TextMain = Color3.fromRGB(240, 246, 255),
+        TextDark = Color3.fromRGB(143, 161, 184),
+    },
 }
 
-Lyra.Theme = Lyra.Themes.Lyra
+local function normalizeTheme(theme)
+    theme = theme or Lyra.Themes.Lyra
+
+    local normalized = {
+        Background = theme.Background or Color3.fromRGB(13, 15, 19),
+        Header = theme.Header or Color3.fromRGB(20, 22, 27),
+        Sidebar = theme.Sidebar or Color3.fromRGB(24, 26, 31),
+        Card = theme.Card or Color3.fromRGB(27, 30, 36),
+        CardStroke = theme.CardStroke or Color3.fromRGB(54, 59, 69),
+        AccentGrad1 = theme.AccentGrad1 or Color3.fromRGB(201, 171, 255),
+        AccentGrad2 = theme.AccentGrad2 or Color3.fromRGB(112, 203, 239),
+        TextMain = theme.TextMain or Color3.fromRGB(244, 246, 250),
+        TextDark = theme.TextDark or Color3.fromRGB(151, 157, 170),
+    }
+
+    normalized.SurfaceHover = normalized.Card:Lerp(normalized.TextMain, 0.055)
+    normalized.Input = normalized.Header:Lerp(normalized.Background, 0.18)
+    normalized.Track = normalized.Background:Lerp(normalized.TextMain, 0.085)
+    normalized.Danger = Color3.fromRGB(255, 103, 120)
+    normalized.Success = Color3.fromRGB(91, 224, 168)
+
+    return normalized
+end
+
+Lyra.Theme = normalizeTheme(Lyra.Themes.Lyra)
 Lyra.ToggleKey = Enum.KeyCode.RightShift
 
--- Pure Luau SHA-256 Hashing Algorithm
 local function sha256_hash(msg)
     local h_init = {
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        0x6a09e667,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
+        0x5be0cd19,
     }
     local k = {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+        0x428a2f98,
+        0x71374491,
+        0xb5c0fbcf,
+        0xe9b5dba5,
+        0x3956c25b,
+        0x59f111f1,
+        0x923f82a4,
+        0xab1c5ed5,
+        0xd807aa98,
+        0x12835b01,
+        0x243185be,
+        0x550c7dc3,
+        0x72be5d74,
+        0x80deb1fe,
+        0x9bdc06a7,
+        0xc19bf174,
+        0xe49b69c1,
+        0xefbe4786,
+        0x0fc19dc6,
+        0x240ca1cc,
+        0x2de92c6f,
+        0x4a7484aa,
+        0x5cb0a9dc,
+        0x76f988da,
+        0x983e5152,
+        0xa831c66d,
+        0xb00327c8,
+        0xbf597fc7,
+        0xc6e00bf3,
+        0xd5a79147,
+        0x06ca6351,
+        0x14292967,
+        0x27b70a85,
+        0x2e1b2138,
+        0x4d2c6dfc,
+        0x53380d13,
+        0x650a7354,
+        0x766a0abb,
+        0x81c2c92e,
+        0x92722c85,
+        0xa2bfe8a1,
+        0xa81a664b,
+        0xc24b8b70,
+        0xc76c51a3,
+        0xd192e819,
+        0xd6990624,
+        0xf40e3585,
+        0x106aa070,
+        0x19a4c116,
+        0x1e376c08,
+        0x2748774c,
+        0x34b0bcb5,
+        0x391c0cb3,
+        0x4ed8aa4a,
+        0x5b9cca4f,
+        0x682e6ff3,
+        0x748f82ee,
+        0x78a5636f,
+        0x84c87814,
+        0x8cc70208,
+        0x90befffa,
+        0xa4506ceb,
+        0xbef9a3f7,
+        0xc67178f2,
     }
     local band, bor, bxor, bnot = bit32.band, bit32.bor, bit32.bxor, bit32.bnot
     local rshift, lshift, rrotate = bit32.rshift, bit32.lshift, bit32.rrotate
 
     local function str2w(str)
         local words = {}
+
         for i = 1, #str, 4 do
-            local b1, b2, b3, b4 = string.byte(str, i, i+3)
-            b1 = b1 or 0 b2 = b2 or 0 b3 = b3 or 0 b4 = b4 or 0
+            local b1, b2, b3, b4 = string.byte(str, i, i + 3)
+            b1 = b1 or 0
+            b2 = b2 or 0
+            b3 = b3 or 0
+            b4 = b4 or 0
             table.insert(words, bor(lshift(b1, 24), lshift(b2, 16), lshift(b3, 8), b4))
         end
+
         return words
     end
 
-    local h = {unpack(h_init)}
-    local msg_len = #msg
-    local extra = msg_len % 64
-    local pad_len = 56 - extra
-    if pad_len <= 0 then pad_len = pad_len + 64 end
-    
-    local pad = string.char(0x80) .. string.rep(string.char(0), pad_len - 1)
-    local bits = msg_len * 8
-    local bits_bin = string.char(
-        0, 0, 0, 0,
+    local h = { unpack(h_init) }
+    local msgLength = #msg
+    local extra = msgLength % 64
+    local padLength = 56 - extra
+
+    if padLength <= 0 then
+        padLength = padLength + 64
+    end
+
+    local pad = string.char(0x80) .. string.rep(string.char(0), padLength - 1)
+    local bits = msgLength * 8
+    local bitsBinary = string.char(
+        0,
+        0,
+        0,
+        0,
         math.floor(bits / 16777216) % 256,
         math.floor(bits / 65536) % 256,
         math.floor(bits / 256) % 256,
         bits % 256
     )
-    
-    local padded_msg = msg .. pad .. bits_bin
-    local words = str2w(padded_msg)
-    
-    for block_start = 1, #words, 16 do
+    local words = str2w(msg .. pad .. bitsBinary)
+
+    for blockStart = 1, #words, 16 do
         local w = {}
-        for i = 1, 16 do w[i] = words[block_start + i - 1] end
-        for i = 17, 64 do
-            local w15 = w[i-15]
-            local s0 = bxor(rrotate(w15, 7), rrotate(w15, 18), rshift(w15, 3))
-            local w2 = w[i-2]
-            local s1 = bxor(rrotate(w2, 17), rrotate(w2, 19), rshift(w2, 10))
-            w[i] = (w[i-16] + s0 + w[i-7] + s1) % 4294967296
+
+        for i = 1, 16 do
+            w[i] = words[blockStart + i - 1]
         end
-        
-        local a, b, c, d, e, f, g, h_val = h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]
+
+        for i = 17, 64 do
+            local w15 = w[i - 15]
+            local s0 = bxor(rrotate(w15, 7), rrotate(w15, 18), rshift(w15, 3))
+            local w2 = w[i - 2]
+            local s1 = bxor(rrotate(w2, 17), rrotate(w2, 19), rshift(w2, 10))
+            w[i] = (w[i - 16] + s0 + w[i - 7] + s1) % 4294967296
+        end
+
+        local a, b, c, d = h[1], h[2], h[3], h[4]
+        local e, f, g, hValue = h[5], h[6], h[7], h[8]
+
         for i = 1, 64 do
             local s1 = bxor(rrotate(e, 6), rrotate(e, 11), rrotate(e, 25))
             local ch = bxor(band(e, f), band(bnot(e), g))
-            local temp1 = (h_val + s1 + ch + k[i] + w[i]) % 4294967296
+            local temp1 = (hValue + s1 + ch + k[i] + w[i]) % 4294967296
             local s0 = bxor(rrotate(a, 2), rrotate(a, 13), rrotate(a, 22))
             local maj = bxor(band(a, b), band(a, c), band(b, c))
             local temp2 = (s0 + maj) % 4294967296
-            
-            h_val = g g = f f = e e = (d + temp1) % 4294967296
-            d = c c = b b = a a = (temp1 + temp2) % 4294967296
+
+            hValue = g
+            g = f
+            f = e
+            e = (d + temp1) % 4294967296
+            d = c
+            c = b
+            b = a
+            a = (temp1 + temp2) % 4294967296
         end
-        
+
         h[1] = (h[1] + a) % 4294967296
         h[2] = (h[2] + b) % 4294967296
         h[3] = (h[3] + c) % 4294967296
@@ -169,1742 +260,1871 @@ local function sha256_hash(msg)
         h[5] = (h[5] + e) % 4294967296
         h[6] = (h[6] + f) % 4294967296
         h[7] = (h[7] + g) % 4294967296
-        h[8] = (h[8] + h_val) % 4294967296
+        h[8] = (h[8] + hValue) % 4294967296
     end
-    
+
     local hex = ""
-    for i = 1, 8 do hex = hex .. string.format("%08x", h[i]) end
+
+    for i = 1, 8 do
+        hex = hex .. string.format("%08x", h[i])
+    end
+
     return hex
 end
+
 Lyra.SHA256 = sha256_hash
 
--- Utility function for creating UI elements smoothly
-local function makeElement(className, properties, children)
+local function makeElement(className, properties)
     local element = Instance.new(className)
-    for k, v in pairs(properties or {}) do
-        element[k] = v
+
+    for property, value in pairs(properties or {}) do
+        if property ~= "Parent" then
+            element[property] = value
+        end
     end
-    for _, child in ipairs(children or {}) do
-        child.Parent = element
+
+    if properties and properties.Parent then
+        element.Parent = properties.Parent
     end
+
     return element
 end
 
--- Smooth UI dragging function
-local function makeDraggable(dragFrame, parentFrame)
-    local dragging = false
-    local dragInput
-    local dragStart
-    local startPos
+local function addCorner(parent, radius)
+    return makeElement("UICorner", {
+        CornerRadius = UDim.new(0, radius or 5),
+        Parent = parent,
+    })
+end
 
-    local function update(input)
-        local delta = input.Position - dragStart
-        local endPos = UDim2.new(
-            startPos.X.Scale, 
-            startPos.X.Offset + delta.X, 
-            startPos.Y.Scale, 
-            startPos.Y.Offset + delta.Y
-        )
-        local tween = TweenService:Create(
-            parentFrame, 
-            TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-            {Position = endPos}
-        )
-        tween:Play()
+local function addStroke(parent, color, transparency, thickness)
+    return makeElement("UIStroke", {
+        Color = color,
+        Transparency = transparency or 0,
+        Thickness = thickness or 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = parent,
+    })
+end
+
+local function tween(instance, duration, properties, style, direction)
+    if not instance or not instance.Parent then
+        return nil
     end
 
-    dragFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = parentFrame.Position
+    local animation = TweenService:Create(
+        instance,
+        TweenInfo.new(
+            duration or 0.16,
+            style or Enum.EasingStyle.Quad,
+            direction or Enum.EasingDirection.Out
+        ),
+        properties
+    )
+    animation:Play()
+    return animation
+end
 
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
+local function runCallback(callback, ...)
+    if type(callback) ~= "function" then
+        return
+    end
 
-    dragFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
+    local args = table.pack(...)
 
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            update(input)
+    task.spawn(function()
+        local ok, callbackError = pcall(callback, table.unpack(args, 1, args.n))
+
+        if not ok then
+            warn("[Lyra UI] Callback failed: " .. tostring(callbackError))
         end
     end)
 end
 
--- Top-level Window builder supporting dynamic configs and Key System
-function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
-    local titleText, subText, keySettings
-    if type(titleTextOrConfig) == "table" then
-        titleText = titleTextOrConfig.Name or "Lyra UI Library"
-        subText = titleTextOrConfig.Subtitle or "Roblox Edition"
-        keySettings = titleTextOrConfig.KeySettings
-    else
-        titleText = titleTextOrConfig or "Lyra UI Library"
-        subText = subtitleText or "Roblox Edition"
+local function pointInside(instance, position)
+    if not instance or not instance.Parent then
+        return false
     end
 
-    local camera = workspace.CurrentCamera
-    local viewportSize = camera and camera.ViewportSize or Vector2.new(700, 460)
-    local windowWidth = math.clamp(viewportSize.X - 32, 360, 700)
-    local windowHeight = math.clamp(viewportSize.Y - 80, 300, 460)
-    local railWidth = windowWidth >= 600 and 184 or 120
+    local topLeft = instance.AbsolutePosition
+    local size = instance.AbsoluteSize
+    return position.X >= topLeft.X
+        and position.Y >= topLeft.Y
+        and position.X <= topLeft.X + size.X
+        and position.Y <= topLeft.Y + size.Y
+end
 
-    -- Registry of instances to update dynamically on theme change
-    local themeObjects = {
-        Backgrounds = {},
-        Headers = {},
-        Sidebars = {},
-        Cards = {},
-        Strokes = {},
-        MainText = {},
-        DarkText = {},
-        Gradients = {},
-        Updaters = {},
-    }
+local function methodValue(owner, first, second)
+    if first == owner then
+        return second
+    end
+
+    return first
+end
+
+local function getGuiParent()
+    if type(gethui) == "function" then
+        local ok, hiddenUi = pcall(gethui)
+
+        if ok and hiddenUi then
+            return hiddenUi
+        end
+    end
+
+    local coreGui = game:GetService("CoreGui")
+    local canUseCoreGui = pcall(function()
+        local probe = Instance.new("Folder")
+        probe.Name = "LyraProbe"
+        probe.Parent = coreGui
+        probe:Destroy()
+    end)
+
+    return canUseCoreGui and coreGui or PlayerGui
+end
+
+local GuiParent = getGuiParent()
+
+local function cleanupExisting()
+    local checked = {}
+
+    for _, root in ipairs({ GuiParent, PlayerGui }) do
+        if root and not checked[root] then
+            checked[root] = true
+            local existing = root:FindFirstChild("Lyra")
+
+            if existing then
+                existing:Destroy()
+            end
+        end
+    end
+end
+
+local function setClipboard(text)
+    if type(setclipboard) == "function" then
+        setclipboard(text)
+    elseif type(toclipboard) == "function" then
+        toclipboard(text)
+    end
+end
+
+local function getViewport()
+    local camera = workspace.CurrentCamera
+    return camera and camera.ViewportSize or Vector2.new(760, 500)
+end
+
+function Lyra:CreateWindow(titleOrConfig, subtitle)
+    cleanupExisting()
+
+    local config = type(titleOrConfig) == "table" and titleOrConfig or {}
+    local titleText = type(titleOrConfig) == "table" and (config.Name or "Lyra") or (titleOrConfig or "Lyra")
+    local subtitleText = type(titleOrConfig) == "table" and (config.Subtitle or "Interface") or (subtitle or "Interface")
+    local keySettings = config.KeySettings
+    local viewport = getViewport()
+    local compact = viewport.X < 600
+    local windowWidth = math.min(760, math.max(300, viewport.X - 16))
+    local windowHeight = math.min(500, math.max(300, viewport.Y - 40))
+    local sidebarWidth = windowWidth < 380 and 96 or (windowWidth < 520 and 112 or 174)
+    local topbarHeight = 50
+    local connections = {}
+    local themeBindings = {}
+    local themeUpdaters = {}
+    local currentTheme = normalizeTheme(Lyra.Theme)
+
+    local function track(connection)
+        table.insert(connections, connection)
+        return connection
+    end
+
+    local function bindTheme(instance, property, key)
+        table.insert(themeBindings, {
+            Instance = instance,
+            Property = property,
+            Key = key,
+        })
+
+        pcall(function()
+            instance[property] = currentTheme[key]
+        end)
+    end
+
+    local function addThemeUpdater(callback)
+        table.insert(themeUpdaters, callback)
+        pcall(callback, currentTheme)
+    end
+
+    local function addAccentGradient(parent, rotation)
+        local gradient = makeElement("UIGradient", {
+            Rotation = rotation or 0,
+            Parent = parent,
+        })
+
+        addThemeUpdater(function(theme)
+            gradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, theme.AccentGrad1),
+                ColorSequenceKeypoint.new(1, theme.AccentGrad2),
+            })
+        end)
+
+        return gradient
+    end
 
     local ScreenGui = makeElement("ScreenGui", {
         Name = "Lyra",
-        Parent = Parent,
         ResetOnSpawn = false,
         IgnoreGuiInset = true,
         DisplayOrder = 999,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     })
 
-    -- Main Container (handles non-clipped shadow drawing)
+    if type(syn) == "table" and type(syn.protect_gui) == "function" then
+        pcall(syn.protect_gui, ScreenGui)
+    end
+
+    ScreenGui.Parent = GuiParent
+
+    local OverlayLayer = makeElement("Frame", {
+        Name = "OverlayLayer",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 100,
+        Parent = ScreenGui,
+    })
+
+    local initialX = math.floor((viewport.X - windowWidth) / 2)
+    local initialY = math.floor((viewport.Y - windowHeight) / 2)
     local MainContainer = makeElement("Frame", {
         Name = "MainContainer",
         Size = UDim2.fromOffset(windowWidth, windowHeight),
-        Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
+        Position = UDim2.fromOffset(initialX, initialY),
         BackgroundTransparency = 1,
-        ClipsDescendants = false,
-        Parent = ScreenGui
+        BorderSizePixel = 0,
+        Visible = false,
+        Parent = ScreenGui,
     })
 
-    -- Soft framed shadow
-    local Shadow = makeElement("ImageLabel", {
+    local WindowScale = makeElement("UIScale", {
+        Scale = 1,
+        Parent = MainContainer,
+    })
+
+    local Shadow = makeElement("Frame", {
         Name = "Shadow",
-        Size = UDim2.new(1, 40, 1, 40),
-        Position = UDim2.new(0, -20, 0, -20),
-        BackgroundTransparency = 1,
-        Image = "rbxassetid://6014261993",
-        ImageColor3 = Color3.fromRGB(0, 0, 0),
-        ImageTransparency = 0.35,
-        ScaleType = Enum.ScaleType.Slice,
-        SliceCenter = Rect.new(10, 10, 20, 20),
+        Size = UDim2.new(1, 16, 1, 18),
+        Position = UDim2.fromOffset(-8, -7),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.52,
+        BorderSizePixel = 0,
         ZIndex = 0,
-        Parent = MainContainer
+        Parent = MainContainer,
     })
+    addCorner(Shadow, 10)
 
-    -- Main shell
     local MainFrame = makeElement("Frame", {
-        Name = "MainFrame",
-        Size = UDim2.new(1, 0, 1, 0),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Lyra.Theme.Background,
-        BackgroundTransparency = 0.01,
+        Name = "Window",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 0,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         ZIndex = 1,
-        Parent = MainContainer
+        Parent = MainContainer,
     })
-    table.insert(themeObjects.Backgrounds, MainFrame)
+    addCorner(MainFrame, 7)
+    local MainStroke = addStroke(MainFrame, currentTheme.CardStroke, 0.25, 1)
+    bindTheme(MainFrame, "BackgroundColor3", "Background")
+    bindTheme(MainStroke, "Color", "CardStroke")
 
-    local MainCorner = makeElement("UICorner", {
-        CornerRadius = UDim.new(0, 8),
-        Parent = MainFrame
-    })
-
-    -- Thin transparent outline stroke
-    local MainStroke = makeElement("UIStroke", {
-        Color = Lyra.Theme.CardStroke,
-        Transparency = 0.25,
-        Thickness = 1,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-        Parent = MainFrame
-    })
-    table.insert(themeObjects.Strokes, MainStroke)
-
-    -- Compact navigation rail
-    local Sidebar = makeElement("Frame", {
-        Name = "Sidebar",
-        Size = UDim2.new(0, railWidth, 1, 0),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Lyra.Theme.Sidebar,
-        BackgroundTransparency = 0,
-        BorderSizePixel = 0,
-        ZIndex = 3,
-        Parent = MainFrame
-    })
-    table.insert(themeObjects.Sidebars, Sidebar)
-
-    local SidebarCorner = makeElement("UICorner", {
-        CornerRadius = UDim.new(0, 8),
-        Parent = Sidebar
-    })
-
-    -- Rail divider
-    local Separator = makeElement("Frame", {
-        Name = "Separator",
-        Size = UDim2.new(0, 1, 1, -20),
-        Position = UDim2.new(1, -1, 0, 10),
-        BorderSizePixel = 0,
-        ZIndex = 4,
-        Parent = Sidebar
-    })
-    local SeparatorGrad = makeElement("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Lyra.Theme.AccentGrad1),
-            ColorSequenceKeypoint.new(0.5, Lyra.Theme.AccentGrad2),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
-        }),
-        Rotation = 90,
-        Parent = Separator
-    })
-    table.insert(themeObjects.Gradients, SeparatorGrad)
-
-    -- Lyra brand block
-    local BrandContainer = makeElement("Frame", {
-        Name = "Brand",
-        Size = UDim2.new(1, -24, 0, 58),
-        Position = UDim2.new(0, 12, 0, 12),
-        BackgroundTransparency = 1,
-        Parent = Sidebar
-    })
-
-    local BrandMark = makeElement("Frame", {
-        Size = UDim2.new(0, 4, 0, 32),
-        Position = UDim2.new(0, 0, 0, 11),
-        BackgroundColor3 = Lyra.Theme.AccentGrad1,
-        BorderSizePixel = 0,
-        Parent = BrandContainer
-    })
-
-    makeElement("UICorner", {
-        CornerRadius = UDim.new(1, 0),
-        Parent = BrandMark
-    })
-
-    table.insert(themeObjects.Updaters, function(newTheme)
-        BrandMark.BackgroundColor3 = newTheme.AccentGrad1
+    local AccentStroke = addStroke(MainFrame, currentTheme.AccentGrad1, 0.73, 1)
+    addThemeUpdater(function(theme)
+        AccentStroke.Color = theme.AccentGrad1:Lerp(theme.AccentGrad2, 0.5)
     end)
 
-    local TitleLabel = makeElement("TextLabel", {
-        Name = "Title",
-        Size = UDim2.new(1, -18, 0, 22),
-        Position = UDim2.new(0, 14, 0, 9),
+    local Sidebar = makeElement("Frame", {
+        Name = "Sidebar",
+        Size = UDim2.new(0, sidebarWidth, 1, 0),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = MainFrame,
+    })
+    bindTheme(Sidebar, "BackgroundColor3", "Sidebar")
+
+    local SidebarDivider = makeElement("Frame", {
+        Name = "Divider",
+        Size = UDim2.new(0, 1, 1, -20),
+        Position = UDim2.new(1, -1, 0, 10),
+        BackgroundTransparency = 0.45,
+        BorderSizePixel = 0,
+        ZIndex = 3,
+        Parent = Sidebar,
+    })
+    bindTheme(SidebarDivider, "BackgroundColor3", "CardStroke")
+
+    local Brand = makeElement("Frame", {
+        Name = "Brand",
+        Size = UDim2.new(1, -20, 0, 62),
+        Position = UDim2.fromOffset(10, 8),
         BackgroundTransparency = 1,
-        Text = titleText,
-        TextColor3 = Lyra.Theme.TextMain,
-        TextSize = 16,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = Sidebar,
+    })
+
+    local BrandIcon = makeElement("Frame", {
+        Name = "Icon",
+        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.fromOffset(0, 10),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = Brand,
+    })
+    addCorner(BrandIcon, 7)
+    addAccentGradient(BrandIcon, 35)
+
+    makeElement("TextLabel", {
+        Name = "Mark",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "L",
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        TextSize = 15,
+        Font = Enum.Font.GothamBold,
+        ZIndex = 5,
+        Parent = BrandIcon,
+    })
+
+    local BrandTitle = makeElement("TextLabel", {
+        Name = "Title",
+        Size = UDim2.new(1, -42, 0, 19),
+        Position = UDim2.fromOffset(42, 9),
+        BackgroundTransparency = 1,
+        Text = tostring(titleText),
+        TextColor3 = currentTheme.TextMain,
+        TextSize = compact and 12 or 13,
         Font = Enum.Font.GothamBold,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = BrandContainer
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 4,
+        Parent = Brand,
     })
-    table.insert(themeObjects.MainText, TitleLabel)
+    bindTheme(BrandTitle, "TextColor3", "TextMain")
 
-    local SubtitleLabel = makeElement("TextLabel", {
+    local BrandSubtitle = makeElement("TextLabel", {
         Name = "Subtitle",
-        Size = UDim2.new(1, -18, 0, 15),
-        Position = UDim2.new(0, 14, 0, 31),
+        Size = UDim2.new(1, -42, 0, 15),
+        Position = UDim2.fromOffset(42, 29),
         BackgroundTransparency = 1,
-        Text = subText,
-        TextColor3 = Lyra.Theme.TextDark,
-        TextSize = 11,
+        Text = tostring(subtitleText),
+        TextColor3 = currentTheme.TextDark,
+        TextSize = 10,
         Font = Enum.Font.GothamMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = BrandContainer
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 4,
+        Parent = Brand,
     })
-    table.insert(themeObjects.DarkText, SubtitleLabel)
+    bindTheme(BrandSubtitle, "TextColor3", "TextDark")
 
-    -- Scrolling Frame for Tab List
-    local SidebarScroll = makeElement("ScrollingFrame", {
-        Name = "TabsList",
-        Size = UDim2.new(1, -16, 1, -92),
-        Position = UDim2.new(0, 8, 0, 82),
+    local TabsList = makeElement("ScrollingFrame", {
+        Name = "Tabs",
+        Size = UDim2.new(1, -16, 1, -136),
+        Position = UDim2.fromOffset(8, 74),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 0,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        Parent = Sidebar
+        CanvasSize = UDim2.fromOffset(0, 0),
+        ZIndex = 4,
+        Parent = Sidebar,
     })
 
-    local SidebarScrollLayout = makeElement("UIListLayout", {
+    local TabsLayout = makeElement("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 6),
-        Parent = SidebarScroll
+        Padding = UDim.new(0, 5),
+        Parent = TabsList,
     })
 
-    SidebarScrollLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, SidebarScrollLayout.AbsoluteContentSize.Y)
-    end)
+    track(TabsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        TabsList.CanvasSize = UDim2.fromOffset(0, TabsLayout.AbsoluteContentSize.Y + 4)
+    end))
 
-    -- Utility header
-    local DragBar = makeElement("Frame", {
-        Name = "DragBar",
-        Size = UDim2.new(1, -railWidth, 0, 42),
-        Position = UDim2.new(0, railWidth, 0, 0),
-        BackgroundColor3 = Lyra.Theme.Header,
-        BackgroundTransparency = 0,
-        ZIndex = 2,
-        Parent = MainFrame
-    })
-    table.insert(themeObjects.Headers, DragBar)
-
-    local HeaderGlowLine = makeElement("Frame", {
-        Name = "HeaderGlowLine",
-        Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.new(0, 0, 1, 0),
+    local Profile = makeElement("Frame", {
+        Name = "Profile",
+        Size = UDim2.new(1, -16, 0, 52),
+        Position = UDim2.new(0, 8, 1, -58),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Parent = DragBar
+        ZIndex = 4,
+        Parent = Sidebar,
     })
-    local HeaderGlowGrad = makeElement("UIGradient", {
-        Color = ColorSequence.new(Lyra.Theme.AccentGrad1, Lyra.Theme.AccentGrad2),
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.15),
-            NumberSequenceKeypoint.new(1, 0.45)
-        }),
-        Parent = HeaderGlowLine
-    })
-    table.insert(themeObjects.Gradients, HeaderGlowGrad)
 
-    -- Window Controls Container (Minimize & Close buttons)
-    local WindowControls = makeElement("Frame", {
+    local ProfileDivider = makeElement("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        Parent = Profile,
+    })
+    bindTheme(ProfileDivider, "BackgroundColor3", "CardStroke")
+
+    local Avatar = makeElement("ImageLabel", {
+        Name = "Avatar",
+        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.fromOffset(2, 12),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        Image = "",
+        ZIndex = 4,
+        Parent = Profile,
+    })
+    addCorner(Avatar, 6)
+    bindTheme(Avatar, "BackgroundColor3", "Card")
+
+    local DisplayName = makeElement("TextLabel", {
+        Size = UDim2.new(1, -42, 0, 16),
+        Position = UDim2.fromOffset(40, 11),
+        BackgroundTransparency = 1,
+        Text = LocalPlayer.DisplayName,
+        TextSize = 10.5,
+        Font = Enum.Font.GothamSemibold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 4,
+        Parent = Profile,
+    })
+    bindTheme(DisplayName, "TextColor3", "TextMain")
+
+    local Username = makeElement("TextLabel", {
+        Size = UDim2.new(1, -42, 0, 14),
+        Position = UDim2.fromOffset(40, 27),
+        BackgroundTransparency = 1,
+        Text = "@" .. LocalPlayer.Name,
+        TextSize = 9.5,
+        Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 4,
+        Parent = Profile,
+    })
+    bindTheme(Username, "TextColor3", "TextDark")
+
+    task.spawn(function()
+        local ok, image = pcall(
+            Players.GetUserThumbnailAsync,
+            Players,
+            LocalPlayer.UserId,
+            Enum.ThumbnailType.HeadShot,
+            Enum.ThumbnailSize.Size48x48
+        )
+
+        if ok and Avatar.Parent then
+            Avatar.Image = image
+        end
+    end)
+
+    local Content = makeElement("Frame", {
+        Name = "Content",
+        Size = UDim2.new(1, -sidebarWidth, 1, 0),
+        Position = UDim2.fromOffset(sidebarWidth, 0),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = MainFrame,
+    })
+    bindTheme(Content, "BackgroundColor3", "Background")
+
+    local Topbar = makeElement("Frame", {
+        Name = "Topbar",
+        Size = UDim2.new(1, 0, 0, topbarHeight),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = Content,
+    })
+    bindTheme(Topbar, "BackgroundColor3", "Header")
+
+    local TopbarDivider = makeElement("Frame", {
+        Size = UDim2.new(1, -20, 0, 1),
+        Position = UDim2.new(0, 10, 1, -1),
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        ZIndex = 5,
+        Parent = Topbar,
+    })
+    bindTheme(TopbarDivider, "BackgroundColor3", "CardStroke")
+
+    local PageTitle = makeElement("TextLabel", {
+        Name = "PageTitle",
+        Size = UDim2.new(1, -112, 0, 19),
+        Position = UDim2.fromOffset(14, 8),
+        BackgroundTransparency = 1,
+        Text = "Overview",
+        TextSize = 12.5,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 5,
+        Parent = Topbar,
+    })
+    bindTheme(PageTitle, "TextColor3", "TextMain")
+
+    local PageSubtitle = makeElement("TextLabel", {
+        Name = "PageSubtitle",
+        Size = UDim2.new(1, -112, 0, 14),
+        Position = UDim2.fromOffset(14, 26),
+        BackgroundTransparency = 1,
+        Text = tostring(subtitleText),
+        TextSize = 9.5,
+        Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 5,
+        Parent = Topbar,
+    })
+    bindTheme(PageSubtitle, "TextColor3", "TextDark")
+
+    local DragHandle = makeElement("Frame", {
+        Name = "DragHandle",
+        Size = UDim2.new(1, -84, 1, 0),
+        BackgroundTransparency = 1,
+        Active = true,
+        ZIndex = 6,
+        Parent = Topbar,
+    })
+
+    local Controls = makeElement("Frame", {
         Name = "Controls",
-        Size = UDim2.new(0, 74, 1, 0),
-        Position = UDim2.new(1, -82, 0, 0),
+        Size = UDim2.fromOffset(70, 32),
+        Position = UDim2.new(1, -78, 0, 9),
         BackgroundTransparency = 1,
-        Parent = DragBar
+        ZIndex = 7,
+        Parent = Topbar,
     })
 
-    -- Minimize Button
-    local MinBtn = makeElement("TextButton", {
-        Name = "MinBtn",
-        Size = UDim2.new(0, 30, 0, 30),
-        Position = UDim2.new(0, 5, 0.5, -15),
-        BackgroundTransparency = 1,
-        Text = "—",
-        TextColor3 = Lyra.Theme.TextDark,
-        TextSize = 16,
-        Font = Enum.Font.GothamMedium,
-        Parent = WindowControls
-    })
-    table.insert(themeObjects.DarkText, MinBtn)
-
-    -- Close Button
-    local CloseBtn = makeElement("TextButton", {
-        Name = "CloseBtn",
-        Size = UDim2.new(0, 30, 0, 30),
-        Position = UDim2.new(0, 40, 0.5, -15),
-        BackgroundTransparency = 1,
-        Text = "×",
-        TextColor3 = Lyra.Theme.TextDark,
-        TextSize = 20,
-        Font = Enum.Font.GothamMedium,
-        Parent = WindowControls
-    })
-    table.insert(themeObjects.DarkText, CloseBtn)
-
-    CloseBtn.MouseEnter:Connect(function()
-        TweenService:Create(CloseBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 75, 75)}):Play()
-    end)
-    CloseBtn.MouseLeave:Connect(function()
-        TweenService:Create(CloseBtn, TweenInfo.new(0.2), {TextColor3 = Lyra.Theme.TextDark}):Play()
-    end)
-    -- Animation state tracking
-    local isAnimating = false
-    local lastPosition = MainContainer.Position
-
-    local function animateCollapse(callback)
-        if isAnimating then return end
-        isAnimating = true
-        lastPosition = MainContainer.Position
-        
-        local targetPos = UDim2.new(
-            lastPosition.X.Scale,
-            lastPosition.X.Offset,
-            lastPosition.Y.Scale,
-            lastPosition.Y.Offset + windowHeight / 2
-        )
-        
-        local tween = TweenService:Create(MainContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Size = UDim2.fromOffset(windowWidth, 0),
-            Position = targetPos
-        })
-        
-        tween:Play()
-        tween.Completed:Connect(function()
-            MainContainer.Visible = false
-            isAnimating = false
-            if callback then callback() end
-        end)
-    end
-
-    local function animateExpand()
-        if isAnimating then return end
-        isAnimating = true
-        
-        local targetPos = lastPosition
-        local startPos = UDim2.new(
-            targetPos.X.Scale,
-            targetPos.X.Offset,
-            targetPos.Y.Scale,
-            targetPos.Y.Offset + windowHeight / 2
-        )
-        
-        MainContainer.Size = UDim2.fromOffset(windowWidth, 0)
-        MainContainer.Position = startPos
-        MainContainer.Visible = true
-        
-        local tween = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.fromOffset(windowWidth, windowHeight),
-            Position = targetPos
-        })
-        
-        tween:Play()
-        tween.Completed:Connect(function()
-            isAnimating = false
-        end)
-    end
-
-    CloseBtn.MouseButton1Click:Connect(function()
-        animateCollapse(function()
-            ScreenGui:Destroy()
-        end)
-    end)
-
-    makeDraggable(DragBar, MainContainer)
-
-    -- Content work surface
-    local PageContainer = makeElement("Frame", {
-        Name = "PageContainer",
-        Size = UDim2.new(1, -railWidth - 20, 1, -58),
-        Position = UDim2.new(0, railWidth + 10, 0, 50),
-        BackgroundColor3 = Lyra.Theme.Header,
-        BackgroundTransparency = 0.26,
-        Parent = MainFrame
-    })
-    table.insert(themeObjects.Headers, PageContainer)
-
-    makeElement("UICorner", {
-        CornerRadius = UDim.new(0, 6),
-        Parent = PageContainer
-    })
-
-    -- Entrance Animation Definition
-    MainContainer.Size = UDim2.fromOffset(windowWidth, 0)
-    MainContainer.Position = UDim2.new(0.5, -windowWidth / 2, 0.5, 0)
-    local fadeIn = TweenService:Create(MainContainer, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.fromOffset(windowWidth, windowHeight),
-        Position = UDim2.new(0.5, -windowWidth / 2, 0.5, -windowHeight / 2),
-    })
-
-    -- Helper functions for local Key caching
-    local keyFileName = titleText:lower():gsub("%s+", "_") .. "_key.txt"
-
-    local function saveKey(keyVal)
-        if writefile then
-            pcall(function()
-                writefile(keyFileName, keyVal)
-            end)
-        end
-    end
-
-    local function loadSavedKey()
-        if readfile then
-            local successLoad, content = pcall(function()
-                return readfile(keyFileName)
-            end)
-            if successLoad then
-                return content:gsub("%s+", "")
-            end
-        end
-        return nil
-    end
-
-    local function setClipboard(text)
-        if setclipboard then
-            setclipboard(text)
-        elseif toclipboard then
-            toclipboard(text)
-        end
-    end
-
-    local function startMainUI()
-        MainContainer.Visible = true
-        fadeIn:Play()
-    end
-
-    -- Run Key System if enabled
-    if keySettings and keySettings.Key then
-        local savedKey = loadSavedKey()
-        
-        local function validateKey(entered)
-            if type(keySettings.Key) == "string" then
-                return entered == keySettings.Key
-            elseif type(keySettings.Key) == "table" then
-                for _, k in ipairs(keySettings.Key) do
-                    if entered == k then return true end
-                end
-            elseif type(keySettings.Key) == "function" then
-                local successCheck, checkResult = pcall(keySettings.Key, entered)
-                return successCheck and checkResult
-            end
-            return false
-        end
-
-        if savedKey and validateKey(savedKey) then
-            startMainUI()
-        else
-            -- Hide main UI window during key verification
-            MainContainer.Visible = false
-            
-            -- Key Verification Window Container
-            local KeyContainer = makeElement("Frame", {
-                Name = "KeyContainer",
-                Size = UDim2.new(0, 320, 0, 210),
-                Position = UDim2.new(0.5, -160, 0.5, -105),
-                BackgroundTransparency = 1,
-                Parent = ScreenGui
-            })
-            
-            local KeyShadow = makeElement("ImageLabel", {
-                Name = "Shadow",
-                Size = UDim2.new(1, 40, 1, 40),
-                Position = UDim2.new(0, -20, 0, -20),
-                BackgroundTransparency = 1,
-                Image = "rbxassetid://6014261993",
-                ImageColor3 = Color3.fromRGB(0, 0, 0),
-                ImageTransparency = 0.5,
-                ScaleType = Enum.ScaleType.Slice,
-                SliceCenter = Rect.new(10, 10, 20, 20),
-                ZIndex = 0,
-                Parent = KeyContainer
-            })
-            
-            local KeyFrame = makeElement("Frame", {
-                Name = "KeyFrame",
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundColor3 = Lyra.Theme.Background,
-                BackgroundTransparency = 0.01,
-                BorderSizePixel = 0,
-                ClipsDescendants = true,
-                ZIndex = 1,
-                Parent = KeyContainer
-            })
-            
-            local KeyCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 8),
-                Parent = KeyFrame
-            })
-            
-            local KeyStroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.28,
-                Thickness = 1,
-                Parent = KeyFrame
-            })
-            
-            makeDraggable(KeyFrame, KeyContainer)
-            
-            -- Header title
-            local KeyHeader = makeElement("Frame", {
-                Size = UDim2.new(1, 0, 0, 35),
-                BackgroundColor3 = Lyra.Theme.Header,
-                BackgroundTransparency = 0,
-                Parent = KeyFrame
-            })
-            
-            local KeyTitle = makeElement("TextLabel", {
-                Size = UDim2.new(1, -60, 1, 0),
-                Position = UDim2.new(0, 15, 0, 0),
-                BackgroundTransparency = 1,
-                Text = keySettings.Title or "Key Verification",
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 13.5,
-                Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = KeyHeader
-            })
-            
-            local KeyClose = makeElement("TextButton", {
-                Size = UDim2.new(0, 25, 0, 25),
-                Position = UDim2.new(1, -35, 0.5, -12.5),
-                BackgroundTransparency = 1,
-                Text = "×",
-                TextColor3 = Lyra.Theme.TextDark,
-                TextSize = 18,
-                Font = Enum.Font.GothamMedium,
-                Parent = KeyHeader
-            })
-            
-            KeyClose.MouseButton1Click:Connect(function()
-                ScreenGui:Destroy()
-            end)
-            
-            -- Developer Custom Note
-            local KeyNote = makeElement("TextLabel", {
-                Size = UDim2.new(1, -30, 0, 35),
-                Position = UDim2.new(0, 15, 0, 42),
-                BackgroundTransparency = 1,
-                Text = keySettings.Note or "Please enter key to unlock features.",
-                TextColor3 = Lyra.Theme.TextDark,
-                TextSize = 11,
-                Font = Enum.Font.GothamMedium,
-                TextWrapped = true,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextYAlignment = Enum.TextYAlignment.Top,
-                Parent = KeyFrame
-            })
-            
-            -- TextBox Outline
-            local BoxFrame = makeElement("Frame", {
-                Size = UDim2.new(1, -30, 0, 34),
-                Position = UDim2.new(0, 15, 0, 85),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
-                BorderSizePixel = 0,
-                Parent = KeyFrame
-            })
-            
-            local BoxCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = BoxFrame
-            })
-            
-            local BoxStroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.4,
-                Thickness = 1,
-                Parent = BoxFrame
-            })
-            
-            local KeyInput = makeElement("TextBox", {
-                Size = UDim2.new(1, -20, 1, 0),
-                Position = UDim2.new(0, 10, 0, 0),
-                BackgroundTransparency = 1,
-                Text = "",
-                PlaceholderText = "Enter key here...",
-                PlaceholderColor3 = Lyra.Theme.TextDark,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamMedium,
-                ClearTextOnFocus = false,
-                Parent = BoxFrame
-            })
-            
-            KeyInput.Focused:Connect(function()
-                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-            end)
-            KeyInput.FocusLost:Connect(function()
-                TweenService:Create(BoxStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.4}):Play()
-            end)
-            
-            -- Actions (Verify / Get Key Link)
-            local ActionHolder = makeElement("Frame", {
-                Size = UDim2.new(1, -30, 0, 34),
-                Position = UDim2.new(0, 15, 0, 135),
-                BackgroundTransparency = 1,
-                Parent = KeyFrame
-            })
-            
-            local ActionLayout = makeElement("UIListLayout", {
-                FillDirection = Enum.FillDirection.Horizontal,
-                SortOrder = Enum.SortOrder.LayoutOrder,
-                Padding = UDim.new(0, 8),
-                Parent = ActionHolder
-            })
-            
-            -- Submit button (accent background)
-            local VerifyBtnFrame = makeElement("Frame", {
-                Size = UDim2.new(0.5, -4, 1, 0),
-                BackgroundColor3 = Lyra.Theme.AccentGrad1,
-                BorderSizePixel = 0,
-                Parent = ActionHolder
-            })
-            
-            local VerifyCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 5),
-                Parent = VerifyBtnFrame
-            })
-            
-            local VerifyBtn = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Text = "Verify Key",
-                TextColor3 = Color3.fromRGB(255, 255, 255),
-                TextSize = 12,
-                Font = Enum.Font.GothamBold,
-                Parent = VerifyBtnFrame
-            })
-            
-            -- Copy Key Link button (card background)
-            local GetBtnFrame = makeElement("Frame", {
-                Size = UDim2.new(0.5, -4, 1, 0),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BorderSizePixel = 0,
-                Parent = ActionHolder
-            })
-            
-            local GetCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 5),
-                Parent = GetBtnFrame
-            })
-            
-            local GetStroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Thickness = 1,
-                Parent = GetBtnFrame
-            })
-            
-            local GetBtn = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Text = "Get Key Link",
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamMedium,
-                Parent = GetBtnFrame
-            })
-            
-            GetBtn.MouseEnter:Connect(function()
-                TweenService:Create(GetStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1}):Play()
-            end)
-            GetBtn.MouseLeave:Connect(function()
-                TweenService:Create(GetStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke}):Play()
-            end)
-            
-            GetBtn.MouseButton1Click:Connect(function()
-                if keySettings.Url then
-                    setClipboard(keySettings.Url)
-                    GetBtn.Text = "Link Copied!"
-                    task.wait(1.5)
-                    GetBtn.Text = "Get Key Link"
-                end
-            end)
-            
-            VerifyBtn.MouseButton1Click:Connect(function()
-                local entered = KeyInput.Text:gsub("%s+", ""):gsub("%c+", "")
-                if validateKey(entered) then
-                    if keySettings.SaveKey then
-                        saveKey(entered)
-                    end
-                    VerifyBtn.Text = "Success!"
-                    
-                    local slideOut = TweenService:Create(KeyContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                        Size = UDim2.new(0, 320, 0, 0),
-                        Position = UDim2.new(0.5, -160, 0.5, 0),
-                    })
-                    slideOut:Play()
-                    slideOut.Completed:Connect(function()
-                        KeyContainer:Destroy()
-                        startMainUI()
-                    end)
-                else
-                    VerifyBtn.Text = "Invalid Key!"
-                    TweenService:Create(BoxStroke, TweenInfo.new(0.1), {Color = Color3.fromRGB(255, 75, 75)}):Play()
-                    task.wait(1.5)
-                    VerifyBtn.Text = "Verify Key"
-                    TweenService:Create(BoxStroke, TweenInfo.new(0.2), {Color = Lyra.Theme.CardStroke}):Play()
-                end
-            end)
-        end
-    else
-        startMainUI()
-    end
-
-    local isVisible = true
-    local function toggleUI()
-        if not MainContainer or not MainContainer.Parent or isAnimating then return end
-        if isVisible then
-            animateCollapse(function()
-                isVisible = false
-            end)
-        else
-            animateExpand()
-            isVisible = true
-        end
-    end
-
-    -- Minimize connection
-    MinBtn.MouseButton1Click:Connect(toggleUI)
-
-    -- Toggle with Key
-    local toggleKey = Lyra.ToggleKey or Enum.KeyCode.RightShift
-    local toggleConnection
-    toggleConnection = UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
-        if input.KeyCode == toggleKey then
-            toggleUI()
-        end
-    end)
-
-    ScreenGui.Destroying:Connect(function()
-        if toggleConnection then
-            toggleConnection:Disconnect()
-            toggleConnection = nil
-        end
-    end)
-
-    -- Mobile Floating Toggle Button
-    if UserInputService.TouchEnabled then
-        local MobileButton = makeElement("ImageButton", {
-            Name = "MobileToggle",
-            Size = UDim2.new(0, 42, 0, 42),
-            Position = UDim2.new(0.05, 0, 0.15, 0),
-            BackgroundColor3 = Lyra.Theme.Header,
-            BorderSizePixel = 0,
-            ZIndex = 10,
-            Parent = ScreenGui
-        })
-        table.insert(themeObjects.Headers, MobileButton)
-        
-        local ButtonCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(1, 0),
-            Parent = MobileButton
-        })
-        
-        local ButtonStroke = makeElement("UIStroke", {
-            Color = Lyra.Theme.AccentGrad1,
-            Thickness = 1,
-            Parent = MobileButton
-        })
-        table.insert(themeObjects.Strokes, ButtonStroke)
-        
-        local ButtonLabel = makeElement("TextLabel", {
-            Size = UDim2.new(1, 0, 1, 0),
+    local function makeWindowControl(name, text, x)
+        local button = makeElement("TextButton", {
+            Name = name,
+            Size = UDim2.fromOffset(30, 28),
+            Position = UDim2.fromOffset(x, 2),
             BackgroundTransparency = 1,
-            Text = "L",
-            TextColor3 = Lyra.Theme.TextMain,
-            TextSize = 16,
-            Font = Enum.Font.GothamBold,
-            Parent = MobileButton
+            BorderSizePixel = 0,
+            Text = text,
+            TextSize = 14,
+            Font = Enum.Font.GothamMedium,
+            AutoButtonColor = false,
+            ZIndex = 8,
+            Parent = Controls,
         })
-        table.insert(themeObjects.MainText, ButtonLabel)
-        
-        MobileButton.MouseButton1Click:Connect(toggleUI)
-        
-        local dragStart, startPos
-        local dragging = false
-        
-        MobileButton.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true
-                dragStart = input.Position
-                startPos = MobileButton.Position
-                
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragging = false
-                    end
-                end)
-            end
-        end)
-        
-        UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-                local delta = input.Position - dragStart
-                MobileButton.Position = UDim2.new(
-                    startPos.X.Scale, 
-                    startPos.X.Offset + delta.X, 
-                    startPos.Y.Scale, 
-                    startPos.Y.Offset + delta.Y
-                )
-            end
-        end)
+        addCorner(button, 5)
+        bindTheme(button, "BackgroundColor3", "Card")
+        bindTheme(button, "TextColor3", "TextDark")
+
+        track(button.MouseEnter:Connect(function()
+            tween(button, 0.12, {
+                BackgroundTransparency = 0,
+                TextColor3 = currentTheme.TextMain,
+            })
+        end))
+
+        track(button.MouseLeave:Connect(function()
+            tween(button, 0.12, {
+                BackgroundTransparency = 1,
+                TextColor3 = currentTheme.TextDark,
+            })
+        end))
+
+        return button
     end
 
-    -- Window Object Definition
+    local MinimizeButton = makeWindowControl("Minimize", "-", 2)
+    local CloseButton = makeWindowControl("Close", "x", 38)
+
+    track(CloseButton.MouseEnter:Connect(function()
+        tween(CloseButton, 0.12, {
+            BackgroundTransparency = 0,
+            TextColor3 = currentTheme.Danger,
+        })
+    end))
+
+    local PageHost = makeElement("Frame", {
+        Name = "PageHost",
+        Size = UDim2.new(1, 0, 1, -topbarHeight),
+        Position = UDim2.fromOffset(0, topbarHeight),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = 3,
+        Parent = Content,
+    })
+
     local Window = {
         Tabs = {},
         ActiveTab = nil,
-        ToggleConnection = toggleConnection,
+        ScreenGui = ScreenGui,
+        MainContainer = MainContainer,
+        _openDropdown = nil,
     }
 
-    -- Set dynamic theme updating
-    function Window:SetTheme(themeTable)
-        Lyra.Theme = themeTable
-        
-        for _, bg in ipairs(themeObjects.Backgrounds) do bg.BackgroundColor3 = themeTable.Background end
-        for _, hd in ipairs(themeObjects.Headers) do hd.BackgroundColor3 = themeTable.Header end
-        for _, sb in ipairs(themeObjects.Sidebars) do sb.BackgroundColor3 = themeTable.Sidebar end
-        for _, cd in ipairs(themeObjects.Cards) do cd.BackgroundColor3 = themeTable.Card end
-        for _, str in ipairs(themeObjects.Strokes) do str.Color = themeTable.CardStroke end
-        for _, txt in ipairs(themeObjects.MainText) do txt.TextColor3 = themeTable.TextMain end
-        for _, txt in ipairs(themeObjects.DarkText) do txt.TextColor3 = themeTable.TextDark end
-        for _, grad in ipairs(themeObjects.Gradients) do
-            grad.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, themeTable.AccentGrad1),
-                ColorSequenceKeypoint.new(1, themeTable.AccentGrad2)
-            })
+    local unlocked = false
+    local isVisible = false
+    local isAnimating = false
+    local fitScale = 1
+    local toggleKey = Lyra.ToggleKey or Enum.KeyCode.RightShift
+
+    local function closeOpenDropdown()
+        if Window._openDropdown and Window._openDropdown.Close then
+            Window._openDropdown.Close()
         end
-        for _, updateFn in ipairs(themeObjects.Updaters) do
-            pcall(updateFn, themeTable)
+    end
+
+    local function disconnectAll()
+        for _, connection in ipairs(connections) do
+            pcall(function()
+                connection:Disconnect()
+            end)
         end
+
+        table.clear(connections)
+    end
+
+    track(ScreenGui.Destroying:Connect(function()
+        disconnectAll()
+    end))
+
+    function Window:Destroy()
+        disconnectAll()
+
+        if ScreenGui.Parent then
+            ScreenGui:Destroy()
+        end
+    end
+
+    function Window:SetTheme(theme)
+        currentTheme = normalizeTheme(theme)
+        Lyra.Theme = currentTheme
+
+        for _, binding in ipairs(themeBindings) do
+            if binding.Instance and binding.Instance.Parent then
+                pcall(function()
+                    binding.Instance[binding.Property] = currentTheme[binding.Key]
+                end)
+            end
+        end
+
+        for _, updater in ipairs(themeUpdaters) do
+            pcall(updater, currentTheme)
+        end
+
+        return currentTheme
     end
 
     function Window:SetToggleKey(newKey)
         if typeof(newKey) == "EnumItem" and newKey.EnumType == Enum.KeyCode then
             toggleKey = newKey
+            Lyra.ToggleKey = newKey
+            return true
+        end
+
+        return false
+    end
+
+    local MobileButton
+
+    local function showWindow()
+        if isAnimating or not unlocked then
+            return
+        end
+
+        isAnimating = true
+        isVisible = true
+        MainContainer.Visible = true
+        WindowScale.Scale = fitScale * 0.965
+        tween(WindowScale, 0.22, { Scale = fitScale }, Enum.EasingStyle.Quint)
+
+        task.delay(0.23, function()
+            isAnimating = false
+        end)
+    end
+
+    local function hideWindow()
+        if isAnimating or not unlocked then
+            return
+        end
+
+        isAnimating = true
+        closeOpenDropdown()
+        local hideTween = tween(
+            WindowScale,
+            0.16,
+            { Scale = fitScale * 0.97 },
+            Enum.EasingStyle.Quad,
+            Enum.EasingDirection.In
+        )
+
+        if hideTween then
+            track(hideTween.Completed:Connect(function()
+                MainContainer.Visible = false
+                isVisible = false
+                isAnimating = false
+            end))
+        else
+            MainContainer.Visible = false
+            isVisible = false
+            isAnimating = false
         end
     end
 
-    function Window:CreateTab(tabName)
-        tabName = tabName or "Tab"
+    function Window:Toggle()
+        if isVisible then
+            hideWindow()
+        else
+            showWindow()
+        end
+    end
 
-        -- Dense rail item with a clear active state.
-        local TabButton = makeElement("TextButton", {
-            Name = tabName .. "_Btn",
-            Size = UDim2.new(1, -16, 0, 38),
-            Position = UDim2.new(0, 8, 0, 0),
-            BackgroundColor3 = Lyra.Theme.Card,
-            BackgroundTransparency = 1,
-            Text = "",
+    local dragging = false
+    local dragInput
+    local dragStart
+    local dragOrigin
+
+    track(DragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            dragOrigin = MainContainer.Position
+
+            track(input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end))
+        end
+    end))
+
+    track(DragHandle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end))
+
+    track(UserInputService.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            local delta = input.Position - dragStart
+            local currentViewport = getViewport()
+            local minX = -windowWidth + 84
+            local maxX = currentViewport.X - 84
+            local minY = 0
+            local maxY = currentViewport.Y - 42
+            local x = math.clamp(dragOrigin.X.Offset + delta.X, minX, maxX)
+            local y = math.clamp(dragOrigin.Y.Offset + delta.Y, minY, maxY)
+            MainContainer.Position = UDim2.fromOffset(x, y)
+        end
+    end))
+
+    track(MinimizeButton.MouseButton1Click:Connect(hideWindow))
+    track(CloseButton.MouseButton1Click:Connect(function()
+        Window:Destroy()
+    end))
+
+    track(UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then
+            return
+        end
+
+        if input.KeyCode == toggleKey then
+            Window:Toggle()
+            return
+        end
+
+        if Window._openDropdown
+            and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch)
+        then
+            local openDropdown = Window._openDropdown
+
+            if not pointInside(openDropdown.Frame, input.Position) and not pointInside(openDropdown.Row, input.Position) then
+                openDropdown.Close()
+            end
+        end
+    end))
+
+    if UserInputService.TouchEnabled then
+        MobileButton = makeElement("TextButton", {
+            Name = "MobileToggle",
+            Size = UDim2.fromOffset(44, 44),
+            Position = UDim2.fromOffset(14, math.max(14, math.floor(viewport.Y * 0.18))),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            Text = "L",
+            TextSize = 15,
+            Font = Enum.Font.GothamBold,
+            TextColor3 = Color3.fromRGB(255, 255, 255),
             AutoButtonColor = false,
-            Parent = SidebarScroll
+            Visible = false,
+            ZIndex = 90,
+            Parent = ScreenGui,
         })
+        addCorner(MobileButton, 8)
+        local MobileStroke = addStroke(MobileButton, currentTheme.CardStroke, 0.15, 1)
+        addAccentGradient(MobileButton, 35)
+        bindTheme(MobileStroke, "Color", "CardStroke")
 
-        local TabBtnCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 5),
-            Parent = TabButton
+        local mobileDragging = false
+        local mobileMoved = false
+        local mobileStart
+        local mobileOrigin
+
+        track(MobileButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                mobileDragging = true
+                mobileMoved = false
+                mobileStart = input.Position
+                mobileOrigin = MobileButton.Position
+
+                track(input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        mobileDragging = false
+
+                        if not mobileMoved then
+                            Window:Toggle()
+                        end
+                    end
+                end))
+            end
+        end))
+
+        track(UserInputService.InputChanged:Connect(function(input)
+            if mobileDragging
+                and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement)
+            then
+                local delta = input.Position - mobileStart
+
+                if delta.Magnitude > 5 then
+                    mobileMoved = true
+                end
+
+                local currentViewport = getViewport()
+                local x = math.clamp(mobileOrigin.X.Offset + delta.X, 6, currentViewport.X - 50)
+                local y = math.clamp(mobileOrigin.Y.Offset + delta.Y, 6, currentViewport.Y - 50)
+                MobileButton.Position = UDim2.fromOffset(x, y)
+            end
+        end))
+    end
+
+    local function fitWindowToViewport()
+        local currentViewport = getViewport()
+        fitScale = math.min(1, (currentViewport.X - 12) / windowWidth, (currentViewport.Y - 12) / windowHeight)
+        WindowScale.Scale = fitScale
+        MainContainer.Position = UDim2.fromOffset(
+            math.floor((currentViewport.X - (windowWidth * fitScale)) / 2),
+            math.floor((currentViewport.Y - (windowHeight * fitScale)) / 2)
+        )
+
+        if MobileButton then
+            MobileButton.Position = UDim2.fromOffset(
+                math.clamp(MobileButton.Position.X.Offset, 6, currentViewport.X - 50),
+                math.clamp(MobileButton.Position.Y.Offset, 6, currentViewport.Y - 50)
+            )
+        end
+    end
+
+    local camera = workspace.CurrentCamera
+
+    if camera then
+        track(camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+            closeOpenDropdown()
+            fitWindowToViewport()
+        end))
+    end
+
+    fitWindowToViewport()
+
+    local function createRow(tab, rowName, height)
+        tab._order = tab._order + 1
+        local row = makeElement("Frame", {
+            Name = rowName,
+            Size = UDim2.new(1, -2, 0, height),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            Active = true,
+            LayoutOrder = tab._order,
+            Parent = tab.Page,
         })
+        addCorner(row, 5)
+        local rowStroke = addStroke(row, currentTheme.CardStroke, 0.48, 1)
+        bindTheme(row, "BackgroundColor3", "Card")
+        bindTheme(rowStroke, "Color", "CardStroke")
 
-        local TabBtnStroke = makeElement("UIStroke", {
-            Color = Lyra.Theme.AccentGrad1,
-            Transparency = 1,
-            Thickness = 1,
-            Parent = TabButton
-        })
-
-        -- Left accent rail for the active tab.
-        local ActiveIndicator = makeElement("Frame", {
-            Name = "Indicator",
-            Size = UDim2.new(0, 3, 0, 20),
-            Position = UDim2.new(0, 0, 0.5, -10),
-            BackgroundColor3 = Lyra.Theme.AccentGrad1,
+        local accent = makeElement("Frame", {
+            Name = "Accent",
+            Size = UDim2.new(0, 2, 0, math.max(16, height - 18)),
+            Position = UDim2.new(0, 0, 0.5, -math.max(16, height - 18) / 2),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
-            Parent = TabButton
+            ZIndex = 2,
+            Parent = row,
         })
-        table.insert(themeObjects.Backgrounds, ActiveIndicator) -- Uses background color logic
-        
-        local ActiveIndicatorGrad = makeElement("UIGradient", {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Lyra.Theme.AccentGrad1),
-                ColorSequenceKeypoint.new(1, Lyra.Theme.AccentGrad2)
-            }),
-            Parent = ActiveIndicator
-        })
-        table.insert(themeObjects.Gradients, ActiveIndicatorGrad)
+        addCorner(accent, 2)
+        addAccentGradient(accent, 90)
 
-        local IndicatorCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 2),
-            Parent = ActiveIndicator
+        track(row.MouseEnter:Connect(function()
+            tween(row, 0.13, { BackgroundColor3 = currentTheme.SurfaceHover })
+            tween(rowStroke, 0.13, {
+                Color = currentTheme.AccentGrad2,
+                Transparency = 0.34,
+            })
+            tween(accent, 0.13, { BackgroundTransparency = 0 })
+        end))
+
+        track(row.MouseLeave:Connect(function()
+            tween(row, 0.13, { BackgroundColor3 = currentTheme.Card })
+            tween(rowStroke, 0.13, {
+                Color = currentTheme.CardStroke,
+                Transparency = 0.48,
+            })
+            tween(accent, 0.13, { BackgroundTransparency = 1 })
+        end))
+
+        return row, rowStroke, accent
+    end
+
+    local function createRowLabel(row, text, rightPadding)
+        local label = makeElement("TextLabel", {
+            Name = "Label",
+            Size = UDim2.new(1, -(rightPadding or 56), 1, 0),
+            Position = UDim2.fromOffset(12, 0),
+            BackgroundTransparency = 1,
+            Text = tostring(text or "Control"),
+            TextSize = 11.5,
+            Font = Enum.Font.GothamSemibold,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 3,
+            Parent = row,
         })
+        bindTheme(label, "TextColor3", "TextMain")
+        return label
+    end
+
+    function Window:CreateTab(tabNameOrConfig)
+        local tabConfig = type(tabNameOrConfig) == "table" and tabNameOrConfig or {}
+        local tabName = type(tabNameOrConfig) == "table" and (tabConfig.Name or "Tab") or (tabNameOrConfig or "Tab")
+        local tabIndex = #self.Tabs + 1
+        local TabButton = makeElement("TextButton", {
+            Name = tostring(tabName) .. "Tab",
+            Size = UDim2.new(1, 0, 0, 40),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = tabIndex,
+            ZIndex = 5,
+            Parent = TabsList,
+        })
+        addCorner(TabButton, 5)
+
+        local ActiveFill = makeElement("Frame", {
+            Name = "ActiveFill",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 5,
+            Parent = TabButton,
+        })
+        addCorner(ActiveFill, 5)
+        addAccentGradient(ActiveFill, 12)
+
+        local Monogram = makeElement("Frame", {
+            Name = "Monogram",
+            Size = UDim2.fromOffset(24, 24),
+            Position = UDim2.fromOffset(7, 8),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            ZIndex = 6,
+            Parent = TabButton,
+        })
+        addCorner(Monogram, 5)
+        bindTheme(Monogram, "BackgroundColor3", "Card")
+
+        local MonogramText = makeElement("TextLabel", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = string.upper(tostring(tabName):sub(1, 1)),
+            TextSize = 10,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 7,
+            Parent = Monogram,
+        })
+        bindTheme(MonogramText, "TextColor3", "TextDark")
 
         local TabLabel = makeElement("TextLabel", {
             Name = "Label",
-            Size = UDim2.new(1, -28, 1, 0),
-            Position = UDim2.new(0, 14, 0, 0),
+            Size = UDim2.new(1, -42, 1, 0),
+            Position = UDim2.fromOffset(38, 0),
             BackgroundTransparency = 1,
-            Text = tabName,
-            TextColor3 = Lyra.Theme.TextDark,
-            TextSize = 12,
+            Text = tostring(tabName),
+            TextSize = compact and 10.5 or 11,
             Font = Enum.Font.GothamSemibold,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = TabButton
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 7,
+            Parent = TabButton,
         })
-        table.insert(themeObjects.DarkText, TabLabel)
+        bindTheme(TabLabel, "TextColor3", "TextDark")
 
-        -- Tab Content Scrolling Page
-        local TabPage = makeElement("ScrollingFrame", {
-            Name = tabName .. "_Page",
-            Size = UDim2.new(1, -20, 1, -20),
-            Position = UDim2.new(0, 10, 0, 10),
+        local Page = makeElement("ScrollingFrame", {
+            Name = tostring(tabName) .. "Page",
+            Size = UDim2.new(1, -24, 1, -22),
+            Position = UDim2.fromOffset(12, 11),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
+            ScrollBarThickness = 2,
+            ScrollBarImageTransparency = 0.25,
+            CanvasSize = UDim2.fromOffset(0, 0),
             Visible = false,
-            ScrollBarThickness = 3,
-            ScrollBarImageColor3 = Lyra.Theme.AccentGrad2,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            Parent = PageContainer
+            ZIndex = 4,
+            Parent = PageHost,
         })
+        bindTheme(Page, "ScrollBarImageColor3", "AccentGrad2")
 
-        local TabPageLayout = makeElement("UIListLayout", {
+        local PageLayout = makeElement("UIListLayout", {
             SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 8),
-            Parent = TabPage
+            Padding = UDim.new(0, 6),
+            Parent = Page,
         })
 
-        TabPageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            TabPage.CanvasSize = UDim2.new(0, 0, 0, TabPageLayout.AbsoluteContentSize.Y)
-        end)
+        track(PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            Page.CanvasSize = UDim2.fromOffset(0, PageLayout.AbsoluteContentSize.Y + 4)
+        end))
 
         local Tab = {
+            Name = tostring(tabName),
             Button = TabButton,
-            Page = TabPage
+            Page = Page,
+            _order = 0,
         }
 
-        local function selectTab()
-            if Window.ActiveTab == Tab then return end
+        local function applySelection(selected, animate)
+            if selected then
+                ActiveFill.BackgroundTransparency = animate and 1 or 0.1
+                tween(ActiveFill, 0.18, { BackgroundTransparency = 0.1 })
+                tween(TabLabel, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+                tween(Monogram, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 255, 255), BackgroundTransparency = 0.84 })
+                tween(MonogramText, 0.15, { TextColor3 = Color3.fromRGB(255, 255, 255) })
+            else
+                tween(ActiveFill, 0.15, { BackgroundTransparency = 1 })
+                tween(TabLabel, 0.15, { TextColor3 = currentTheme.TextDark })
+                tween(Monogram, 0.15, { BackgroundColor3 = currentTheme.Card, BackgroundTransparency = 0 })
+                tween(MonogramText, 0.15, { TextColor3 = currentTheme.TextDark })
+            end
+        end
+
+        function Tab:Select()
+            if Window.ActiveTab == self then
+                return
+            end
+
+            closeOpenDropdown()
 
             if Window.ActiveTab then
-                TweenService:Create(Window.ActiveTab.Button.Label, TweenInfo.new(0.2), {TextColor3 = Lyra.Theme.TextDark}):Play()
-                TweenService:Create(Window.ActiveTab.Button.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-                TweenService:Create(Window.ActiveTab.Button, TweenInfo.new(0.2), {BackgroundTransparency = 1, BackgroundColor3 = Lyra.Theme.Card}):Play()
-                if Window.ActiveTab.Button:FindFirstChildOfClass("UIStroke") then
-                    TweenService:Create(Window.ActiveTab.Button:FindFirstChildOfClass("UIStroke"), TweenInfo.new(0.2), {Transparency = 1}):Play()
-                end
                 Window.ActiveTab.Page.Visible = false
+                Window.ActiveTab._applySelection(false, true)
             end
 
-            Window.ActiveTab = Tab
-            TweenService:Create(TabLabel, TweenInfo.new(0.2), {TextColor3 = Lyra.Theme.TextMain}):Play()
-            TweenService:Create(ActiveIndicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
-            
-            TweenService:Create(TabButton, TweenInfo.new(0.2), {BackgroundTransparency = 0.55, BackgroundColor3 = Lyra.Theme.AccentGrad1}):Play()
-            TweenService:Create(TabBtnStroke, TweenInfo.new(0.2), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.42}):Play()
-            TabPage.Visible = true
+            Window.ActiveTab = self
+            PageTitle.Text = self.Name
+            self.Page.Position = UDim2.fromOffset(18, 11)
+            self.Page.Visible = true
+            tween(self.Page, 0.18, { Position = UDim2.fromOffset(12, 11) }, Enum.EasingStyle.Quint)
+            self._applySelection(true, true)
         end
 
-        TabButton.MouseButton1Click:Connect(selectTab)
+        Tab._applySelection = applySelection
 
-        TabButton.MouseEnter:Connect(function()
+        function Tab:SetName(newName)
+            self.Name = tostring(newName or self.Name)
+            TabLabel.Text = self.Name
+            MonogramText.Text = string.upper(self.Name:sub(1, 1))
+
+            if Window.ActiveTab == self then
+                PageTitle.Text = self.Name
+            end
+        end
+
+        track(TabButton.MouseButton1Click:Connect(function()
+            Tab:Select()
+        end))
+
+        track(TabButton.MouseEnter:Connect(function()
             if Window.ActiveTab ~= Tab then
-                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = Lyra.Theme.TextMain}):Play()
-                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 0.82, BackgroundColor3 = Lyra.Theme.Card}):Play()
+                tween(TabButton, 0.12, {
+                    BackgroundColor3 = currentTheme.Card,
+                    BackgroundTransparency = 0.45,
+                })
+            end
+        end))
+
+        track(TabButton.MouseLeave:Connect(function()
+            if Window.ActiveTab ~= Tab then
+                tween(TabButton, 0.12, { BackgroundTransparency = 1 })
+            end
+        end))
+
+        addThemeUpdater(function(theme)
+            if Window.ActiveTab ~= Tab then
+                TabLabel.TextColor3 = theme.TextDark
+                Monogram.BackgroundColor3 = theme.Card
+                MonogramText.TextColor3 = theme.TextDark
             end
         end)
 
-        TabButton.MouseLeave:Connect(function()
-            if Window.ActiveTab ~= Tab then
-                TweenService:Create(TabLabel, TweenInfo.new(0.15), {TextColor3 = Lyra.Theme.TextDark}):Play()
-                TweenService:Create(TabButton, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+        function Tab:CreateLabel(textOrConfig)
+            local labelConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (labelConfig.Text or labelConfig.Name or "Section")
+                or (textOrConfig or "Section")
+            self._order = self._order + 1
+            local holder = makeElement("Frame", {
+                Name = "Section",
+                Size = UDim2.new(1, -2, 0, compact and 40 or 32),
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                LayoutOrder = self._order,
+                Parent = self.Page,
+            })
+
+            local marker = makeElement("Frame", {
+                Size = UDim2.fromOffset(2, 14),
+                Position = UDim2.new(0, 2, 0.5, -7),
+                BackgroundTransparency = 0,
+                BorderSizePixel = 0,
+                Parent = holder,
+            })
+            addCorner(marker, 2)
+            addAccentGradient(marker, 90)
+
+            local label = makeElement("TextLabel", {
+                Size = UDim2.new(1, -14, 1, 0),
+                Position = UDim2.fromOffset(12, 0),
+                BackgroundTransparency = 1,
+                Text = tostring(text),
+                TextSize = 10.5,
+                Font = Enum.Font.GothamBold,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Center,
+                Parent = holder,
+            })
+            bindTheme(label, "TextColor3", "TextDark")
+
+            local control = {}
+            control.UpdateText = function(first, second)
+                label.Text = tostring(methodValue(control, first, second) or "")
             end
-        end)
-
-        if not Window.ActiveTab then
-            selectTab()
+            control.SetText = control.UpdateText
+            return control
         end
 
-        -- =====================================================================
-        -- COMPONENT CREATORS
-        -- =====================================================================
+        Tab.CreateSection = Tab.CreateLabel
 
-        function Tab:CreateLabel(textString)
-            local LabelFrame = makeElement("Frame", {
-                Name = "LabelFrame",
-                Size = UDim2.new(1, -4, 0, 28),
-                BackgroundTransparency = 1,
-                Parent = TabPage
-            })
+        function Tab:CreateButton(textOrConfig, callback)
+            local buttonConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (buttonConfig.Name or buttonConfig.Text or "Button")
+                or (textOrConfig or "Button")
+            callback = type(textOrConfig) == "table" and (buttonConfig.Callback or callback) or callback
 
-            local TextLabel = makeElement("TextLabel", {
-                Size = UDim2.new(1, -12, 1, 0),
-                Position = UDim2.new(0, 6, 0, 0),
-                BackgroundTransparency = 1,
-                Text = textString,
-                TextColor3 = Lyra.Theme.TextDark,
-                TextSize = 11,
-                Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = LabelFrame
-            })
-            table.insert(themeObjects.DarkText, TextLabel)
-
-            return {
-                UpdateText = function(newText)
-                    TextLabel.Text = newText
-                end
-            }
-        end
-
-        function Tab:CreateButton(btnText, callback)
-            callback = callback or function() end
-
-            local BtnFrame = makeElement("Frame", {
-                Name = "ButtonFrame",
-                Size = UDim2.new(1, -4, 0, 38),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
+            local row = createRow(self, "Button", 42)
+            local label = createRowLabel(row, text, 52)
+            local action = makeElement("Frame", {
+                Size = UDim2.fromOffset(26, 26),
+                Position = UDim2.new(1, -34, 0.5, -13),
+                BackgroundTransparency = 0,
                 BorderSizePixel = 0,
-                Parent = TabPage
+                ZIndex = 3,
+                Parent = row,
             })
-            table.insert(themeObjects.Cards, BtnFrame)
+            addCorner(action, 5)
+            bindTheme(action, "BackgroundColor3", "Header")
 
-            local Corner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = BtnFrame
-            })
-
-            local Stroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.38,
-                Thickness = 1,
-                Parent = BtnFrame
-            })
-
-            local Button = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
+            local actionLabel = makeElement("TextLabel", {
+                Size = UDim2.fromScale(1, 1),
                 BackgroundTransparency = 1,
-                Text = btnText,
-                TextColor3 = Lyra.Theme.TextMain,
+                Text = ">",
                 TextSize = 12,
-                Font = Enum.Font.GothamSemibold,
-                AutoButtonColor = false,
-                Parent = BtnFrame
+                Font = Enum.Font.GothamBold,
+                ZIndex = 4,
+                Parent = action,
             })
-            table.insert(themeObjects.MainText, Button)
+            bindTheme(actionLabel, "TextColor3", "TextDark")
 
-            Button.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
-            end)
-
-            Button.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
-            end)
-
-            Button.MouseButton1Down:Connect(function()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.05), {Size = UDim2.new(1, -10, 0, 36), Position = UDim2.new(0, 3, 0, 1)}):Play()
-            end)
-
-            Button.MouseButton1Up:Connect(function()
-                TweenService:Create(BtnFrame, TweenInfo.new(0.1), {Size = UDim2.new(1, -4, 0, 38), Position = UDim2.new(0, 0, 0, 0)}):Play()
-                task.spawn(callback)
-            end)
-
-            return {
-                UpdateButtonText = function(newText)
-                    Button.Text = newText
-                end
-            }
-        end
-
-        function Tab:CreateToggle(toggleText, default, callback)
-            default = default or false
-            callback = callback or function() end
-            local toggled = default
-
-            local ToggleFrame = makeElement("Frame", {
-                Name = "ToggleFrame",
-                Size = UDim2.new(1, -4, 0, 42),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
-                BorderSizePixel = 0,
-                Parent = TabPage
-            })
-            table.insert(themeObjects.Cards, ToggleFrame)
-
-            local Corner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = ToggleFrame
-            })
-
-            local Stroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.38,
-                Thickness = 1,
-                Parent = ToggleFrame
-            })
-
-            local Label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -68, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Text = toggleText,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = ToggleFrame
-            })
-            table.insert(themeObjects.MainText, Label)
-
-            -- Compact pill switch.
-            local Switch = makeElement("Frame", {
-                Name = "Switch",
-                Size = UDim2.new(0, 38, 0, 20),
-                Position = UDim2.new(1, -50, 0.5, -10),
-                BackgroundColor3 = Lyra.Theme.Header,
-                BorderSizePixel = 0,
-                Parent = ToggleFrame
-            })
-
-            local SwitchCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(1, 0),
-                Parent = Switch
-            })
-
-            local SwitchStroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.34,
-                Thickness = 1,
-                Parent = Switch
-            })
-
-            -- Circular Switch Knob
-            local Circle = makeElement("Frame", {
-                Name = "Circle",
-                Size = UDim2.new(0, 14, 0, 14),
-                Position = UDim2.new(0, 3, 0.5, -7),
-                BackgroundColor3 = Lyra.Theme.TextDark,
-                BorderSizePixel = 0,
-                Parent = Switch
-            })
-
-            local CircleCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(1, 0),
-                Parent = Circle
-            })
-
-            local ToggleBtn = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
+            local click = makeElement("TextButton", {
+                Size = UDim2.fromScale(1, 1),
                 BackgroundTransparency = 1,
                 Text = "",
-                Parent = ToggleFrame
+                AutoButtonColor = false,
+                ZIndex = 5,
+                Parent = row,
             })
 
-            local function updateToggle(state)
-                toggled = state
-                local targetPos = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-                local targetColor = state and Lyra.Theme.AccentGrad1 or Lyra.Theme.Header
-                local targetCircleColor = state and Color3.fromRGB(255, 255, 255) or Lyra.Theme.TextDark
+            local disabled = buttonConfig.Disabled == true
 
-                -- Bouncy knob slide
-                local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                TweenService:Create(Circle, tweenInfo, {Position = targetPos, BackgroundColor3 = targetCircleColor}):Play()
-                TweenService:Create(Switch, TweenInfo.new(0.15), {BackgroundColor3 = targetColor}):Play()
-                
-                task.spawn(callback, toggled)
-            end
-
-            ToggleBtn.MouseButton1Click:Connect(function()
-                updateToggle(not toggled)
-            end)
-
-            ToggleBtn.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
-            end)
-
-            ToggleBtn.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
-                TweenService:Create(ToggleFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
-            end)
-
-            updateToggle(default)
-
-            table.insert(themeObjects.Updaters, function(newTheme)
-                local targetColor = toggled and newTheme.AccentGrad1 or newTheme.Header
-                Switch.BackgroundColor3 = targetColor
-                SwitchStroke.Color = newTheme.CardStroke
-                Circle.BackgroundColor3 = toggled and Color3.fromRGB(255, 255, 255) or newTheme.TextDark
-            end)
-
-            return {
-                SetToggle = function(state)
-                    updateToggle(state)
+            track(click.MouseButton1Click:Connect(function()
+                if disabled then
+                    return
                 end
-            }
+
+                tween(action, 0.07, { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -32, 0.5, -11) })
+                task.delay(0.08, function()
+                    tween(action, 0.12, { Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, -34, 0.5, -13) })
+                end)
+                runCallback(callback)
+            end))
+
+            local control = {}
+            control.UpdateButtonText = function(first, second)
+                label.Text = tostring(methodValue(control, first, second) or "")
+            end
+            control.SetText = control.UpdateButtonText
+            control.SetDisabled = function(first, second)
+                disabled = methodValue(control, first, second) == true
+                label.TextTransparency = disabled and 0.45 or 0
+                actionLabel.TextTransparency = disabled and 0.45 or 0
+            end
+            return control
         end
 
-        function Tab:CreateSlider(sliderText, min, max, default, callback)
-            min = min or 0
-            max = max or 100
-            default = default or min
-            callback = callback or function() end
+        function Tab:CreateToggle(textOrConfig, default, callback)
+            local toggleConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (toggleConfig.Name or toggleConfig.Text or "Toggle")
+                or (textOrConfig or "Toggle")
+
+            if type(textOrConfig) == "table" then
+                default = toggleConfig.CurrentValue
+
+                if default == nil then
+                    default = toggleConfig.Default
+                end
+
+                callback = toggleConfig.Callback or callback
+            end
+
+            local state = default == true
+            local row = createRow(self, "Toggle", 42)
+            createRowLabel(row, text, 68)
+
+            local switch = makeElement("Frame", {
+                Name = "Switch",
+                Size = UDim2.fromOffset(38, 20),
+                Position = UDim2.new(1, -50, 0.5, -10),
+                BackgroundTransparency = 0,
+                BorderSizePixel = 0,
+                ZIndex = 3,
+                Parent = row,
+            })
+            addCorner(switch, 10)
+            local switchStroke = addStroke(switch, currentTheme.CardStroke, 0.4, 1)
+            bindTheme(switchStroke, "Color", "CardStroke")
+
+            local knob = makeElement("Frame", {
+                Name = "Knob",
+                Size = UDim2.fromOffset(14, 14),
+                BackgroundColor3 = currentTheme.TextDark,
+                BorderSizePixel = 0,
+                ZIndex = 4,
+                Parent = switch,
+            })
+            addCorner(knob, 7)
+
+            local click = makeElement("TextButton", {
+                Size = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
+                ZIndex = 5,
+                Parent = row,
+            })
+
+            local function render(animate)
+                local switchColor = state and currentTheme.AccentGrad2 or currentTheme.Input
+                local knobColor = state and Color3.fromRGB(255, 255, 255) or currentTheme.TextDark
+                local knobPosition = state and UDim2.fromOffset(21, 3) or UDim2.fromOffset(3, 3)
+
+                if animate then
+                    tween(switch, 0.16, { BackgroundColor3 = switchColor })
+                    tween(knob, 0.2, {
+                        Position = knobPosition,
+                        BackgroundColor3 = knobColor,
+                    }, Enum.EasingStyle.Back)
+                else
+                    switch.BackgroundColor3 = switchColor
+                    knob.Position = knobPosition
+                    knob.BackgroundColor3 = knobColor
+                end
+            end
+
+            local function setState(newState, fireCallback, animate)
+                state = newState == true
+                render(animate ~= false)
+
+                if fireCallback then
+                    runCallback(callback, state)
+                end
+            end
+
+            track(click.MouseButton1Click:Connect(function()
+                setState(not state, true, true)
+            end))
+
+            addThemeUpdater(function()
+                render(false)
+            end)
+            setState(state, true, false)
+
+            local control = {}
+            control.SetToggle = function(first, second)
+                setState(methodValue(control, first, second), true, true)
+            end
+            control.SetValue = control.SetToggle
+            control.GetValue = function()
+                return state
+            end
+            return control
+        end
+
+        function Tab:CreateSlider(textOrConfig, minimum, maximum, default, callback)
+            local sliderConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (sliderConfig.Name or sliderConfig.Text or "Slider")
+                or (textOrConfig or "Slider")
+
+            if type(textOrConfig) == "table" then
+                minimum = sliderConfig.Min or (sliderConfig.Range and sliderConfig.Range[1]) or 0
+                maximum = sliderConfig.Max or (sliderConfig.Range and sliderConfig.Range[2]) or 100
+                default = sliderConfig.CurrentValue
+
+                if default == nil then
+                    default = sliderConfig.Default
+                end
+
+                callback = sliderConfig.Callback or callback
+            end
+
+            minimum = tonumber(minimum) or 0
+            maximum = tonumber(maximum) or 100
+
+            if maximum < minimum then
+                minimum, maximum = maximum, minimum
+            end
+
+            default = math.clamp(tonumber(default) or minimum, minimum, maximum)
+            local increment = tonumber(sliderConfig.Increment)
+
+            if not increment or increment <= 0 then
+                increment = (minimum % 1 ~= 0 or maximum % 1 ~= 0 or default % 1 ~= 0) and 0.1 or 1
+            end
 
             local value = default
+            local row = createRow(self, "Slider", 58)
+            createRowLabel(row, text, 82).Size = UDim2.new(1, -94, 0, 28)
 
-            local SliderFrame = makeElement("Frame", {
-                Name = "SliderFrame",
-                Size = UDim2.new(1, -4, 0, 54),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
+            local valueBox = makeElement("TextLabel", {
+                Size = UDim2.fromOffset(62, 22),
+                Position = UDim2.new(1, -74, 0, 7),
+                BackgroundTransparency = 0,
                 BorderSizePixel = 0,
-                Parent = TabPage
-            })
-            table.insert(themeObjects.Cards, SliderFrame)
-
-            local Corner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = SliderFrame
-            })
-
-            local Stroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.38,
-                Thickness = 1,
-                Parent = SliderFrame
-            })
-
-            local Label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -100, 0, 22),
-                Position = UDim2.new(0, 12, 0, 2),
-                BackgroundTransparency = 1,
-                Text = sliderText,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = SliderFrame
-            })
-            table.insert(themeObjects.MainText, Label)
-
-            local ValueLabel = makeElement("TextLabel", {
-                Size = UDim2.new(0, 80, 0, 22),
-                Position = UDim2.new(1, -92, 0, 2),
-                BackgroundTransparency = 1,
-                Text = tostring(default),
-                TextColor3 = Lyra.Theme.TextDark,
-                TextSize = 11.5,
+                TextSize = 10.5,
                 Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                Parent = SliderFrame
+                ZIndex = 3,
+                Parent = row,
             })
-            table.insert(themeObjects.DarkText, ValueLabel)
+            addCorner(valueBox, 4)
+            bindTheme(valueBox, "BackgroundColor3", "Input")
+            bindTheme(valueBox, "TextColor3", "TextDark")
 
-            -- Horizontal slider track.
-            local Track = makeElement("Frame", {
+            local trackFrame = makeElement("Frame", {
                 Name = "Track",
-                Size = UDim2.new(1, -24, 0, 3),
-                Position = UDim2.new(0, 12, 1, -14),
-                BackgroundColor3 = Lyra.Theme.Header,
+                Size = UDim2.new(1, -24, 0, 4),
+                Position = UDim2.new(0, 12, 1, -15),
+                BackgroundTransparency = 0,
                 BorderSizePixel = 0,
-                Parent = SliderFrame
+                ZIndex = 3,
+                Parent = row,
             })
+            addCorner(trackFrame, 2)
+            bindTheme(trackFrame, "BackgroundColor3", "Track")
 
-            local TrackCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(1, 0),
-                Parent = Track
-            })
-
-            -- Progress Bar
-            local Progress = makeElement("Frame", {
+            local progress = makeElement("Frame", {
                 Name = "Progress",
-                Size = UDim2.new(0, 0, 1, 0),
-                BackgroundColor3 = Lyra.Theme.AccentGrad1,
+                Size = UDim2.fromScale(0, 1),
+                BackgroundColor3 = currentTheme.AccentGrad1,
                 BorderSizePixel = 0,
-                Parent = Track
+                ZIndex = 4,
+                Parent = trackFrame,
             })
-            table.insert(themeObjects.Backgrounds, Progress)
+            addCorner(progress, 2)
+            addAccentGradient(progress, 0)
 
-            local ProgressCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(1, 0),
-                Parent = Progress
-            })
-
-            -- Handle knob
-            local Handle = makeElement("Frame", {
+            local handle = makeElement("Frame", {
                 Name = "Handle",
-                Size = UDim2.new(0, 12, 0, 12),
+                Size = UDim2.fromOffset(12, 12),
                 Position = UDim2.new(1, -6, 0.5, -6),
-                BackgroundColor3 = Color3.fromRGB(240, 240, 245),
+                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
                 BorderSizePixel = 0,
-                Parent = Progress
+                ZIndex = 5,
+                Parent = progress,
             })
+            addCorner(handle, 6)
+            addStroke(handle, Color3.fromRGB(20, 22, 27), 0.35, 1)
 
-            local HandleCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(1, 0),
-                Parent = Handle
-            })
-
-            local SlidingTrigger = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
+            local trigger = makeElement("TextButton", {
+                Size = UDim2.new(1, 8, 0, 22),
+                Position = UDim2.fromOffset(-4, -9),
                 BackgroundTransparency = 1,
                 Text = "",
-                Parent = SliderFrame
+                AutoButtonColor = false,
+                ZIndex = 6,
+                Parent = trackFrame,
             })
 
-            local isDragging = false
-            
-            local function moveSlider(input)
-                local trackSize = Track.AbsoluteSize.X
-                if trackSize == 0 then return end
-                local relativeMouseX = math.clamp(input.Position.X - Track.AbsolutePosition.X, 0, trackSize)
-                local percent = relativeMouseX / trackSize
-                
-                local rawValue = min + ((max - min) * percent)
-                local roundedValue = math.floor(rawValue + 0.5)
-                
-                value = roundedValue
-                ValueLabel.Text = tostring(value)
-                
-                TweenService:Create(Progress, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(percent, 0, 1, 0)
-                }):Play()
-                
-                task.spawn(callback, value)
+            local draggingSlider = false
+
+            local incrementText = string.format("%.6f", increment):gsub("0+$", ""):gsub("%.$", "")
+            local decimalPart = incrementText:match("%.(%d+)$")
+            local decimalPlaces = decimalPart and #decimalPart or 0
+
+            local function formatValue(number)
+                if increment >= 1 then
+                    return tostring(math.floor(number + 0.5))
+                end
+
+                return string.format("%." .. tostring(math.max(1, decimalPlaces)) .. "f", number)
             end
 
-            SlidingTrigger.InputBegan:Connect(function(input)
+            local function render(animate)
+                local range = maximum - minimum
+                local percent = range == 0 and 0 or math.clamp((value - minimum) / range, 0, 1)
+                valueBox.Text = formatValue(value)
+
+                if animate then
+                    tween(progress, 0.08, { Size = UDim2.fromScale(percent, 1) })
+                else
+                    progress.Size = UDim2.fromScale(percent, 1)
+                end
+            end
+
+            local function setValue(newValue, fireCallback, animate)
+                local rounded = math.floor(((tonumber(newValue) or minimum) - minimum) / increment + 0.5) * increment + minimum
+                value = math.clamp(rounded, minimum, maximum)
+                render(animate ~= false)
+
+                if fireCallback then
+                    runCallback(callback, value)
+                end
+            end
+
+            local function updateFromInput(input)
+                local width = trackFrame.AbsoluteSize.X
+
+                if width <= 0 then
+                    return
+                end
+
+                local percent = math.clamp((input.Position.X - trackFrame.AbsolutePosition.X) / width, 0, 1)
+                setValue(minimum + ((maximum - minimum) * percent), true, true)
+            end
+
+            track(trigger.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    isDragging = true
-                    moveSlider(input)
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 15, 0, 15), Position = UDim2.new(1, -7.5, 0.5, -7.5)}):Play()
+                    draggingSlider = true
+                    updateFromInput(input)
+                    tween(handle, 0.12, { Size = UDim2.fromOffset(15, 15), Position = UDim2.new(1, -7.5, 0.5, -7.5) })
                 end
-            end)
+            end))
 
-            SlidingTrigger.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    isDragging = false
-                    TweenService:Create(Handle, TweenInfo.new(0.15), {Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(1, -6, 0.5, -6)}):Play()
+            track(UserInputService.InputChanged:Connect(function(input)
+                if draggingSlider
+                    and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch)
+                then
+                    updateFromInput(input)
                 end
-            end)
+            end))
 
-            UserInputService.InputChanged:Connect(function(input)
-                if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                    moveSlider(input)
+            track(UserInputService.InputEnded:Connect(function(input)
+                if draggingSlider
+                    and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch)
+                then
+                    draggingSlider = false
+                    tween(handle, 0.12, { Size = UDim2.fromOffset(12, 12), Position = UDim2.new(1, -6, 0.5, -6) })
                 end
-            end)
+            end))
 
-            SlidingTrigger.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
-            end)
+            render(false)
 
-            SlidingTrigger.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
-                TweenService:Create(SliderFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
-            end)
-
-            local initialPercent = math.clamp((default - min) / (max - min), 0, 1)
-            Progress.Size = UDim2.new(initialPercent, 0, 1, 0)
-
-            table.insert(themeObjects.Updaters, function(newTheme)
-                Progress.BackgroundColor3 = newTheme.AccentGrad1
-            end)
-
-            return {
-                SetValue = function(newValue)
-                    local clamped = math.clamp(newValue, min, max)
-                    value = clamped
-                    ValueLabel.Text = tostring(clamped)
-                    local pct = (clamped - min) / (max - min)
-                    TweenService:Create(Progress, TweenInfo.new(0.15), {Size = UDim2.new(pct, 0, 1, 0)}):Play()
-                    task.spawn(callback, value)
-                end
-            }
+            local control = {}
+            control.SetValue = function(first, second)
+                setValue(methodValue(control, first, second), true, true)
+            end
+            control.GetValue = function()
+                return value
+            end
+            return control
         end
 
-        function Tab:CreateDropdown(dropdownText, list, default, callback)
-            list = list or {}
-            default = default or list[1] or ""
-            callback = callback or function() end
-            
-            local activeOption = default
-            local dropdownOpen = false
+        function Tab:CreateDropdown(textOrConfig, list, default, callback)
+            local dropdownConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (dropdownConfig.Name or dropdownConfig.Text or "Dropdown")
+                or (textOrConfig or "Dropdown")
 
-            local DropdownFrame = makeElement("Frame", {
-                Name = "DropdownFrame",
-                Size = UDim2.new(1, -4, 0, 42),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
+            if type(textOrConfig) == "table" then
+                list = dropdownConfig.Options or dropdownConfig.List or {}
+                default = dropdownConfig.CurrentOption
+
+                if type(default) == "table" then
+                    default = default[1]
+                end
+
+                if default == nil then
+                    default = dropdownConfig.Default
+                end
+
+                callback = dropdownConfig.Callback or callback
+            end
+
+            list = type(list) == "table" and list or {}
+            local active = default
+
+            if active == nil then
+                active = list[1]
+            end
+
+            local row = createRow(self, "Dropdown", 42)
+            createRowLabel(row, text, 150)
+
+            local selected = makeElement("TextLabel", {
+                Size = UDim2.fromOffset(104, 26),
+                Position = UDim2.new(1, -138, 0.5, -13),
+                BackgroundTransparency = 0,
                 BorderSizePixel = 0,
-                ClipsDescendants = true,
-                Parent = TabPage
-            })
-            table.insert(themeObjects.Cards, DropdownFrame)
-
-            local Corner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = DropdownFrame
-            })
-
-            local Stroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.38,
-                Thickness = 1,
-                Parent = DropdownFrame
-            })
-
-            local TopArea = makeElement("Frame", {
-                Name = "TopArea",
-                Size = UDim2.new(1, 0, 0, 42),
-                BackgroundTransparency = 1,
-                Parent = DropdownFrame
-            })
-
-            local Label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -120, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Text = dropdownText,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
+                Text = tostring(active or "None"),
+                TextSize = 10.5,
                 Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = TopArea
-            })
-            table.insert(themeObjects.MainText, Label)
-
-            -- Selected label highlighted with Accent color
-            local SelectionLabel = makeElement("TextLabel", {
-                Size = UDim2.new(0, 100, 1, 0),
-                Position = UDim2.new(1, -135, 0, 0),
-                BackgroundTransparency = 1,
-                Text = activeOption,
-                TextColor3 = Lyra.Theme.AccentGrad1,
-                TextSize = 11.5,
-                Font = Enum.Font.GothamBold,
                 TextXAlignment = Enum.TextXAlignment.Right,
-                Parent = TopArea
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                ZIndex = 3,
+                Parent = row,
             })
-            table.insert(themeObjects.DarkText, SelectionLabel)
+            addCorner(selected, 4)
+            bindTheme(selected, "BackgroundColor3", "Input")
+            bindTheme(selected, "TextColor3", "AccentGrad2")
 
-            local Arrow = makeElement("TextLabel", {
-                Size = UDim2.new(0, 30, 1, 0),
-                Position = UDim2.new(1, -35, 0, 0),
+            local arrow = makeElement("TextLabel", {
+                Size = UDim2.fromOffset(24, 24),
+                Position = UDim2.new(1, -30, 0.5, -12),
                 BackgroundTransparency = 1,
-                Text = "▼",
-                TextColor3 = Lyra.Theme.TextDark,
+                Text = "v",
                 TextSize = 10,
-                Font = Enum.Font.GothamMedium,
-                Parent = TopArea
+                Font = Enum.Font.GothamBold,
+                ZIndex = 4,
+                Parent = row,
             })
-            table.insert(themeObjects.DarkText, Arrow)
+            bindTheme(arrow, "TextColor3", "TextDark")
 
-            local ClickButton = makeElement("TextButton", {
-                Size = UDim2.new(1, 0, 1, 0),
+            local click = makeElement("TextButton", {
+                Size = UDim2.fromScale(1, 1),
                 BackgroundTransparency = 1,
                 Text = "",
-                Parent = TopArea
+                AutoButtonColor = false,
+                ZIndex = 5,
+                Parent = row,
             })
 
-            -- Options menu (expands downwards)
-            local OptionsHolder = makeElement("Frame", {
-                Name = "OptionsHolder",
-                Size = UDim2.new(1, -20, 0, 0),
-                Position = UDim2.new(0, 10, 0, 42),
+            local popup = makeElement("Frame", {
+                Name = "DropdownPopup",
+                Size = UDim2.fromOffset(180, 0),
+                BackgroundTransparency = 0,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                Visible = false,
+                ZIndex = 110,
+                Parent = OverlayLayer,
+            })
+            addCorner(popup, 6)
+            local popupStroke = addStroke(popup, currentTheme.CardStroke, 0.2, 1)
+            bindTheme(popup, "BackgroundColor3", "Header")
+            bindTheme(popupStroke, "Color", "CardStroke")
+
+            local options = makeElement("ScrollingFrame", {
+                Size = UDim2.new(1, -10, 1, -10),
+                Position = UDim2.fromOffset(5, 5),
                 BackgroundTransparency = 1,
-                Parent = DropdownFrame
+                BorderSizePixel = 0,
+                ScrollBarThickness = 2,
+                CanvasSize = UDim2.fromOffset(0, 0),
+                ZIndex = 111,
+                Parent = popup,
             })
+            bindTheme(options, "ScrollBarImageColor3", "AccentGrad2")
 
-            local HolderLayout = makeElement("UIListLayout", {
+            local optionLayout = makeElement("UIListLayout", {
                 SortOrder = Enum.SortOrder.LayoutOrder,
                 Padding = UDim.new(0, 3),
-                Parent = OptionsHolder
+                Parent = options,
             })
 
-            local optionButtons = {}
+            local open = false
+            local closeToken = 0
+            local targetHeight = 0
+            local optionConnections = {}
 
-            local function toggleDropdown(state)
-                dropdownOpen = state
-                local targetHeight = state and (42 + HolderLayout.AbsoluteContentSize.Y + 8) or 42
-                local arrowChar = state and "▲" or "▼"
-                
-                Arrow.Text = arrowChar
-                TweenService:Create(DropdownFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(1, -4, 0, targetHeight)
-                }):Play()
+            local function trackOption(connection)
+                table.insert(optionConnections, connection)
+                return connection
             end
 
-            ClickButton.MouseButton1Click:Connect(function()
-                toggleDropdown(not dropdownOpen)
-            end)
+            local function positionPopup()
+                local currentViewport = getViewport()
+                local width = math.clamp(row.AbsoluteSize.X, 150, 240)
+                local x = row.AbsolutePosition.X + row.AbsoluteSize.X - width
+                local belowY = row.AbsolutePosition.Y + row.AbsoluteSize.Y + 5
+                local y = belowY
 
-            local function refreshList()
-                for _, btn in ipairs(optionButtons) do
-                    btn:Destroy()
+                if belowY + targetHeight > currentViewport.Y - 8 then
+                    y = math.max(8, row.AbsolutePosition.Y - targetHeight - 5)
                 end
-                optionButtons = {}
 
-                for index, optionText in ipairs(list) do
-                    local isSelected = (optionText == activeOption)
-                    
-                    local OptButton = makeElement("TextButton", {
-                        Name = optionText .. "_Opt",
-                        Size = UDim2.new(1, 0, 0, 26),
-                        BackgroundColor3 = Lyra.Theme.Header,
-                        BorderSizePixel = 0,
-                        Text = optionText,
-                        TextColor3 = isSelected and Lyra.Theme.TextMain or Lyra.Theme.TextDark,
-                        TextSize = 11.5,
-                        Font = isSelected and Enum.Font.GothamBold or Enum.Font.GothamMedium,
-                        AutoButtonColor = false,
-                        Parent = OptionsHolder
-                    })
+                popup.Position = UDim2.fromOffset(math.floor(x), math.floor(y))
+                popup.Size = UDim2.fromOffset(width, popup.Size.Y.Offset)
+            end
 
-                    local OptCorner = makeElement("UICorner", {
-                        CornerRadius = UDim.new(0, 4),
-                        Parent = OptButton
-                    })
+            local function closePopup()
+                if not open then
+                    if Window._openDropdown and Window._openDropdown.Frame == popup then
+                        Window._openDropdown = nil
+                    end
+                    return
+                end
 
-                    local OptStroke = makeElement("UIStroke", {
-                        Color = isSelected and Lyra.Theme.AccentGrad1 or Color3.fromRGB(255, 255, 255),
-                        Transparency = isSelected and 0.3 or 0.9,
-                        Thickness = 1,
-                        Parent = OptButton
-                    })
+                open = false
+                closeToken = closeToken + 1
+                local token = closeToken
+                arrow.Text = "v"
+                tween(popup, 0.14, { Size = UDim2.fromOffset(popup.Size.X.Offset, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-                    OptButton.MouseEnter:Connect(function()
-                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Lyra.Theme.CardStroke}):Play()
-                    end)
-                    OptButton.MouseLeave:Connect(function()
-                        TweenService:Create(OptButton, TweenInfo.new(0.15), {BackgroundColor3 = Lyra.Theme.Header}):Play()
-                    end)
+                task.delay(0.15, function()
+                    if token == closeToken and not open and popup.Parent then
+                        popup.Visible = false
+                    end
+                end)
 
-                    OptButton.MouseButton1Click:Connect(function()
-                        activeOption = optionText
-                        SelectionLabel.Text = optionText
-                        toggleDropdown(false)
-                        refreshList()
-                        task.spawn(callback, optionText)
-                    end)
-
-                    table.insert(optionButtons, OptButton)
+                if Window._openDropdown and Window._openDropdown.Frame == popup then
+                    Window._openDropdown = nil
                 end
             end
 
-            ClickButton.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
-            end)
+            local function openPopup()
+                if Window._openDropdown and Window._openDropdown.Frame ~= popup then
+                    Window._openDropdown.Close()
+                end
 
-            ClickButton.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
-                TweenService:Create(DropdownFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
-            end)
+                open = true
+                closeToken = closeToken + 1
+                arrow.Text = "^"
+                positionPopup()
+                popup.Size = UDim2.fromOffset(popup.Size.X.Offset, 0)
+                popup.Visible = true
+                tween(popup, 0.18, { Size = UDim2.fromOffset(popup.Size.X.Offset, targetHeight) }, Enum.EasingStyle.Quint)
+                Window._openDropdown = {
+                    Frame = popup,
+                    Row = row,
+                    Close = closePopup,
+                }
+            end
 
-            refreshList()
+            local function selectOption(option, fireCallback)
+                active = option
+                selected.Text = tostring(option or "None")
 
-            table.insert(themeObjects.Updaters, function(newTheme)
-                SelectionLabel.TextColor3 = newTheme.AccentGrad1
-                refreshList()
-            end)
+                if fireCallback then
+                    runCallback(callback, option)
+                end
+            end
 
-            return {
-                Select = function(newSelection)
-                    activeOption = newSelection
-                    SelectionLabel.Text = newSelection
-                    refreshList()
-                    task.spawn(callback, newSelection)
-                end,
-                Refresh = function(newList)
-                    list = newList
-                    refreshList()
-                    if dropdownOpen then
-                        toggleDropdown(true)
+            local function rebuild()
+                for _, connection in ipairs(optionConnections) do
+                    pcall(function()
+                        connection:Disconnect()
+                    end)
+                end
+
+                table.clear(optionConnections)
+
+                for _, child in ipairs(options:GetChildren()) do
+                    if child:IsA("GuiButton") then
+                        child:Destroy()
                     end
                 end
-            }
+
+                for index, option in ipairs(list) do
+                    local optionButton = makeElement("TextButton", {
+                        Name = "Option" .. tostring(index),
+                        Size = UDim2.new(1, -2, 0, 29),
+                        BackgroundTransparency = option == active and 0.2 or 1,
+                        BorderSizePixel = 0,
+                        Text = tostring(option),
+                        TextSize = 10.5,
+                        Font = option == active and Enum.Font.GothamSemibold or Enum.Font.GothamMedium,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        AutoButtonColor = false,
+                        LayoutOrder = index,
+                        ZIndex = 112,
+                        Parent = options,
+                    })
+                    addCorner(optionButton, 4)
+                    makeElement("UIPadding", {
+                        PaddingLeft = UDim.new(0, 9),
+                        PaddingRight = UDim.new(0, 7),
+                        Parent = optionButton,
+                    })
+                    bindTheme(optionButton, "BackgroundColor3", "Card")
+                    bindTheme(optionButton, "TextColor3", option == active and "TextMain" or "TextDark")
+
+                    trackOption(optionButton.MouseEnter:Connect(function()
+                        tween(optionButton, 0.1, {
+                            BackgroundTransparency = 0.12,
+                            TextColor3 = currentTheme.TextMain,
+                        })
+                    end))
+
+                    trackOption(optionButton.MouseLeave:Connect(function()
+                        tween(optionButton, 0.1, {
+                            BackgroundTransparency = option == active and 0.2 or 1,
+                            TextColor3 = option == active and currentTheme.TextMain or currentTheme.TextDark,
+                        })
+                    end))
+
+                    trackOption(optionButton.MouseButton1Click:Connect(function()
+                        selectOption(option, true)
+                        rebuild()
+                        closePopup()
+                    end))
+                end
+
+                targetHeight = math.clamp((#list * 32) + 10, 42, 182)
+                options.CanvasSize = UDim2.fromOffset(0, optionLayout.AbsoluteContentSize.Y)
+
+                if open then
+                    positionPopup()
+                    popup.Size = UDim2.fromOffset(popup.Size.X.Offset, targetHeight)
+                end
+            end
+
+            track(optionLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                options.CanvasSize = UDim2.fromOffset(0, optionLayout.AbsoluteContentSize.Y)
+            end))
+
+            track(click.MouseButton1Click:Connect(function()
+                if open then
+                    closePopup()
+                else
+                    openPopup()
+                end
+            end))
+
+            rebuild()
+
+            local control = {}
+            control.Select = function(first, second)
+                local option = methodValue(control, first, second)
+                selectOption(option, true)
+                rebuild()
+            end
+            control.Refresh = function(first, second)
+                local newList = methodValue(control, first, second)
+
+                if type(newList) == "table" then
+                    list = newList
+                    rebuild()
+                end
+            end
+            control.GetValue = function()
+                return active
+            end
+            return control
         end
 
-        function Tab:CreateTextbox(boxText, placeholderText, callback)
-            placeholderText = placeholderText or "Type here..."
-            callback = callback or function() end
+        function Tab:CreateTextbox(textOrConfig, placeholder, callback)
+            local textboxConfig = type(textOrConfig) == "table" and textOrConfig or {}
+            local text = type(textOrConfig) == "table" and (textboxConfig.Name or textboxConfig.Text or "Input")
+                or (textOrConfig or "Input")
 
-            local BoxFrame = makeElement("Frame", {
-                Name = "BoxFrame",
-                Size = UDim2.new(1, -4, 0, 42),
-                BackgroundColor3 = Lyra.Theme.Card,
-                BackgroundTransparency = 0.12,
+            if type(textOrConfig) == "table" then
+                placeholder = textboxConfig.PlaceholderText or textboxConfig.Placeholder or "Type here"
+                callback = textboxConfig.Callback or callback
+            end
+
+            placeholder = placeholder or "Type here"
+            local row, rowStroke = createRow(self, "Textbox", 42)
+            createRowLabel(row, text, 144)
+
+            local inputFrame = makeElement("Frame", {
+                Size = UDim2.fromOffset(122, 26),
+                Position = UDim2.new(1, -134, 0.5, -13),
+                BackgroundTransparency = 0,
                 BorderSizePixel = 0,
-                Parent = TabPage
+                ZIndex = 3,
+                Parent = row,
             })
-            table.insert(themeObjects.Cards, BoxFrame)
+            addCorner(inputFrame, 4)
+            local inputStroke = addStroke(inputFrame, currentTheme.CardStroke, 0.55, 1)
+            bindTheme(inputFrame, "BackgroundColor3", "Input")
+            bindTheme(inputStroke, "Color", "CardStroke")
 
-            local Corner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 6),
-                Parent = BoxFrame
-            })
-
-            local Stroke = makeElement("UIStroke", {
-                Color = Lyra.Theme.CardStroke,
-                Transparency = 0.38,
-                Thickness = 1,
-                Parent = BoxFrame
-            })
-
-            local Label = makeElement("TextLabel", {
-                Size = UDim2.new(1, -160, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
+            local textBox = makeElement("TextBox", {
+                Size = UDim2.new(1, -12, 1, 0),
+                Position = UDim2.fromOffset(6, 0),
                 BackgroundTransparency = 1,
-                Text = boxText,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 12,
-                Font = Enum.Font.GothamSemibold,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = BoxFrame
-            })
-            table.insert(themeObjects.MainText, Label)
-
-            -- Textbox border turns accent color on click
-            local InputContainer = makeElement("Frame", {
-                Name = "InputContainer",
-                Size = UDim2.new(0, 120, 0, 24),
-                Position = UDim2.new(1, -132, 0.5, -12),
-                BackgroundColor3 = Lyra.Theme.Header,
-                BorderSizePixel = 0,
-                Parent = BoxFrame
-            })
-
-            local InputCorner = makeElement("UICorner", {
-                CornerRadius = UDim.new(0, 4),
-                Parent = InputContainer
-            })
-
-            local InputStroke = makeElement("UIStroke", {
-                Color = Color3.fromRGB(255, 255, 255),
-                Transparency = 0.9,
-                Thickness = 1,
-                Parent = InputContainer
-            })
-
-            local TextBox = makeElement("TextBox", {
-                Size = UDim2.new(1, -10, 1, 0),
-                Position = UDim2.new(0, 5, 0, 0),
-                BackgroundTransparency = 1,
-                Text = "",
-                PlaceholderText = placeholderText,
-                PlaceholderColor3 = Lyra.Theme.TextDark,
-                TextColor3 = Lyra.Theme.TextMain,
-                TextSize = 11.5,
+                Text = textboxConfig.CurrentValue or "",
+                PlaceholderText = tostring(placeholder),
+                TextSize = 10.5,
                 Font = Enum.Font.GothamMedium,
-                ClipsDescendants = true,
                 ClearTextOnFocus = false,
-                Parent = InputContainer
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                ZIndex = 4,
+                Parent = inputFrame,
             })
-            table.insert(themeObjects.MainText, TextBox)
+            bindTheme(textBox, "TextColor3", "TextMain")
+            bindTheme(textBox, "PlaceholderColor3", "TextDark")
 
-            TextBox.Focused:Connect(function()
-                TweenService:Create(InputStroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad1, Transparency = 0.3}):Play()
-            end)
+            track(textBox.Focused:Connect(function()
+                tween(inputStroke, 0.13, {
+                    Color = currentTheme.AccentGrad2,
+                    Transparency = 0.18,
+                })
+                tween(rowStroke, 0.13, {
+                    Color = currentTheme.AccentGrad2,
+                    Transparency = 0.34,
+                })
+            end))
 
-            TextBox.FocusLost:Connect(function(enterPressed)
-                TweenService:Create(InputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(255, 255, 255), Transparency = 0.9}):Play()
-                task.spawn(callback, TextBox.Text, enterPressed)
-            end)
+            track(textBox.FocusLost:Connect(function(enterPressed)
+                tween(inputStroke, 0.13, {
+                    Color = currentTheme.CardStroke,
+                    Transparency = 0.55,
+                })
+                runCallback(callback, textBox.Text, enterPressed)
+            end))
 
-            BoxFrame.MouseEnter:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.AccentGrad2, Transparency = 0.12}):Play()
-                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.03}):Play()
-            end)
+            local control = {}
+            control.SetText = function(first, second)
+                textBox.Text = tostring(methodValue(control, first, second) or "")
+            end
+            control.GetText = function()
+                return textBox.Text
+            end
+            return control
+        end
 
-            BoxFrame.MouseLeave:Connect(function()
-                TweenService:Create(Stroke, TweenInfo.new(0.15), {Color = Lyra.Theme.CardStroke, Transparency = 0.38}):Play()
-                TweenService:Create(BoxFrame, TweenInfo.new(0.15), {BackgroundTransparency = 0.12}):Play()
-            end)
+        table.insert(self.Tabs, Tab)
 
-            return {
-                SetText = function(newText)
-                    TextBox.Text = newText
-                end,
-                GetText = function()
-                    return TextBox.Text
-                end
-            }
+        if not self.ActiveTab then
+            Tab:Select()
         end
 
         return Tab
@@ -1913,168 +2133,574 @@ function Lyra:CreateWindow(titleTextOrConfig, subtitleText)
     local activeNotifications = {}
 
     local function repositionNotifications()
-        local yOffset = -94
-        for i = #activeNotifications, 1, -1 do
-            local notif = activeNotifications[i]
-            if notif and notif.Parent then
-                TweenService:Create(notif, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    Position = UDim2.new(1, -294, 1, yOffset)
-                }):Play()
-                yOffset = yOffset - 82
+        local currentViewport = getViewport()
+        local y = currentViewport.Y - 12
+
+        for index = #activeNotifications, 1, -1 do
+            local notification = activeNotifications[index]
+
+            if notification and notification.Parent then
+                y = y - notification.AbsoluteSize.Y
+                tween(notification, 0.18, {
+                    Position = UDim2.fromOffset(currentViewport.X - notification.AbsoluteSize.X - 12, y),
+                }, Enum.EasingStyle.Quint)
+                y = y - 8
             end
         end
     end
 
-    -- Window-level helper to generate full system notifications
     function Window:Notify(title, description, duration)
-        title = title or "Notification"
-        description = description or ""
-        duration = duration or 4
+        title = tostring(title or "Notification")
+        description = tostring(description or "")
+        duration = tonumber(duration) or 4
 
-        local NotifyFrame = makeElement("Frame", {
+        local currentViewport = getViewport()
+        local width = math.min(310, currentViewport.X - 24)
+        local notification = makeElement("Frame", {
             Name = "Notification",
-            Size = UDim2.new(0, 282, 0, 74),
-            Position = UDim2.new(1, 20, 1, -94),
-            BackgroundColor3 = Lyra.Theme.Header,
-            BackgroundTransparency = 0.02,
+            Size = UDim2.fromOffset(width, 76),
+            Position = UDim2.fromOffset(currentViewport.X + 8, currentViewport.Y - 88),
+            BackgroundTransparency = 0,
             BorderSizePixel = 0,
-            Parent = ScreenGui
+            ZIndex = 130,
+            Parent = OverlayLayer,
         })
-        table.insert(themeObjects.Headers, NotifyFrame)
+        addCorner(notification, 6)
+        local notificationStroke = addStroke(notification, currentTheme.CardStroke, 0.22, 1)
+        bindTheme(notification, "BackgroundColor3", "Header")
+        bindTheme(notificationStroke, "Color", "CardStroke")
 
-        local NotifyCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 6),
-            Parent = NotifyFrame
-        })
-
-        local NotifyStroke = makeElement("UIStroke", {
-            Color = Lyra.Theme.CardStroke,
-            Transparency = 0.22,
-            Thickness = 1,
-            Parent = NotifyFrame
-        })
-
-        -- Bottom shrinking gradient timer progress bar
-        local ProgressBar = makeElement("Frame", {
-            Name = "ProgressBar",
-            Size = UDim2.new(1, 0, 0, 3),
-            Position = UDim2.new(0, 0, 1, -3),
+        local accent = makeElement("Frame", {
+            Size = UDim2.fromOffset(3, 52),
+            Position = UDim2.fromOffset(0, 10),
+            BackgroundTransparency = 0,
             BorderSizePixel = 0,
-            Parent = NotifyFrame
+            ZIndex = 131,
+            Parent = notification,
         })
-        local ProgressCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 2),
-            Parent = ProgressBar
-        })
-        local ProgressGrad = makeElement("UIGradient", {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Lyra.Theme.AccentGrad1),
-                ColorSequenceKeypoint.new(1, Lyra.Theme.AccentGrad2)
-            }),
-            Parent = ProgressBar
-        })
-        table.insert(themeObjects.Gradients, ProgressGrad)
+        addCorner(accent, 2)
+        addAccentGradient(accent, 90)
 
-        -- Left vertical neon accent line
-        local LeftSideLine = makeElement("Frame", {
-            Size = UDim2.new(0, 3, 1, -3),
-            BackgroundColor3 = Lyra.Theme.AccentGrad1,
+        local icon = makeElement("Frame", {
+            Size = UDim2.fromOffset(30, 30),
+            Position = UDim2.fromOffset(12, 13),
+            BackgroundTransparency = 0,
             BorderSizePixel = 0,
-            Parent = NotifyFrame
+            ZIndex = 131,
+            Parent = notification,
         })
-        table.insert(themeObjects.Backgrounds, LeftSideLine)
-        
-        local LeftSideLineGrad = makeElement("UIGradient", {
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Lyra.Theme.AccentGrad1),
-                ColorSequenceKeypoint.new(1, Lyra.Theme.AccentGrad2)
-            }),
-            Parent = LeftSideLine
-        })
-        table.insert(themeObjects.Gradients, LeftSideLineGrad)
+        addCorner(icon, 6)
+        bindTheme(icon, "BackgroundColor3", "Card")
 
-        local LineCorner = makeElement("UICorner", {
-            CornerRadius = UDim.new(0, 2),
-            Parent = LeftSideLine
+        local iconText = makeElement("TextLabel", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = string.upper(title:sub(1, 1)),
+            TextSize = 11,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 132,
+            Parent = icon,
         })
+        bindTheme(iconText, "TextColor3", "AccentGrad2")
 
-        local NotifyTitle = makeElement("TextLabel", {
-            Size = UDim2.new(1, -48, 0, 20),
-            Position = UDim2.new(0, 14, 0, 9),
+        local titleLabel = makeElement("TextLabel", {
+            Size = UDim2.new(1, -82, 0, 18),
+            Position = UDim2.fromOffset(51, 10),
             BackgroundTransparency = 1,
             Text = title,
-            TextColor3 = Lyra.Theme.TextMain,
-            TextSize = 12,
-            Font = Enum.Font.GothamSemibold,
+            TextSize = 11.5,
+            Font = Enum.Font.GothamBold,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = NotifyFrame
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 131,
+            Parent = notification,
         })
-        table.insert(themeObjects.MainText, NotifyTitle)
+        bindTheme(titleLabel, "TextColor3", "TextMain")
 
-        local NotifyDesc = makeElement("TextLabel", {
-            Size = UDim2.new(1, -48, 1, -34),
-            Position = UDim2.new(0, 14, 0, 28),
+        local descriptionLabel = makeElement("TextLabel", {
+            Size = UDim2.new(1, -66, 0, 35),
+            Position = UDim2.fromOffset(51, 29),
             BackgroundTransparency = 1,
             Text = description,
-            TextColor3 = Lyra.Theme.TextDark,
-            TextSize = 10.5,
+            TextSize = 9.8,
             Font = Enum.Font.GothamMedium,
             TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
-            Parent = NotifyFrame
+            ZIndex = 131,
+            Parent = notification,
         })
-        table.insert(themeObjects.DarkText, NotifyDesc)
+        bindTheme(descriptionLabel, "TextColor3", "TextDark")
 
-        -- Close button
-        local CloseBtn = makeElement("TextButton", {
-            Size = UDim2.new(0, 16, 0, 16),
-            Position = UDim2.new(1, -24, 0, 8),
+        local dismissButton = makeElement("TextButton", {
+            Size = UDim2.fromOffset(22, 22),
+            Position = UDim2.new(1, -28, 0, 6),
             BackgroundTransparency = 1,
-            Text = "×",
-            TextColor3 = Lyra.Theme.TextDark,
-            TextSize = 14,
-            Font = Enum.Font.GothamMedium,
-            Parent = NotifyFrame
+            Text = "x",
+            TextSize = 11,
+            Font = Enum.Font.GothamBold,
+            AutoButtonColor = false,
+            ZIndex = 133,
+            Parent = notification,
         })
+        bindTheme(dismissButton, "TextColor3", "TextDark")
 
-        table.insert(activeNotifications, NotifyFrame)
+        local progress = makeElement("Frame", {
+            Size = UDim2.new(1, 0, 0, 2),
+            Position = UDim2.new(0, 0, 1, -2),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            ZIndex = 132,
+            Parent = notification,
+        })
+        addAccentGradient(progress, 0)
+
+        table.insert(activeNotifications, notification)
         repositionNotifications()
 
+        local dismissed = false
+
         local function dismiss()
-            local index = table.find(activeNotifications, NotifyFrame)
+            if dismissed then
+                return
+            end
+
+            dismissed = true
+            local index = table.find(activeNotifications, notification)
+
             if index then
                 table.remove(activeNotifications, index)
-                repositionNotifications()
             end
-            
-            local slideOut = TweenService:Create(NotifyFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, 20, NotifyFrame.Position.Y.Scale, NotifyFrame.Position.Y.Offset),
-                BackgroundTransparency = 1
-            })
-            slideOut:Play()
-            slideOut.Completed:Connect(function()
-                NotifyFrame:Destroy()
+
+            repositionNotifications()
+            local exitTween = tween(notification, 0.16, {
+                Position = UDim2.fromOffset(getViewport().X + 8, notification.Position.Y.Offset),
+            }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+            if exitTween then
+                track(exitTween.Completed:Connect(function()
+                    if notification.Parent then
+                        notification:Destroy()
+                    end
+                end))
+            elseif notification.Parent then
+                notification:Destroy()
+            end
+        end
+
+        track(dismissButton.MouseButton1Click:Connect(dismiss))
+        tween(notification, 0.2, {
+            Position = UDim2.fromOffset(currentViewport.X - width - 12, currentViewport.Y - 88),
+        }, Enum.EasingStyle.Quint)
+
+        if duration > 0 then
+            tween(progress, duration, { Size = UDim2.fromOffset(0, 2) }, Enum.EasingStyle.Linear)
+            task.delay(duration, function()
+                if notification.Parent then
+                    dismiss()
+                end
             end)
         end
 
-        CloseBtn.MouseButton1Click:Connect(dismiss)
-
-        -- Shrink progress bar
-        local progressTween = TweenService:Create(ProgressBar, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-            Size = UDim2.new(0, 0, 0, 3)
-        })
-        progressTween:Play()
-
-        -- Auto dismiss
-        task.delay(duration, function()
-            if NotifyFrame and NotifyFrame.Parent then
-                dismiss()
-            end
-        end)
+        return {
+            Dismiss = dismiss,
+        }
     end
 
+    local function startMainUI()
+        unlocked = true
+        isAnimating = false
+        isVisible = false
+
+        if MobileButton then
+            MobileButton.Visible = true
+        end
+
+        showWindow()
+    end
+
+    local function makeKeyGate()
+        local keyFileName = tostring(titleText):lower():gsub("%s+", "_") .. "_key.txt"
+
+        local function validateKey(entered)
+            if type(keySettings.Key) == "string" then
+                return entered == keySettings.Key
+            elseif type(keySettings.Key) == "table" then
+                for _, candidate in ipairs(keySettings.Key) do
+                    if entered == candidate then
+                        return true
+                    end
+                end
+            elseif type(keySettings.Key) == "function" then
+                local ok, result = pcall(keySettings.Key, entered)
+                return ok and result == true
+            end
+
+            return false
+        end
+
+        local function loadSavedKey()
+            if type(readfile) ~= "function" then
+                return nil
+            end
+
+            local ok, value = pcall(readfile, keyFileName)
+            return ok and tostring(value):gsub("%s+", "") or nil
+        end
+
+        local savedKey = loadSavedKey()
+
+        if savedKey and validateKey(savedKey) then
+            startMainUI()
+            return
+        end
+
+        local gate = makeElement("Frame", {
+            Name = "KeyGate",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.38,
+            BorderSizePixel = 0,
+            Active = true,
+            ZIndex = 200,
+            Parent = OverlayLayer,
+        })
+
+        local gateWidth = math.min(410, viewport.X - 24)
+        local gateHeight = 276
+        local card = makeElement("Frame", {
+            Name = "Card",
+            Size = UDim2.fromOffset(gateWidth, gateHeight),
+            Position = UDim2.fromOffset(math.floor((viewport.X - gateWidth) / 2), math.floor((viewport.Y - gateHeight) / 2)),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            ClipsDescendants = true,
+            ZIndex = 201,
+            Parent = gate,
+        })
+        addCorner(card, 7)
+        local cardStroke = addStroke(card, currentTheme.CardStroke, 0.18, 1)
+        local gateScale = makeElement("UIScale", {
+            Scale = 0.96,
+            Parent = card,
+        })
+        bindTheme(card, "BackgroundColor3", "Header")
+        bindTheme(cardStroke, "Color", "CardStroke")
+
+        local gateTopbar = makeElement("Frame", {
+            Size = UDim2.new(1, 0, 0, 58),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            Active = true,
+            ZIndex = 202,
+            Parent = card,
+        })
+        bindTheme(gateTopbar, "BackgroundColor3", "Sidebar")
+
+        local gateIcon = makeElement("Frame", {
+            Size = UDim2.fromOffset(30, 30),
+            Position = UDim2.fromOffset(14, 14),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            ZIndex = 203,
+            Parent = gateTopbar,
+        })
+        addCorner(gateIcon, 6)
+        addAccentGradient(gateIcon, 35)
+
+        makeElement("TextLabel", {
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            Text = "L",
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            TextSize = 13,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 204,
+            Parent = gateIcon,
+        })
+
+        local keyTitle = makeElement("TextLabel", {
+            Size = UDim2.new(1, -92, 0, 18),
+            Position = UDim2.fromOffset(54, 11),
+            BackgroundTransparency = 1,
+            Text = keySettings.Title or "Key verification",
+            TextSize = 12,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 203,
+            Parent = gateTopbar,
+        })
+        bindTheme(keyTitle, "TextColor3", "TextMain")
+
+        local keySubtitle = makeElement("TextLabel", {
+            Size = UDim2.new(1, -92, 0, 15),
+            Position = UDim2.fromOffset(54, 29),
+            BackgroundTransparency = 1,
+            Text = keySettings.Subtitle or subtitleText,
+            TextSize = 9.5,
+            Font = Enum.Font.GothamMedium,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 203,
+            Parent = gateTopbar,
+        })
+        bindTheme(keySubtitle, "TextColor3", "TextDark")
+
+        local gateClose = makeElement("TextButton", {
+            Size = UDim2.fromOffset(28, 28),
+            Position = UDim2.new(1, -38, 0, 15),
+            BackgroundTransparency = 1,
+            Text = "x",
+            TextSize = 12,
+            Font = Enum.Font.GothamBold,
+            AutoButtonColor = false,
+            ZIndex = 204,
+            Parent = gateTopbar,
+        })
+        bindTheme(gateClose, "TextColor3", "TextDark")
+
+        local note = makeElement("TextLabel", {
+            Size = UDim2.new(1, -28, 0, 44),
+            Position = UDim2.fromOffset(14, 69),
+            BackgroundTransparency = 1,
+            Text = keySettings.Note or "Enter your key to continue.",
+            TextSize = 10,
+            Font = Enum.Font.GothamMedium,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            ZIndex = 202,
+            Parent = card,
+        })
+        bindTheme(note, "TextColor3", "TextDark")
+
+        local inputFrame = makeElement("Frame", {
+            Size = UDim2.new(1, -28, 0, 38),
+            Position = UDim2.fromOffset(14, 119),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            ZIndex = 202,
+            Parent = card,
+        })
+        addCorner(inputFrame, 5)
+        local inputStroke = addStroke(inputFrame, currentTheme.CardStroke, 0.4, 1)
+        bindTheme(inputFrame, "BackgroundColor3", "Input")
+        bindTheme(inputStroke, "Color", "CardStroke")
+
+        local keyInput = makeElement("TextBox", {
+            Size = UDim2.new(1, -20, 1, 0),
+            Position = UDim2.fromOffset(10, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+            PlaceholderText = "Enter key",
+            TextSize = 11,
+            Font = Enum.Font.GothamMedium,
+            ClearTextOnFocus = false,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 203,
+            Parent = inputFrame,
+        })
+        bindTheme(keyInput, "TextColor3", "TextMain")
+        bindTheme(keyInput, "PlaceholderColor3", "TextDark")
+
+        local status = makeElement("TextLabel", {
+            Size = UDim2.new(1, -28, 0, 18),
+            Position = UDim2.fromOffset(14, 162),
+            BackgroundTransparency = 1,
+            Text = "",
+            TextSize = 9.5,
+            Font = Enum.Font.GothamMedium,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 202,
+            Parent = card,
+        })
+        bindTheme(status, "TextColor3", "TextDark")
+
+        local actions = makeElement("Frame", {
+            Size = UDim2.new(1, -28, 0, 38),
+            Position = UDim2.fromOffset(14, 190),
+            BackgroundTransparency = 1,
+            ZIndex = 202,
+            Parent = card,
+        })
+
+        local hasUrl = type(keySettings.Url) == "string" and keySettings.Url ~= ""
+        local verifyButton = makeElement("TextButton", {
+            Size = hasUrl and UDim2.new(0.5, -4, 1, 0) or UDim2.fromScale(1, 1),
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            Text = "Verify",
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            TextSize = 11,
+            Font = Enum.Font.GothamBold,
+            AutoButtonColor = false,
+            ZIndex = 203,
+            Parent = actions,
+        })
+        addCorner(verifyButton, 5)
+        addAccentGradient(verifyButton, 12)
+
+        local getKeyButton
+
+        if hasUrl then
+            getKeyButton = makeElement("TextButton", {
+                Size = UDim2.new(0.5, -4, 1, 0),
+                Position = UDim2.new(0.5, 4, 0, 0),
+                BackgroundTransparency = 0,
+                BorderSizePixel = 0,
+                Text = "Get key",
+                TextSize = 11,
+                Font = Enum.Font.GothamSemibold,
+                AutoButtonColor = false,
+                ZIndex = 203,
+                Parent = actions,
+            })
+            addCorner(getKeyButton, 5)
+            local getKeyStroke = addStroke(getKeyButton, currentTheme.CardStroke, 0.35, 1)
+            bindTheme(getKeyButton, "BackgroundColor3", "Card")
+            bindTheme(getKeyButton, "TextColor3", "TextMain")
+            bindTheme(getKeyStroke, "Color", "CardStroke")
+        end
+
+        local gateDragging = false
+        local gateDragInput
+        local gateStart
+        local gateOrigin
+
+        track(gateTopbar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                gateDragging = true
+                gateStart = input.Position
+                gateOrigin = card.Position
+
+                track(input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        gateDragging = false
+                    end
+                end))
+            end
+        end))
+
+        track(gateTopbar.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                gateDragInput = input
+            end
+        end))
+
+        track(UserInputService.InputChanged:Connect(function(input)
+            if gateDragging and input == gateDragInput then
+                local delta = input.Position - gateStart
+                local currentViewport = getViewport()
+                local x = math.clamp(gateOrigin.X.Offset + delta.X, 6, currentViewport.X - gateWidth - 6)
+                local y = math.clamp(gateOrigin.Y.Offset + delta.Y, 6, currentViewport.Y - gateHeight - 6)
+                card.Position = UDim2.fromOffset(x, y)
+            end
+        end))
+
+        local verifying = false
+
+        local function verify()
+            if verifying then
+                return
+            end
+
+            verifying = true
+            local entered = keyInput.Text:gsub("%s+", ""):gsub("%c+", "")
+
+            if validateKey(entered) then
+                if keySettings.SaveKey and type(writefile) == "function" then
+                    pcall(writefile, keyFileName, entered)
+                end
+
+                status.Text = "Key accepted"
+                status.TextColor3 = currentTheme.Success
+                verifyButton.Text = "Accepted"
+                local exitTween = tween(card, 0.2, {
+                    Position = UDim2.fromOffset(card.Position.X.Offset, card.Position.Y.Offset + 10),
+                    BackgroundTransparency = 1,
+                }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+                task.delay(exitTween and 0.21 or 0, function()
+                    if gate.Parent then
+                        gate:Destroy()
+                    end
+
+                    startMainUI()
+                end)
+            else
+                status.Text = "That key is not valid"
+                status.TextColor3 = currentTheme.Danger
+                inputStroke.Color = currentTheme.Danger
+                verifyButton.Text = "Try again"
+                local origin = card.Position
+                tween(card, 0.06, { Position = UDim2.fromOffset(origin.X.Offset - 7, origin.Y.Offset) })
+                task.delay(0.07, function()
+                    tween(card, 0.1, { Position = origin }, Enum.EasingStyle.Back)
+                end)
+                task.delay(1.2, function()
+                    if verifyButton.Parent then
+                        verifyButton.Text = "Verify"
+                        inputStroke.Color = currentTheme.CardStroke
+                        verifying = false
+                    end
+                end)
+            end
+        end
+
+        track(verifyButton.MouseButton1Click:Connect(verify))
+        track(keyInput.FocusLost:Connect(function(enterPressed)
+            if enterPressed then
+                verify()
+            end
+        end))
+        track(gateClose.MouseButton1Click:Connect(function()
+            Window:Destroy()
+        end))
+
+        if getKeyButton then
+            track(getKeyButton.MouseButton1Click:Connect(function()
+                setClipboard(keySettings.Url)
+                getKeyButton.Text = "Copied"
+
+                task.delay(1.1, function()
+                    if getKeyButton.Parent then
+                        getKeyButton.Text = "Get key"
+                    end
+                end)
+            end))
+        end
+
+        tween(gateScale, 0.22, { Scale = 1 }, Enum.EasingStyle.Quint)
+    end
+
+    if keySettings and keySettings.Key ~= nil then
+        makeKeyGate()
+    else
+        startMainUI()
+    end
+
+    Lyra._activeWindow = Window
     return Window
+end
+
+function Lyra:SetTheme(theme)
+    if self._activeWindow then
+        return self._activeWindow:SetTheme(theme)
+    end
+
+    self.Theme = normalizeTheme(theme)
+    return self.Theme
+end
+
+function Lyra:Destroy()
+    if self._activeWindow then
+        self._activeWindow:Destroy()
+        self._activeWindow = nil
+        return
+    end
+
+    cleanupExisting()
 end
 
 return Lyra
