@@ -101,6 +101,9 @@ local DYNAMIC_CONTAINER_NAMES = {
 local MAP_FINGERPRINT_PART_LIMIT = 500
 local CHAIN_COA_INTERVAL = 10.2
 local CHAIN_COA_REQUIRED_TOWERS = 3
+local CHAIN_COA_MIN_UPGRADE = 2
+local CHAIN_COA_RETRY_DELAY = 0.75
+local CHAIN_COA_POLL_INTERVAL = 0.15
 
 local TRACKED_ABILITIES = {
     callofarms = "Call Of Arms",
@@ -157,6 +160,7 @@ local LyraMacro = {
     ChainCOAInterval = CHAIN_COA_INTERVAL,
     ChainCOANextIndex = 0,
     _chainCOAToken = 0,
+    _chainCOAConnections = {},
     _resultsWatchToken = 0,
     StrategyLogger = nil,
     _recordHookInstalled = false,
@@ -1146,6 +1150,84 @@ local function isCallOfArmsTower(tower, knownTroopType)
     return false
 end
 
+local function readAttribute(instance, attributeName)
+    local gotAttribute, attributeValue = pcall(function()
+        return instance:GetAttribute(attributeName)
+    end)
+
+    if gotAttribute then
+        return attributeValue
+    end
+
+    return nil
+end
+
+local function isTowerOwnedByLocalPlayer(tower)
+    local owner = safeFindFirstChild(tower, "Owner")
+    local ownerValue = owner and readInstanceValue(owner)
+
+    if ownerValue == LocalPlayer then
+        return true
+    end
+
+    return tonumber(ownerValue) == LocalPlayer.UserId
+end
+
+local function getTowerReplicator(tower)
+    return safeFindFirstChild(tower, "TowerReplicator")
+end
+
+local function getCallOfArmsTowerUpgrade(tower)
+    local replicator = getTowerReplicator(tower)
+
+    if not replicator then
+        return nil
+    end
+
+    local upgrade = readAttribute(replicator, "Upgrade")
+
+    if upgrade == nil then
+        local upgradeValue = safeFindFirstChild(replicator, "Upgrade")
+        upgrade = upgradeValue and readInstanceValue(upgradeValue)
+    end
+
+    return tonumber(upgrade)
+end
+
+local function isCallOfArmsTowerStunned(tower)
+    local replicator = getTowerReplicator(tower)
+    local stuns = replicator and safeFindFirstChild(replicator, "Stuns")
+
+    if not stuns then
+        return false
+    end
+
+    if readAttribute(stuns, "1") == true then
+        return true
+    end
+
+    local stunFlag = safeFindFirstChild(stuns, "1")
+    return stunFlag and readInstanceValue(stunFlag) == true or false
+end
+
+local function getCallOfArmsTowerReadiness(tower)
+    local upgrade = getCallOfArmsTowerUpgrade(tower)
+
+    if upgrade == nil then
+        return false, "initializing"
+    end
+
+    if upgrade < CHAIN_COA_MIN_UPGRADE then
+        return false, "needs upgrade"
+    end
+
+    if isCallOfArmsTowerStunned(tower) then
+        return false, "stunned"
+    end
+
+    return true
+end
+
 -- Retries only when the authoritative cash value changes; it never polls or sleeps.
 function LyraMacro:_retryOnCashChange(actionName, invoke, isComplete)
     local cash = getCashValue()
@@ -1210,16 +1292,22 @@ function LyraMacro:_getCallOfArmsTowers()
             }
         end
 
-        if tower.Parent and isCallOfArms then
+        if tower.Parent and isCallOfArms and isTowerOwnedByLocalPlayer(tower) then
             table.insert(callOfArmsTowers, tower)
         end
     end
 
-    table.sort(callOfArmsTowers, function(left, right)
-        return tostring(getInstanceName(left) or "") < tostring(getInstanceName(right) or "")
-    end)
-
     return callOfArmsTowers
+end
+
+function LyraMacro:_clearChainCOAConnections()
+    for _, connection in ipairs(self._chainCOAConnections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+
+    self._chainCOAConnections = {}
 end
 
 function LyraMacro:SetChainCOA(enabled)
@@ -1231,6 +1319,7 @@ function LyraMacro:SetChainCOA(enabled)
 
     self.ChainCOAEnabled = enabled
     self._chainCOAToken += 1
+    self:_clearChainCOAConnections()
 
     if not enabled then
         print("[LyraMacro] Chain COA disabled.")
@@ -1245,69 +1334,194 @@ function LyraMacro:SetChainCOA(enabled)
 
     self.ChainCOANextIndex = 0
     local chainToken = self._chainCOAToken
-    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    local rosterChanged = true
+    local towersFolder = getTowersFolder()
+
+    local function markRosterChanged(tower)
+        self.CallOfArmsTowerCache[tower] = nil
+        rosterChanged = true
+    end
+
+    table.insert(self._chainCOAConnections, towersFolder.ChildAdded:Connect(function(tower)
+        markRosterChanged(tower)
+        task.delay(0.25, function()
+            if self.ChainCOAEnabled and self._chainCOAToken == chainToken then
+                markRosterChanged(tower)
+            end
+        end)
+    end))
+    table.insert(self._chainCOAConnections, towersFolder.ChildRemoved:Connect(markRosterChanged))
+
+    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " owned, upgrade-ready Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
 
     task.spawn(function()
-        local rotationActive = false
-        local lastTowerCount = 0
+        local towerOrder = {}
+        local nextTowerOrder = 0
+        local lastActivatedTower
         local nextActivationAt
         local activationInFlight = false
+        local rotationActive = false
+        local lastStatus = ""
 
-        while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
-            local callOfArmsTowers = self:_getCallOfArmsTowers()
+        local function reportStatus(message)
+            if message ~= lastStatus then
+                print("[LyraMacro] " .. message)
+                lastStatus = message
+            end
+        end
 
-            if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
-                if rotationActive then
-                    print("[LyraMacro] Chain COA paused; waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers again.")
-                elseif lastTowerCount ~= #callOfArmsTowers then
-                    print("[LyraMacro] Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " Commander/Lifeguard towers.")
+        local function getReadyRoster()
+            local allTowers = self:_getCallOfArmsTowers()
+            local readyTowers = {}
+            local states = {
+                Initializing = 0,
+                NeedsUpgrade = 0,
+                Stunned = 0,
+            }
+
+            for _, tower in ipairs(allTowers) do
+                if not towerOrder[tower] then
+                    nextTowerOrder += 1
+                    towerOrder[tower] = nextTowerOrder
+                    rosterChanged = true
                 end
 
+                local ready, reason = getCallOfArmsTowerReadiness(tower)
+
+                if ready then
+                    table.insert(readyTowers, tower)
+                elseif reason == "initializing" then
+                    states.Initializing += 1
+                elseif reason == "needs upgrade" then
+                    states.NeedsUpgrade += 1
+                elseif reason == "stunned" then
+                    states.Stunned += 1
+                end
+            end
+
+            table.sort(readyTowers, function(left, right)
+                return towerOrder[left] < towerOrder[right]
+            end)
+
+            return allTowers, readyTowers, states
+        end
+
+        local function getNextTower(readyTowers)
+            local previousIndex
+
+            if lastActivatedTower then
+                for index, tower in ipairs(readyTowers) do
+                    if tower == lastActivatedTower then
+                        previousIndex = index
+                        break
+                    end
+                end
+            end
+
+            local nextIndex
+
+            if previousIndex then
+                nextIndex = previousIndex % #readyTowers + 1
+            else
+                nextIndex = self.ChainCOANextIndex % #readyTowers + 1
+            end
+
+            self.ChainCOANextIndex = nextIndex
+            return readyTowers[nextIndex]
+        end
+
+        local function wasActivationRejected(response)
+            if response == false then
+                return true
+            end
+
+            if type(response) == "table" then
+                return response.Success == false or response.Successful == false or response.Ok == false
+            end
+
+            return false
+        end
+
+        while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
+            local callOfArmsTowers, readyTowers, states = getReadyRoster()
+
+            if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
+                reportStatus("Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " owned Commander/Lifeguard towers.")
                 rotationActive = false
-                lastTowerCount = #callOfArmsTowers
+                lastActivatedTower = nil
                 self.ChainCOANextIndex = 0
                 nextActivationAt = nil
-                task.wait(0.15)
+                task.wait(CHAIN_COA_POLL_INTERVAL)
+            elseif #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
+                local waiting = {}
+
+                if states.Initializing > 0 then
+                    table.insert(waiting, tostring(states.Initializing) .. " initializing")
+                end
+                if states.NeedsUpgrade > 0 then
+                    table.insert(waiting, tostring(states.NeedsUpgrade) .. " need upgrade " .. tostring(CHAIN_COA_MIN_UPGRADE))
+                end
+                if states.Stunned > 0 then
+                    table.insert(waiting, tostring(states.Stunned) .. " stunned")
+                end
+
+                reportStatus("Chain COA is waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " ready commanders (" .. tostring(#readyTowers) .. " ready; " .. table.concat(waiting, ", ") .. ").")
+                rotationActive = false
+                lastActivatedTower = nil
+                self.ChainCOANextIndex = 0
+                nextActivationAt = nil
+                task.wait(CHAIN_COA_POLL_INTERVAL)
             else
                 if not rotationActive then
                     rotationActive = true
-                    self.ChainCOANextIndex = 0
                     nextActivationAt = os.clock()
-                    print("[LyraMacro] Chain COA detected " .. tostring(#callOfArmsTowers) .. " Commander/Lifeguard towers; starting rotation.")
-                elseif lastTowerCount ~= #callOfArmsTowers then
-                    self.ChainCOANextIndex = 0
-                    print("[LyraMacro] Chain COA refreshed its Commander/Lifeguard rotation.")
+                    reportStatus("Chain COA detected " .. tostring(#readyTowers) .. " ready commanders; starting stable rotation.")
+                elseif rosterChanged then
+                    print("[LyraMacro] Chain COA roster changed; preserving the next activation slot.")
                 end
 
-                lastTowerCount = #callOfArmsTowers
+                rosterChanged = false
                 local now = os.clock()
                 local waitTime = (nextActivationAt or now) - now
 
                 if waitTime > 0 then
-                    task.wait(waitTime)
+                    task.wait(math.min(waitTime, CHAIN_COA_POLL_INTERVAL))
                 elseif activationInFlight then
                     task.wait(0.05)
                 else
-                    self.ChainCOANextIndex = self.ChainCOANextIndex % #callOfArmsTowers + 1
-                    local targetTower = callOfArmsTowers[self.ChainCOANextIndex]
-                    nextActivationAt = now + self.ChainCOAInterval
+                    local targetTower = getNextTower(readyTowers)
+                    local scheduledAt = os.clock()
+
+                    lastActivatedTower = targetTower
+                    nextActivationAt = scheduledAt + self.ChainCOAInterval
                     activationInFlight = true
 
                     task.spawn(function()
-                        local activated, activationError = pcall(function()
-                            if self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent then
-                                self:ActivateAbilityForTower(targetTower, "Call Of Arms")
-                            end
+                        local activated, responseOrError = pcall(function()
+                            assert(
+                                self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
+                                "The selected commander is no longer available."
+                            )
+
+                            return self:ActivateAbilityForTower(targetTower, "Call Of Arms")
                         end)
 
                         activationInFlight = false
 
-                        if not activated then
-                            warn("[LyraMacro] Chain COA activation failed: " .. tostring(activationError))
+                        if not activated or wasActivationRejected(responseOrError) then
+                            if self.ChainCOAEnabled and self._chainCOAToken == chainToken then
+                                nextActivationAt = math.min(nextActivationAt or math.huge, os.clock() + CHAIN_COA_RETRY_DELAY)
+                            end
+
+                            warn("[LyraMacro] Chain COA skipped a rejected commander activation: " .. tostring(responseOrError))
                         end
                     end)
                 end
             end
+        end
+
+        if self._chainCOAToken == chainToken then
+            self:_clearChainCOAConnections()
         end
     end)
 
@@ -2695,7 +2909,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA waits for 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 owned, level 2 commanders, then rotates Call Of Arms every 10.2 seconds.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
