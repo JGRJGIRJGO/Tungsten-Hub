@@ -2127,9 +2127,26 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
         return false, "The local character is not available for elevator entry."
     end
 
-    if options.UseTouch ~= false then
-        local touch = elevator:FindFirstChild("Touch")
+    local lift = elevator:FindFirstChild("Lift")
+    local liftMain = lift and lift:FindFirstChild("Main")
+    local touch = elevator:FindFirstChild("Touch")
 
+    if options.TeleportImmediately == true then
+        local destination = liftMain or touch
+
+        if destination then
+            local movedImmediately, moveError = pcall(function()
+                local heightOffset = destination == liftMain and 5 or 3
+                character:PivotTo(destination.CFrame + Vector3.new(0, heightOffset, 0))
+            end)
+
+            if not movedImmediately then
+                return false, "Could not teleport into elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(moveError)
+            end
+        end
+    end
+
+    if options.UseTouch ~= false then
         if not touch then
             return false, "The selected elevator is missing its Touch part."
         end
@@ -2161,9 +2178,6 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
     if acceptedOrError ~= true then
         return false, "The elevator server rejected entry for " .. tostring(elevatorMapTitle) .. "."
     end
-
-    local lift = elevator:FindFirstChild("Lift")
-    local liftMain = lift and lift:FindFirstChild("Main")
 
     if liftMain then
         pcall(function()
@@ -2246,6 +2260,7 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 -- RemoteFunction and errors before the normal server entry is reached.
                 entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap, {
                     Elevator = lockedElevator,
+                    TeleportImmediately = true,
                     UseTouch = false,
                 })
 
