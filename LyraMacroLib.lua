@@ -1250,6 +1250,8 @@ function LyraMacro:SetChainCOA(enabled)
     task.spawn(function()
         local rotationActive = false
         local lastTowerCount = 0
+        local nextActivationAt
+        local activationInFlight = false
 
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers = self:_getCallOfArmsTowers()
@@ -1264,11 +1266,13 @@ function LyraMacro:SetChainCOA(enabled)
                 rotationActive = false
                 lastTowerCount = #callOfArmsTowers
                 self.ChainCOANextIndex = 0
+                nextActivationAt = nil
                 task.wait(0.15)
             else
                 if not rotationActive then
                     rotationActive = true
                     self.ChainCOANextIndex = 0
+                    nextActivationAt = os.clock()
                     print("[LyraMacro] Chain COA detected " .. tostring(#callOfArmsTowers) .. " Commander/Lifeguard towers; starting rotation.")
                 elseif lastTowerCount ~= #callOfArmsTowers then
                     self.ChainCOANextIndex = 0
@@ -1276,17 +1280,33 @@ function LyraMacro:SetChainCOA(enabled)
                 end
 
                 lastTowerCount = #callOfArmsTowers
-                self.ChainCOANextIndex = self.ChainCOANextIndex % #callOfArmsTowers + 1
-                local targetTower = callOfArmsTowers[self.ChainCOANextIndex]
-                local activated, activationError = pcall(function()
-                    self:ActivateAbilityForTower(targetTower, "Call Of Arms")
-                end)
+                local now = os.clock()
+                local waitTime = (nextActivationAt or now) - now
 
-                if not activated then
-                    warn("[LyraMacro] Chain COA activation failed: " .. tostring(activationError))
+                if waitTime > 0 then
+                    task.wait(waitTime)
+                elseif activationInFlight then
+                    task.wait(0.05)
+                else
+                    self.ChainCOANextIndex = self.ChainCOANextIndex % #callOfArmsTowers + 1
+                    local targetTower = callOfArmsTowers[self.ChainCOANextIndex]
+                    nextActivationAt = now + self.ChainCOAInterval
+                    activationInFlight = true
+
+                    task.spawn(function()
+                        local activated, activationError = pcall(function()
+                            if self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent then
+                                self:ActivateAbilityForTower(targetTower, "Call Of Arms")
+                            end
+                        end)
+
+                        activationInFlight = false
+
+                        if not activated then
+                            warn("[LyraMacro] Chain COA activation failed: " .. tostring(activationError))
+                        end
+                    end)
                 end
-
-                task.wait(self.ChainCOAInterval)
             end
         end
     end)
