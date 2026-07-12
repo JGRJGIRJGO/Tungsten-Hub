@@ -104,7 +104,9 @@ local CHAIN_COA_REQUIRED_TOWERS = 3
 local CHAIN_COA_MIN_UPGRADE = 3
 local CHAIN_COA_RETRY_DELAY = 0.75
 local CHAIN_COA_POLL_INTERVAL = 0.15
-local PRIVATE_SERVER_REFRESH_INTERVAL = 1
+local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
+local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
+local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
 local PRIVATE_SERVER_START_DELAY = 0.35
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
@@ -2092,7 +2094,28 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
         return false, "Elevators can only be entered from lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
     end
 
-    local elevator, elevatorMapTitle = self:FindElevatorForMap(mapName)
+    local elevator = options.Elevator
+    local elevatorMapTitle
+
+    if elevator then
+        elevatorMapTitle = getElevatorMapTitle(elevator)
+
+        local elevators = workspace:FindFirstChild("Elevators")
+        local belongsToElevators = false
+
+        if elevators then
+            local checkedParent, isDescendant = pcall(function()
+                return elevator:IsDescendantOf(elevators)
+            end)
+            belongsToElevators = checkedParent and isDescendant
+        end
+
+        if not belongsToElevators or normalizeLookupKey(elevatorMapTitle) ~= normalizeLookupKey(mapName) then
+            return false, "The selected elevator no longer has map " .. tostring(mapName) .. "."
+        end
+    else
+        elevator, elevatorMapTitle = self:FindElevatorForMap(mapName)
+    end
 
     if not elevator then
         return false, elevatorMapTitle
@@ -2155,6 +2178,8 @@ function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
         local lastRefreshAt = -math.huge
         local lastRefreshError
+        local lastEntryAttemptAt = -math.huge
+        local lockedElevator
         local announcedPrivateWorkflow = false
 
         while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
@@ -2165,9 +2190,33 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
             end
 
-            local elevator = self:FindElevatorForMap(replay.TargetMap)
+            local elevator = lockedElevator
 
-            if not elevator and privateServer and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL then
+            if elevator and normalizeLookupKey(getElevatorMapTitle(elevator)) ~= normalizeLookupKey(replay.TargetMap) then
+                elevator = nil
+                lockedElevator = nil
+            end
+
+            if not elevator then
+                elevator = self:FindElevatorForMap(replay.TargetMap)
+            end
+
+            local refreshDue = not elevator
+                and privateServer
+                and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL
+
+            if refreshDue then
+                -- Close the small race where a refreshed map appears immediately
+                -- before the next command would otherwise refresh past it.
+                elevator = self:FindElevatorForMap(replay.TargetMap)
+                refreshDue = not elevator
+            end
+
+            if elevator then
+                lockedElevator = elevator
+            end
+
+            if refreshDue then
                 lastRefreshAt = os.clock()
 
                 local refreshed, refreshMessage = self:_sendPrivateServerCommand("!refresh")
@@ -2187,11 +2236,23 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 end
             end
 
-            -- Avoid the lobby Touch controller here: its wrapper misbinds the raw
-            -- RemoteFunction and errors before the normal server entry is reached.
-            local entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap, {
-                UseTouch = false,
-            })
+            local entered = false
+            local elevatorMapTitle
+
+            if lockedElevator and os.clock() - lastEntryAttemptAt >= PRIVATE_SERVER_ENTRY_RETRY_INTERVAL then
+                lastEntryAttemptAt = os.clock()
+
+                -- Avoid the lobby Touch controller here: its wrapper misbinds the raw
+                -- RemoteFunction and errors before the normal server entry is reached.
+                entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap, {
+                    Elevator = lockedElevator,
+                    UseTouch = false,
+                })
+
+                if not entered and normalizeLookupKey(getElevatorMapTitle(lockedElevator)) ~= normalizeLookupKey(replay.TargetMap) then
+                    lockedElevator = nil
+                end
+            end
 
             if entered then
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
@@ -2211,7 +2272,7 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 return
             end
 
-            task.wait(privateServer and 0.2 or 1)
+            task.wait(privateServer and PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL or 1)
         end
     end)
 end
