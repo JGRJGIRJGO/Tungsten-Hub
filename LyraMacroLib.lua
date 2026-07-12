@@ -107,7 +107,11 @@ local CHAIN_COA_POLL_INTERVAL = 0.15
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
-local PRIVATE_SERVER_START_DELAY = 0.35
+local PRIVATE_SERVER_CHAT_STATUS_TIMEOUT = 1
+local PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN = 3
+local PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN = 30
+local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
+local PRIVATE_SERVER_START_TIMEOUT = 35
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
@@ -180,6 +184,13 @@ local LyraMacro = {
     _chainCOAToken = 0,
     _chainCOAConnections = {},
     _resultsWatchToken = 0,
+    _chatFloodcheckCount = 0,
+    _chatFloodcheckedUntil = 0,
+    _chatMessageResults = {},
+    _chatStatusConnection = nil,
+    _lastChatFloodcheckAt = -math.huge,
+    _lastPrivateServerCommand = nil,
+    _lastPrivateServerMessageId = nil,
     StrategyLogger = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
@@ -2040,6 +2051,50 @@ local function getTextChatMessageStatusName(message)
     return statusText:match("%.([%w_]+)$") or statusText
 end
 
+local function getTextChatMessageId(message)
+    local gotMessageId, messageId = pcall(function()
+        return message and message.MessageId
+    end)
+
+    if gotMessageId and type(messageId) == "string" and messageId ~= "" then
+        return messageId
+    end
+
+    return nil
+end
+
+local function getTextChatMessageMetadata(message)
+    local gotMetadata, metadata = pcall(function()
+        return message and message.Metadata
+    end)
+
+    return gotMetadata and type(metadata) == "string" and metadata or ""
+end
+
+local function isTextChatMessageFromLocalPlayer(message)
+    local gotTextSource, textSource = pcall(function()
+        return message and message.TextSource
+    end)
+
+    if not gotTextSource or not textSource then
+        return nil
+    end
+
+    local gotUserId, userId = pcall(function()
+        return textSource.UserId
+    end)
+
+    return gotUserId and userId == LocalPlayer.UserId
+end
+
+local function isFloodcheckedChatMessage(message, statusName)
+    if statusName == "Floodchecked" then
+        return true
+    end
+
+    return normalizeLookupKey(getTextChatMessageMetadata(message)):find("floodchecked", 1, true) ~= nil
+end
+
 local function textChannelCanSendForLocalPlayer(channel)
     for _, source in ipairs(safeGetChildren(channel)) do
         if instanceIsA(source, "TextSource") then
@@ -2104,7 +2159,110 @@ local function getTextChatChannelCandidates(textChatService)
     return candidates
 end
 
-function LyraMacro:_sendPrivateServerCommand(command)
+function LyraMacro:_getPrivateChatFloodcheckRemaining()
+    return math.max(0, (tonumber(self._chatFloodcheckedUntil) or 0) - os.clock())
+end
+
+function LyraMacro:_markPrivateChatFloodchecked(source)
+    local now = os.clock()
+
+    if now - (tonumber(self._lastChatFloodcheckAt) or -math.huge) > 0.25 then
+        self._chatFloodcheckCount = math.min((tonumber(self._chatFloodcheckCount) or 0) + 1, 8)
+    end
+
+    self._lastChatFloodcheckAt = now
+
+    local cooldown = math.min(
+        PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN * (2 ^ math.max(0, self._chatFloodcheckCount - 1)),
+        PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN
+    )
+    self._chatFloodcheckedUntil = math.max(tonumber(self._chatFloodcheckedUntil) or 0, now + cooldown)
+
+    warn(
+        "[LyraMacro] Roblox chat floodchecked "
+            .. tostring(self._lastPrivateServerCommand or "a private-server command")
+            .. "; pausing !refresh for "
+            .. tostring(cooldown)
+            .. " seconds ("
+            .. tostring(source or "TextChatMessageStatus")
+            .. ")."
+    )
+
+    return cooldown
+end
+
+function LyraMacro:_clearPrivateChatFloodcheck(messageId)
+    if messageId and self._lastPrivateServerMessageId and messageId ~= self._lastPrivateServerMessageId then
+        return
+    end
+
+    self._chatFloodcheckCount = 0
+    self._chatFloodcheckedUntil = 0
+end
+
+function LyraMacro:_ensurePrivateChatStatusObserver()
+    local textChatService
+    pcall(function()
+        textChatService = game:GetService("TextChatService")
+    end)
+
+    if not textChatService or self._chatStatusConnection then
+        return textChatService
+    end
+
+    local connected, connection = pcall(function()
+        return textChatService.MessageReceived:Connect(function(message)
+            local statusName = getTextChatMessageStatusName(message)
+            local messageId = getTextChatMessageId(message)
+            local fromLocalPlayer = isTextChatMessageFromLocalPlayer(message)
+
+            if fromLocalPlayer == true and messageId then
+                self._chatMessageResults[messageId] = statusName
+            end
+
+            if isFloodcheckedChatMessage(message, statusName) then
+                self:_markPrivateChatFloodchecked("Roblox.MessageStatus.Warning.Floodchecked")
+            elseif statusName == "Success" and fromLocalPlayer == true then
+                self:_clearPrivateChatFloodcheck(messageId)
+            end
+        end)
+    end)
+
+    if connected then
+        self._chatStatusConnection = connection
+    end
+
+    return textChatService
+end
+
+function LyraMacro:_waitForPrivateChatStatus(message, floodcheckAtBeforeSend)
+    local messageId = getTextChatMessageId(message)
+    local deadline = os.clock() + PRIVATE_SERVER_CHAT_STATUS_TIMEOUT
+
+    while os.clock() < deadline do
+        local statusName = getTextChatMessageStatusName(message)
+        local observedStatus = messageId and self._chatMessageResults[messageId]
+
+        if observedStatus and observedStatus ~= "Sending" then
+            return observedStatus
+        end
+
+        if statusName and statusName ~= "Sending" then
+            return statusName
+        end
+
+        if (tonumber(self._lastChatFloodcheckAt) or -math.huge) > floodcheckAtBeforeSend then
+            return "Floodchecked"
+        end
+
+        task.wait(0.05)
+    end
+
+    return getTextChatMessageStatusName(message) or "Sending"
+end
+
+function LyraMacro:_sendPrivateServerCommand(command, options)
+    options = type(options) == "table" and options or {}
     local privateWorkflowEnabled, privateWorkflowReason = self:ShouldUsePrivateServerWorkflow()
 
     if not privateWorkflowEnabled then
@@ -2115,24 +2273,54 @@ function LyraMacro:_sendPrivateServerCommand(command)
         return false, "A chat command is required."
     end
 
-    local textChatService
-    pcall(function()
-        textChatService = game:GetService("TextChatService")
-    end)
+    local floodcheckRemaining = self:_getPrivateChatFloodcheckRemaining()
+
+    if floodcheckRemaining > 0 and options.IgnoreFloodcheckCooldown ~= true then
+        return false,
+            "Roblox chat is floodchecked; retry in " .. string.format("%.1f", floodcheckRemaining) .. " seconds.",
+            "Floodchecked"
+    end
+
+    local textChatService = self:_ensurePrivateChatStatusObserver()
 
     local sendFailures = {}
 
     if textChatService then
         for _, channel in ipairs(getTextChatChannelCandidates(textChatService)) do
+            table.clear(self._chatMessageResults)
+            self._lastPrivateServerCommand = command
+            self._lastPrivateServerMessageId = nil
+            local floodcheckAtBeforeSend = tonumber(self._lastChatFloodcheckAt) or -math.huge
             local sent, messageOrError = pcall(function()
                 return channel:SendAsync(command)
             end)
 
             if sent then
-                local statusName = getTextChatMessageStatusName(messageOrError)
+                local messageId = getTextChatMessageId(messageOrError)
+                self._lastPrivateServerMessageId = messageId
+                local statusName = self:_waitForPrivateChatStatus(messageOrError, floodcheckAtBeforeSend)
 
-                if statusName == "Success" or statusName == "Sending" then
-                    return true, "TextChatService/" .. tostring(getInstanceName(channel) or "TextChannel")
+                if statusName == "Success" then
+                    self:_clearPrivateChatFloodcheck(messageId)
+                    return true, "TextChatService/" .. tostring(getInstanceName(channel) or "TextChannel"), statusName
+                end
+
+                if statusName == "Sending" then
+                    if options.RequireFinalStatus == true then
+                        return false,
+                            tostring(getInstanceName(channel) or "TextChannel") .. " did not return a final message status.",
+                            statusName
+                    end
+
+                    return true, "TextChatService/" .. tostring(getInstanceName(channel) or "TextChannel"), statusName
+                end
+
+                if statusName == "Floodchecked" then
+                    if (tonumber(self._lastChatFloodcheckAt) or -math.huge) <= floodcheckAtBeforeSend then
+                        self:_markPrivateChatFloodchecked("TextChatMessageStatus.Floodchecked")
+                    end
+
+                    return false, "Roblox chat floodchecked " .. command .. ".", statusName
                 end
 
                 table.insert(
@@ -2144,6 +2332,11 @@ function LyraMacro:_sendPrivateServerCommand(command)
                     sendFailures,
                     tostring(getInstanceName(channel) or "TextChannel") .. " failed: " .. tostring(messageOrError)
                 )
+
+                if normalizeLookupKey(messageOrError):find("floodcheck", 1, true) then
+                    self:_markPrivateChatFloodchecked("TextChannel:SendAsync error")
+                    return false, "Roblox chat floodchecked " .. command .. ".", "Floodchecked"
+                end
             end
         end
     end
@@ -2157,7 +2350,7 @@ function LyraMacro:_sendPrivateServerCommand(command)
         end)
 
         if sent then
-            return true, "legacy chat"
+            return true, "legacy chat", "Unknown"
         end
 
         table.insert(sendFailures, "legacy chat failed: " .. tostring(sendError))
@@ -2168,6 +2361,43 @@ function LyraMacro:_sendPrivateServerCommand(command)
     end
 
     return false, "No sendable Roblox chat channel is available."
+end
+
+function LyraMacro:_startPrivateServerElevator()
+    local deadline = os.clock() + PRIVATE_SERVER_START_TIMEOUT
+    local attempt = 0
+    local lastError = "No !start attempt was made."
+
+    while game.PlaceId == LOBBY_PLACE_ID and os.clock() < deadline do
+        attempt += 1
+        print("[LyraMacro] Sending !start attempt #" .. tostring(attempt) .. ".")
+
+        local started, startMessage, statusName = self:_sendPrivateServerCommand("!start", {
+            IgnoreFloodcheckCooldown = true,
+            RequireFinalStatus = true,
+        })
+
+        if started then
+            return true, startMessage, attempt
+        end
+
+        lastError = startMessage
+        local retryDelay = PRIVATE_SERVER_START_RETRY_INTERVAL
+
+        if statusName == "Floodchecked" then
+            retryDelay = math.max(retryDelay, self:_getPrivateChatFloodcheckRemaining())
+        end
+
+        local timeRemaining = deadline - os.clock()
+
+        if timeRemaining <= 0 then
+            break
+        end
+
+        task.wait(math.min(retryDelay, timeRemaining))
+    end
+
+    return false, lastError, attempt
 end
 
 local function getElevatorMapTitle(elevator)
@@ -2372,6 +2602,7 @@ function LyraMacro:_autoEnterPendingReplay(replay)
             local refreshDue = not elevator
                 and privateServer
                 and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL
+                and self:_getPrivateChatFloodcheckRemaining() <= 0
 
             if refreshDue then
                 -- Close the small race where a refreshed map appears immediately
@@ -2436,14 +2667,24 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
 
                 if privateServer then
-                    task.wait(PRIVATE_SERVER_START_DELAY)
-
-                    local started, startMessage = self:_sendPrivateServerCommand("!start")
+                    print("[LyraMacro] Elevator entry confirmed; sending !start now.")
+                    local started, startMessage, startAttempts = self:_startPrivateServerElevator()
 
                     if started then
-                        print("[LyraMacro] Sent !start via " .. tostring(startMessage) .. ".")
+                        print(
+                            "[LyraMacro] Sent !start via "
+                                .. tostring(startMessage)
+                                .. " immediately after elevator entry (attempt "
+                                .. tostring(startAttempts)
+                                .. ")."
+                        )
                     else
-                        warn("[LyraMacro] Could not send private-server start: " .. tostring(startMessage))
+                        warn(
+                            "[LyraMacro] Could not confirm private-server !start after "
+                                .. tostring(startAttempts)
+                                .. " attempts: "
+                                .. tostring(startMessage)
+                        )
                     end
                 end
 
