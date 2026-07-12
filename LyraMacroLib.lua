@@ -109,7 +109,9 @@ local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
 local PRIVATE_SERVER_START_DELAY = 0.35
 local REPLAY_CONFIRM_TIMEOUT = 3
+local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
+local REPLAY_RETRY_INTERVAL = 0.75
 local REPLAY_PLACEMENT_MATCH_RADIUS = 8
 local DEFAULT_MAX_TOWER_UPGRADE = 5
 local PRIVATE_SERVER_MARKER_NAMES = {
@@ -1293,40 +1295,165 @@ local function snapshotTowers(towersFolder)
     return snapshot
 end
 
-local function findNewOwnedTower(towersFolder, existingTowers, expectedPosition)
-    local closestTower
-    local closestDistance
-    local hasExpectedPosition = getValueKind(expectedPosition) == "Vector3"
+local function isDirectTowerChild(tower, towersFolder)
+    local gotParent, parent = pcall(function()
+        return tower.Parent
+    end)
 
-    for _, tower in ipairs(safeGetChildren(towersFolder)) do
-        if not existingTowers[tower] and tower.Parent and isTowerOwnedByLocalPlayer(tower) then
-            if not hasExpectedPosition then
-                return tower
-            end
+    return gotParent and parent == towersFolder
+end
 
-            local towerPosition = getTowerWorldPosition(tower)
+local function getTowerDistanceFrom(tower, expectedPosition)
+    if getValueKind(expectedPosition) ~= "Vector3" then
+        return nil
+    end
 
-            if towerPosition then
-                local gotDistance, distance = pcall(function()
-                    return (towerPosition - expectedPosition).Magnitude
-                end)
+    local towerPosition = getTowerWorldPosition(tower)
 
-                if gotDistance and distance <= REPLAY_PLACEMENT_MATCH_RADIUS and (not closestDistance or distance < closestDistance) then
-                    closestTower = tower
-                    closestDistance = distance
-                end
-            end
+    if not towerPosition then
+        return nil
+    end
+
+    local gotDistance, distance = pcall(function()
+        return (towerPosition - expectedPosition).Magnitude
+    end)
+
+    return gotDistance and distance or nil
+end
+
+local function createPlacementTracker(towersFolder, existingTowers)
+    local tracker = {
+        Candidates = {},
+        CandidateSet = {},
+        Connection = nil,
+        TowersFolder = towersFolder,
+    }
+
+    tracker.Track = function(tower)
+        if tower and not existingTowers[tower] and not tracker.CandidateSet[tower] then
+            tracker.CandidateSet[tower] = true
+            table.insert(tracker.Candidates, tower)
         end
     end
 
-    return closestTower
+    local connected, connection = pcall(function()
+        return towersFolder.ChildAdded:Connect(tracker.Track)
+    end)
+
+    if connected then
+        tracker.Connection = connection
+    end
+
+    -- Catch anything added between the snapshot and the ChildAdded connection.
+    for _, tower in ipairs(safeGetChildren(towersFolder)) do
+        tracker.Track(tower)
+    end
+
+    return tracker
 end
 
-local function waitForNewOwnedTower(towersFolder, existingTowers, expectedPosition, timeout)
+local function stopPlacementTracker(tracker)
+    if tracker and tracker.Connection then
+        pcall(function()
+            tracker.Connection:Disconnect()
+        end)
+        tracker.Connection = nil
+    end
+end
+
+local function trackPlacementResponse(tracker, response)
+    if not tracker then
+        return
+    end
+
+    if getValueKind(response) == "Instance" then
+        local candidate = response
+
+        while candidate and candidate ~= tracker.TowersFolder do
+            local gotParent, parent = pcall(function()
+                return candidate.Parent
+            end)
+
+            if not gotParent then
+                break
+            end
+
+            if parent == tracker.TowersFolder then
+                tracker.Track(candidate)
+                break
+            end
+
+            candidate = parent
+        end
+
+        return
+    end
+
+    if type(response) == "table" then
+        for _, key in ipairs({ "Tower", "Troop", "Instance", "Model" }) do
+            if response[key] ~= nil then
+                trackPlacementResponse(tracker, response[key])
+            end
+        end
+    end
+end
+
+local function findNewTowerCandidate(towersFolder, existingTowers, expectedPosition, trackedCandidates)
+    local candidates = {}
+    local candidateSet = {}
+
+    local function consider(tower)
+        if not tower or existingTowers[tower] or candidateSet[tower] or not isDirectTowerChild(tower, towersFolder) then
+            return
+        end
+
+        candidateSet[tower] = true
+        table.insert(candidates, tower)
+    end
+
+    for _, tower in ipairs(trackedCandidates or {}) do
+        consider(tower)
+    end
+
+    for _, tower in ipairs(safeGetChildren(towersFolder)) do
+        consider(tower)
+    end
+
+    if #candidates == 1 then
+        -- Strategy replay is solo-only. The exact ChildAdded instance is safe even
+        -- before its Owner/TowerReplicator metadata finishes replicating.
+        return candidates[1]
+    end
+
+    local closestOwnedTower
+    local closestOwnedDistance
+    local closestTower
+    local closestDistance
+
+    for _, tower in ipairs(candidates) do
+        local distance = getTowerDistanceFrom(tower, expectedPosition)
+        local comparisonDistance = distance or (REPLAY_PLACEMENT_MATCH_RADIUS * 2)
+
+        if not closestDistance or comparisonDistance < closestDistance then
+            closestTower = tower
+            closestDistance = comparisonDistance
+        end
+
+        if isTowerOwnedByLocalPlayer(tower)
+            and (not closestOwnedDistance or comparisonDistance < closestOwnedDistance) then
+            closestOwnedTower = tower
+            closestOwnedDistance = comparisonDistance
+        end
+    end
+
+    return closestOwnedTower or closestTower
+end
+
+local function waitForNewTowerCandidate(towersFolder, existingTowers, expectedPosition, trackedCandidates, timeout)
     local deadline = os.clock() + (timeout or REPLAY_CONFIRM_TIMEOUT)
 
     while os.clock() < deadline do
-        local tower = findNewOwnedTower(towersFolder, existingTowers, expectedPosition)
+        local tower = findNewTowerCandidate(towersFolder, existingTowers, expectedPosition, trackedCandidates)
 
         if tower then
             return tower
@@ -1335,7 +1462,7 @@ local function waitForNewOwnedTower(towersFolder, existingTowers, expectedPositi
         task.wait(REPLAY_CONFIRM_POLL_INTERVAL)
     end
 
-    return nil
+    return findNewTowerCandidate(towersFolder, existingTowers, expectedPosition, trackedCandidates)
 end
 
 local function waitForCondition(timeout, predicate)
@@ -1352,10 +1479,18 @@ local function waitForCondition(timeout, predicate)
     return predicate()
 end
 
-local function waitForCashChange(cash, observedValue)
-    while cash.Value == observedValue do
-        cash:GetPropertyChangedSignal("Value"):Wait()
+local function waitForCashChange(cash, observedValue, timeout)
+    return waitForCondition(timeout or REPLAY_RETRY_INTERVAL, function()
+        return cash.Value ~= observedValue
+    end)
+end
+
+local function remoteResponseWasAccepted(response)
+    if response == true or getValueKind(response) == "Instance" then
+        return true
     end
+
+    return type(response) == "table" and response.Success == true
 end
 
 local function isCallOfArmsTowerStunned(tower)
@@ -2787,7 +2922,7 @@ function LyraMacro:_trackNextRecordedTower(troopType, position)
     local existingTowers = snapshotTowers(towersFolder)
 
     task.spawn(function()
-        local tower = waitForNewOwnedTower(towersFolder, existingTowers, position)
+        local tower = waitForNewTowerCandidate(towersFolder, existingTowers, position)
 
         if not self.IsRecording then
             return
@@ -3607,9 +3742,12 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
     rotation = rotation or CFrame.new()
     skin = type(skin) == "string" and skin ~= "" and skin or "Default"
     local towersFolder = getTowersFolder()
+    local attempt = 0
 
     while true do
+        attempt += 1
         local existingTowers = snapshotTowers(towersFolder)
+        local placementTracker = createPlacementTracker(towersFolder, existingTowers)
         local cash = getCashValue()
         local cashBeforeRequest = cash.Value
         local invoked, responseOrError = pcall(function()
@@ -3629,11 +3767,40 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
             )
         end)
 
+        if invoked then
+            trackPlacementResponse(placementTracker, responseOrError)
+        end
+
         if not invoked then
+            stopPlacementTracker(placementTracker)
             error("[LyraMacro] Place " .. tostring(troopType) .. " failed: " .. tostring(responseOrError), 2)
         end
 
-        local placedTower = waitForNewOwnedTower(towersFolder, existingTowers, position)
+        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+        local placedTower = waitForNewTowerCandidate(
+            towersFolder,
+            existingTowers,
+            position,
+            placementTracker.Candidates,
+            confirmationTimeout
+        )
+
+        local cashAfterRequest = cash.Value
+        local requestWasAccepted = remoteResponseWasAccepted(responseOrError)
+            or (tonumber(cashAfterRequest) and tonumber(cashBeforeRequest) and cashAfterRequest < cashBeforeRequest)
+
+        if not placedTower and requestWasAccepted then
+            print("[LyraMacro] Place " .. tostring(troopType) .. " was accepted; reconciling the replicated tower.")
+            placedTower = waitForNewTowerCandidate(
+                towersFolder,
+                existingTowers,
+                position,
+                placementTracker.Candidates,
+                REPLAY_ACCEPTED_RECOVERY_TIMEOUT
+            )
+        end
+
+        stopPlacementTracker(placementTracker)
 
         if placedTower then
             self.NextTowerIndex += 1
@@ -3643,12 +3810,12 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
             return placedTower
         end
 
-        if cash.Value ~= cashBeforeRequest then
-            error("[LyraMacro] Place " .. tostring(troopType) .. " changed cash but did not create the expected local tower. Replay stopped to prevent tower ID desync.", 2)
+        if requestWasAccepted then
+            error("[LyraMacro] Place " .. tostring(troopType) .. " was accepted but its new workspace.Towers child did not replicate within " .. tostring(REPLAY_ACCEPTED_RECOVERY_TIMEOUT) .. " seconds. Replay stopped before issuing a duplicate placement.", 2)
         end
 
-        print("[LyraMacro] Place " .. tostring(troopType) .. " is pending; waiting for Cash to change.")
-        waitForCashChange(cash, cashBeforeRequest)
+        print("[LyraMacro] Place " .. tostring(troopType) .. " is pending (attempt " .. tostring(attempt) .. ", cash " .. tostring(cash.Value) .. "); retrying shortly.")
+        waitForCashChange(cash, cash.Value, REPLAY_RETRY_INTERVAL)
     end
 end
 
@@ -3660,8 +3827,10 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
     )
 
     local targetLevel = tonumber(expectedLevel)
+    local attempt = 0
 
     while true do
+        attempt += 1
         local levelBeforeRequest = getTowerUpgradeLevel(targetTower)
         local maximumLevel = getTowerMaximumUpgrade(targetTower)
 
@@ -3696,7 +3865,7 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             error("[LyraMacro] Upgrade tower #" .. tostring(towerIndex) .. " failed: " .. tostring(responseOrError), 2)
         end
 
-        local upgraded = waitForCondition(REPLAY_CONFIRM_TIMEOUT, function()
+        local function reachedRecordedLevel()
             local currentLevel = getTowerUpgradeLevel(targetTower)
 
             if targetLevel then
@@ -3704,19 +3873,33 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             end
 
             return levelBeforeRequest and currentLevel and currentLevel > levelBeforeRequest
-        end)
+        end
+
+        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+        local upgraded = waitForCondition(confirmationTimeout, reachedRecordedLevel)
 
         if upgraded then
             print("[LyraMacro] Upgraded tower #" .. towerIndex .. ".")
             return
         end
 
-        if cash.Value ~= cashBeforeRequest then
-            error("[LyraMacro] Upgrade tower #" .. tostring(towerIndex) .. " changed cash but did not reach its recorded upgrade state. Replay stopped to prevent duplicate upgrades.", 2)
+        local cashAfterRequest = cash.Value
+        local requestWasAccepted = remoteResponseWasAccepted(responseOrError)
+            or (tonumber(cashAfterRequest) and tonumber(cashBeforeRequest) and cashAfterRequest < cashBeforeRequest)
+
+        if requestWasAccepted then
+            print("[LyraMacro] Upgrade tower #" .. tostring(towerIndex) .. " was accepted; reconciling its replicated level.")
+
+            if waitForCondition(REPLAY_ACCEPTED_RECOVERY_TIMEOUT, reachedRecordedLevel) then
+                print("[LyraMacro] Upgraded tower #" .. towerIndex .. ".")
+                return
+            end
+
+            error("[LyraMacro] Upgrade tower #" .. tostring(towerIndex) .. " was accepted but did not reach recorded level " .. tostring(targetLevel or "next") .. " within " .. tostring(REPLAY_ACCEPTED_RECOVERY_TIMEOUT) .. " seconds. Replay stopped before issuing a duplicate upgrade.", 2)
         end
 
-        print("[LyraMacro] Upgrade tower #" .. towerIndex .. " is pending; waiting for Cash to change.")
-        waitForCashChange(cash, cashBeforeRequest)
+        print("[LyraMacro] Upgrade tower #" .. towerIndex .. " is pending (attempt " .. tostring(attempt) .. ", cash " .. tostring(cash.Value) .. "); retrying shortly.")
+        waitForCashChange(cash, cash.Value, REPLAY_RETRY_INTERVAL)
     end
 end
 
@@ -3727,9 +3910,11 @@ function LyraMacro:Sell(towerIndex)
         "[LyraMacro] Cannot sell tower #" .. tostring(towerIndex) .. "; it is missing or already sold."
     )
 
+    local attempt = 0
+
     while targetTower.Parent do
+        attempt += 1
         local cash = getCashValue()
-        local cashBeforeRequest = cash.Value
         local invoked, responseOrError = pcall(function()
             return RemoteFunction:InvokeServer(
                 "Troops",
@@ -3744,18 +3929,22 @@ function LyraMacro:Sell(towerIndex)
             error("[LyraMacro] Sell tower #" .. tostring(towerIndex) .. " failed: " .. tostring(responseOrError), 2)
         end
 
-        if waitForCondition(REPLAY_CONFIRM_TIMEOUT, function()
+        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+
+        if waitForCondition(confirmationTimeout, function()
             return targetTower.Parent == nil
         end) then
             break
         end
 
-        if cash.Value ~= cashBeforeRequest then
-            error("[LyraMacro] Sell tower #" .. tostring(towerIndex) .. " changed cash but the target tower remained. Replay stopped to prevent duplicate sells.", 2)
+        if remoteResponseWasAccepted(responseOrError) and waitForCondition(REPLAY_ACCEPTED_RECOVERY_TIMEOUT, function()
+            return targetTower.Parent == nil
+        end) then
+            break
         end
 
-        print("[LyraMacro] Sell tower #" .. towerIndex .. " is pending; waiting for Cash to change.")
-        waitForCashChange(cash, cashBeforeRequest)
+        print("[LyraMacro] Sell tower #" .. towerIndex .. " is pending (attempt " .. tostring(attempt) .. "); retrying the same tower reference shortly.")
+        waitForCashChange(cash, cash.Value, REPLAY_RETRY_INTERVAL)
     end
 
     -- Keep IDs stable: selling #1 never changes the ID of tower #2.
@@ -4006,8 +4195,28 @@ function LyraMacro:LogStrategyAction(message)
     end)
 end
 
+local function validateStrategyActions(strategy)
+    local highestIndex = 0
+
+    for index in pairs(strategy) do
+        if type(index) == "number" and index >= 1 and index % 1 == 0 then
+            highestIndex = math.max(highestIndex, index)
+        end
+    end
+
+    for index = 1, highestIndex do
+        assert(
+            type(strategy[index]) == "table",
+            "[LyraMacro] Strategy action #" .. tostring(index) .. " is missing or is not a table. Replay cannot continue across a sparse action queue."
+        )
+    end
+
+    return highestIndex
+end
+
 function LyraMacro:Run(strategy)
     assert(type(strategy) == "table", "[LyraMacro] Strategy must be a table of step tables.")
+    local actionCount = validateStrategyActions(strategy)
 
     if game.PlaceId == LOBBY_PLACE_ID then
         local expectedFingerprint = self.PendingLegacyReplayFingerprint
@@ -4029,13 +4238,14 @@ function LyraMacro:Run(strategy)
     self:RemoveIndex()
     self:Ready()
     self:CreateStrategyLogger()
-    self:LogStrategyAction("STRATEGY STARTED - " .. tostring(#strategy) .. " ACTIONS")
+    self:LogStrategyAction("STRATEGY STARTED - " .. tostring(actionCount) .. " ACTIONS")
 
-    for stepNumber, step in ipairs(strategy) do
+    for stepNumber = 1, actionCount do
+        local step = strategy[stepNumber]
         local action = step.action
         assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
         local actionDescription = describeStrategyStep(step)
-        self:LogStrategyAction(tostring(stepNumber) .. "/" .. tostring(#strategy) .. "  " .. actionDescription)
+        self:LogStrategyAction(tostring(stepNumber) .. "/" .. tostring(actionCount) .. "  " .. actionDescription)
 
         local executed, actionError = xpcall(function()
             if action == "skip" then
