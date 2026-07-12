@@ -188,10 +188,10 @@
         </div>
 
         <section class="key-panel" aria-labelledby="key-title">
-            <p class="eyebrow">DAILY DEVICE KEY</p>
-            <h1 id="key-title">Your Lyra key</h1>
-            <p class="date" id="date-label">Preparing key...</p>
-            <output class="key-field" id="key-output" aria-live="polite">Preparing key...</output>
+            <p class="eyebrow" id="eyebrow">CHECKPOINT ACCESS</p>
+            <h1 id="key-title">Preparing checkpoint</h1>
+            <p class="date" id="date-label">Waiting for your key link...</p>
+            <output class="key-field" id="key-output" aria-live="polite">Preparing checkpoint...</output>
             <div class="actions">
                 <button type="button" id="copy-button" disabled>
                     <i data-lucide="copy" aria-hidden="true"></i>
@@ -209,10 +209,14 @@
 
     <script>
         const SALT = "LyraSecureKeySystem_V3_Reset_8F2D";
+        const DEFAULT_CHECKPOINT_URL = "https://lootdest.org/s?DfJNgxIO";
+        const FLOW_STORAGE_KEY = "lyra-key-checkpoint-flow";
         const output = document.getElementById("key-output");
         const copyButton = document.getElementById("copy-button");
         const statusMessage = document.getElementById("status-message");
         const dateLabel = document.getElementById("date-label");
+        const eyebrow = document.getElementById("eyebrow");
+        const title = document.getElementById("key-title");
         let generatedKey = "";
 
         function getUtcDateCode(date) {
@@ -259,21 +263,113 @@
             window.setTimeout(() => { statusMessage.textContent = ""; }, 1600);
         }
 
-        async function initialize() {
-            const query = new URLSearchParams(window.location.search);
-            const hwid = (query.get("hwid") || "").trim().toUpperCase();
-            const now = new Date();
-            dateLabel.textContent = getUtcDateLabel(now);
+        function setError(message) {
+            eyebrow.textContent = "KEY LINK ERROR";
+            title.textContent = "Unable to start";
+            output.textContent = message;
+            output.classList.add("error");
+            dateLabel.textContent = "";
+        }
 
-            if (!/^[A-F0-9]{64}$/.test(hwid)) {
-                output.textContent = "This key link is missing a valid device token. Reopen Get Key from Lyra.";
-                output.classList.add("error");
+        function parseCheckpointUrl(value) {
+            if (!value) return "";
+
+            try {
+                const url = new URL(value);
+                return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+            } catch (_) {
+                return "";
+            }
+        }
+
+        function getSavedFlow() {
+            try {
+                return JSON.parse(localStorage.getItem(FLOW_STORAGE_KEY) || "null");
+            } catch (_) {
+                localStorage.removeItem(FLOW_STORAGE_KEY);
+                return null;
+            }
+        }
+
+        function saveFlow(flow) {
+            localStorage.setItem(FLOW_STORAGE_KEY, JSON.stringify(flow));
+        }
+
+        function beginRedirect(flow, stepIndex) {
+            const targetUrl = flow.links[stepIndex];
+            if (!targetUrl) {
+                setError("This key link is missing checkpoint " + (stepIndex + 1) + ".");
                 return;
             }
 
+            eyebrow.textContent = "CHECKPOINT " + (stepIndex + 1) + " OF " + flow.totalSteps;
+            title.textContent = "Opening LootLabs";
+            dateLabel.textContent = "Return here after the checkpoint finishes.";
+            output.textContent = "Redirecting to checkpoint " + (stepIndex + 1) + "...";
+            statusMessage.textContent = "";
+            window.setTimeout(() => { window.location.assign(targetUrl); }, 900);
+        }
+
+        async function showKey(hwid) {
+            const now = new Date();
+            eyebrow.textContent = "DAILY DEVICE KEY";
+            title.textContent = "Your Lyra key";
+            dateLabel.textContent = getUtcDateLabel(now);
+            output.classList.remove("error");
+            output.textContent = "Generating key...";
             generatedKey = "Lyra_" + await sha256(`${hwid}_${SALT}_${getUtcDateCode(now)}`);
             output.textContent = generatedKey;
             copyButton.disabled = false;
+        }
+
+        async function initialize() {
+            const query = new URLSearchParams(window.location.search);
+            const hwid = (query.get("hwid") || "").trim().toUpperCase();
+
+            if (hwid) {
+                if (!/^[A-F0-9]{64}$/.test(hwid)) {
+                    setError("This key link is missing a valid device token. Reopen Get Key from Lyra.");
+                    return;
+                }
+
+                const requestedSteps = Number.parseInt(query.get("steps") || "1", 10);
+                const totalSteps = Number.isFinite(requestedSteps)
+                    ? Math.max(1, Math.min(requestedSteps, 3))
+                    : 1;
+                const links = [];
+
+                for (let index = 1; index <= totalSteps; index += 1) {
+                    const configuredUrl = parseCheckpointUrl(query.get(`link${index}`));
+                    const fallbackUrl = index === 1 ? DEFAULT_CHECKPOINT_URL : "";
+                    links.push(configuredUrl || fallbackUrl);
+                }
+
+                const flow = { hwid, totalSteps, currentStep: 0, links };
+                if (links.some((link) => !link)) {
+                    setError("This key link has an incomplete checkpoint configuration.");
+                    return;
+                }
+
+                saveFlow(flow);
+                beginRedirect(flow, 0);
+                return;
+            }
+
+            const flow = getSavedFlow();
+            if (!flow || !/^[A-F0-9]{64}$/.test(flow.hwid) || !Array.isArray(flow.links)) {
+                setError("Open this page through Get Key in Lyra to begin the checkpoint flow.");
+                return;
+            }
+
+            flow.currentStep += 1;
+            if (flow.currentStep < flow.totalSteps) {
+                saveFlow(flow);
+                beginRedirect(flow, flow.currentStep);
+                return;
+            }
+
+            localStorage.removeItem(FLOW_STORAGE_KEY);
+            await showKey(flow.hwid);
         }
 
         copyButton.addEventListener("click", copyKey);

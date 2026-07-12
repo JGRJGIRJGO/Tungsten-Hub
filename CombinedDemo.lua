@@ -2083,7 +2083,7 @@ local Window = Lyra:CreateWindow({
         Note = "Please enter your secure HWID-locked key to unlock features.",
         SaveKey = true,
         Key = getDailyHWIDKey(),
-        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/key/?hwid=" .. getHashedHWID()
+        Url = "https://jgrjgirjgo.github.io/Tungsten-Hub/key/?hwid=" .. getHashedHWID() .. "&steps=1&link1=https%3A%2F%2Flootdest.org%2Fs%3FDfJNgxIO"
     }
 })
 
