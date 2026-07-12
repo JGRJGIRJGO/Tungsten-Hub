@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lyra UI Library — DO NOT CLICCK HERE</title>
+    <meta name="description" content="Lyra developer dashboard for scripts, key systems, and verification analytics.">
+    <meta name="theme-color" content="#0c0e12">
+    <title>Lyra Developer Console</title>
+    <link rel="icon" type="image/webp" href="../assets/towers/commander.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Include Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -706,24 +710,1012 @@
             background: rgba(255, 255, 255, 0.1);
         }
     </style>
+    <style id="lyra-dashboard-v4">
+        :root {
+            --bg-color: #0c0e12;
+            --sidebar-bg: #12151a;
+            --container-bg: #171a20;
+            --card-bg: #1b1f26;
+            --surface-hover: #22272e;
+            --stroke-color: #2e343d;
+            --stroke-strong: #414955;
+            --accent-1: #c3a6ff;
+            --accent-2: #69caed;
+            --accent-glow: rgba(195, 166, 255, 0.12);
+            --text-main: #f3f5f8;
+            --text-dark: #9da5b1;
+            --text-muted: #707986;
+            --code-bg: #0e1115;
+            --success: #5bddaa;
+            --danger: #ff7b78;
+            --warning: #efc569;
+            --sidebar-width: 236px;
+        }
+
+        * {
+            font-family: "Montserrat", sans-serif;
+            letter-spacing: 0;
+        }
+
+        html {
+            min-width: 320px;
+        }
+
+        body {
+            min-width: 320px;
+            display: block;
+            background: var(--bg-color);
+            background-image: none;
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button,
+        a {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:focus-visible,
+        a:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--accent-2);
+            outline-offset: 2px;
+        }
+
+        .setup-screen,
+        .login-screen {
+            inset: 0;
+            padding: 24px;
+            background: var(--bg-color);
+        }
+
+        .setup-card,
+        .login-card {
+            overflow: auto;
+            border: 1px solid var(--stroke-strong);
+            border-radius: 7px;
+            background: var(--container-bg);
+            backdrop-filter: none;
+            box-shadow: 18px 20px 0 rgba(0, 0, 0, 0.24);
+        }
+
+        .setup-card {
+            max-width: 760px;
+            max-height: calc(100svh - 48px);
+            padding: clamp(24px, 5vw, 42px);
+        }
+
+        .login-card {
+            max-width: 420px;
+            padding: 34px;
+            text-align: left;
+        }
+
+        .setup-card::before,
+        .login-card::before {
+            display: none;
+        }
+
+        .setup-badge,
+        .auth-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(195, 166, 255, 0.42);
+            border-radius: 5px;
+            background: rgba(195, 166, 255, 0.1);
+            color: var(--accent-1);
+        }
+
+        .setup-badge {
+            min-height: 30px;
+            gap: 8px;
+            margin-bottom: 18px;
+            padding: 0 10px;
+            font: 600 9px "JetBrains Mono", monospace;
+            text-transform: uppercase;
+        }
+
+        .auth-mark {
+            width: 36px;
+            height: 36px;
+            margin-bottom: 18px;
+        }
+
+        .setup-badge svg,
+        .auth-mark svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .setup-card h2,
+        .login-card h2 {
+            margin-bottom: 7px;
+            background: none;
+            color: var(--text-main);
+            font-size: 25px;
+            font-weight: 800;
+            -webkit-background-clip: initial;
+            -webkit-text-fill-color: initial;
+        }
+
+        .setup-card > p,
+        .login-card > p {
+            color: var(--text-dark);
+            font-size: 12px;
+            line-height: 1.65;
+        }
+
+        .setup-card > p {
+            max-width: 650px;
+            margin-bottom: 22px;
+        }
+
+        .login-card > p {
+            margin-bottom: 27px;
+        }
+
+        .setup-guide {
+            margin-bottom: 24px;
+            padding: 18px 0;
+            border-top: 1px solid var(--stroke-color);
+            border-bottom: 1px solid var(--stroke-color);
+            font-size: 12px;
+            line-height: 1.65;
+            text-align: left;
+        }
+
+        .setup-guide h4 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            color: var(--accent-2);
+            font-size: 12px;
+        }
+
+        .setup-guide h4 svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .setup-guide p {
+            margin-bottom: 12px;
+            color: var(--text-dark);
+        }
+
+        .setup-guide a {
+            color: var(--accent-2);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .setup-guide .code-wrapper {
+            max-height: 170px;
+            padding: 12px;
+        }
+
+        .input-group {
+            margin-bottom: 18px;
+        }
+
+        .input-group label {
+            margin-bottom: 7px;
+            color: var(--text-dark);
+            font: 600 9px "JetBrains Mono", monospace;
+            letter-spacing: 0;
+            text-transform: uppercase;
+        }
+
+        .input-field {
+            min-height: 42px;
+            padding: 10px 12px;
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            background: #0f1216;
+            color: var(--text-main);
+            font-size: 12px;
+            transition: border-color 150ms ease, background 150ms ease;
+        }
+
+        .input-field::placeholder {
+            color: #636c78;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-1);
+            background: #111419;
+            box-shadow: none;
+        }
+
+        select.input-field {
+            color-scheme: dark;
+        }
+
+        .login-btn,
+        .google-btn,
+        .config-btn,
+        .copy-btn,
+        .btn-danger {
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: 800;
+            box-shadow: none;
+            transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+        }
+
+        .login-btn {
+            width: 100%;
+            margin-top: 8px;
+            padding: 0 15px;
+            border: 1px solid var(--accent-1);
+            background: var(--accent-1);
+            color: #17121f;
+        }
+
+        .login-btn:hover {
+            border-color: #d3bdff;
+            background: #d3bdff;
+            opacity: 1;
+            transform: translateY(-1px);
+        }
+
+        .login-btn svg,
+        .google-btn svg,
+        .config-btn svg,
+        .copy-btn svg,
+        .btn-danger svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .signup-btn {
+            border-color: var(--stroke-color);
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .signup-btn:hover {
+            border-color: var(--stroke-strong);
+            background: #292f37;
+            color: var(--text-main);
+        }
+
+        .divider {
+            margin: 22px 0;
+            color: var(--text-muted);
+            font: 600 9px "JetBrains Mono", monospace;
+        }
+
+        .google-btn {
+            border: 1px solid var(--stroke-color);
+            background: #111419;
+            color: var(--text-main);
+        }
+
+        .google-btn:hover {
+            border-color: var(--stroke-strong);
+            background: var(--surface-hover);
+        }
+
+        .dashboard-wrapper {
+            width: 100%;
+            min-height: 100svh;
+            background: var(--bg-color);
+            transition: opacity 220ms ease;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            inset: 0 auto 0 0;
+            padding: 20px 14px;
+            border-right: 1px solid var(--stroke-color);
+            background: var(--sidebar-bg);
+        }
+
+        .brand {
+            min-height: 54px;
+            display: grid;
+            grid-template-columns: 34px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            margin: 0 6px 22px;
+            padding: 0;
+        }
+
+        .brand::before {
+            display: none;
+        }
+
+        .sidebar-mark {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(195, 166, 255, 0.42);
+            border-radius: 5px;
+            background: rgba(195, 166, 255, 0.1);
+            color: var(--accent-1);
+        }
+
+        .sidebar-mark svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .brand h1 {
+            overflow: hidden;
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .brand p {
+            margin-top: 4px;
+            color: var(--text-muted);
+            font: 500 8px "JetBrains Mono", monospace;
+            letter-spacing: 0;
+        }
+
+        .sidebar-nav {
+            height: calc(100% - 76px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .nav-menu {
+            gap: 5px;
+        }
+
+        .nav-item {
+            min-height: 42px;
+            gap: 10px;
+            padding: 0 11px;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            color: var(--text-dark);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .nav-item svg {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 16px;
+        }
+
+        .nav-item:hover {
+            border-color: var(--stroke-color);
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .nav-item.active {
+            border-color: rgba(195, 166, 255, 0.3);
+            background: rgba(195, 166, 255, 0.1);
+            color: var(--accent-1);
+            font-weight: 800;
+        }
+
+        .sidebar-actions {
+            display: grid;
+            gap: 6px;
+            margin-top: auto;
+        }
+
+        .config-btn {
+            width: 100%;
+            padding: 0 11px;
+            border: 1px solid var(--stroke-color);
+            background: #111419;
+            color: var(--text-dark);
+        }
+
+        .config-btn:hover {
+            border-color: var(--stroke-strong);
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .signout-item {
+            min-height: 40px;
+            color: var(--danger);
+        }
+
+        .main-content {
+            width: calc(100% - var(--sidebar-width));
+            max-width: none;
+            min-height: 100svh;
+            margin-left: var(--sidebar-width);
+            padding: 35px clamp(24px, 4vw, 60px) 64px;
+        }
+
+        .panel {
+            animation: panel-enter 240ms ease both;
+        }
+
+        @keyframes panel-enter {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .panel-header {
+            display: block;
+            margin-bottom: 26px;
+        }
+
+        .panel-header h2 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 25px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
+        .panel-header p {
+            max-width: 650px;
+            margin-top: 7px;
+            color: var(--text-dark);
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.6;
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .stat-card {
+            min-width: 0;
+            padding: 18px;
+            border: 1px solid var(--stroke-color);
+            border-radius: 6px;
+            background: var(--container-bg);
+            box-shadow: none;
+        }
+
+        .stat-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .stat-card .stat-title {
+            max-width: 150px;
+            margin: 0;
+            color: var(--text-dark);
+            font: 600 9px/1.45 "JetBrains Mono", monospace;
+            letter-spacing: 0;
+        }
+
+        .stat-icon {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            flex: 0 0 30px;
+            place-items: center;
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            color: var(--accent-2);
+        }
+
+        .stat-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .stat-card .stat-value {
+            overflow: hidden;
+            color: var(--text-main);
+            font: 700 clamp(24px, 4vw, 32px) "JetBrains Mono", monospace;
+            text-overflow: ellipsis;
+        }
+
+        .graph-card,
+        .settings-card {
+            border: 1px solid var(--stroke-color);
+            border-radius: 6px;
+            background: var(--container-bg);
+            box-shadow: none;
+        }
+
+        .graph-card {
+            padding: 22px;
+        }
+
+        .graph-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .graph-card h3,
+        .graph-heading h3 {
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .graph-heading span {
+            color: var(--text-muted);
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .mock-chart {
+            height: 230px;
+            gap: 12px;
+            padding: 18px 6px 0;
+            border-bottom: 1px solid var(--stroke-color);
+        }
+
+        .chart-bar-wrapper {
+            gap: 9px;
+        }
+
+        .chart-bar {
+            max-width: 36px;
+            border-radius: 3px 3px 0 0;
+            background: var(--accent-2);
+            box-shadow: none;
+        }
+
+        .chart-bar-wrapper:nth-child(2n) .chart-bar {
+            background: var(--accent-1);
+        }
+
+        .chart-label {
+            color: var(--text-muted);
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .settings-card {
+            margin-bottom: 16px;
+            padding: 22px;
+        }
+
+        .settings-card h3 {
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--stroke-color);
+            font-size: 14px;
+        }
+
+        .row-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 15px;
+            margin-bottom: 4px;
+        }
+
+        .action-button {
+            width: auto;
+            min-width: 150px;
+        }
+
+        .section-title {
+            margin: 28px 0 12px;
+            color: var(--text-main);
+            font-size: 13px;
+        }
+
+        .empty-state {
+            margin: 0;
+            padding: 18px 0;
+            border-top: 1px solid var(--stroke-color);
+            border-bottom: 1px solid var(--stroke-color);
+            color: var(--text-dark);
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .checkpoint-count {
+            margin-bottom: 24px;
+        }
+
+        .script-list {
+            gap: 7px;
+            margin-bottom: 24px;
+        }
+
+        .script-item {
+            min-height: 70px;
+            gap: 18px;
+            padding: 13px 15px;
+            border: 1px solid var(--stroke-color);
+            border-radius: 6px;
+            background: var(--container-bg);
+        }
+
+        .script-info {
+            min-width: 0;
+        }
+
+        .script-info h4 {
+            min-width: 0;
+            font-size: 12px;
+        }
+
+        .script-info h4 span {
+            border-radius: 4px;
+            background: var(--surface-hover);
+            color: var(--text-dark);
+            font: 500 8px "JetBrains Mono", monospace;
+        }
+
+        .script-info p {
+            overflow: hidden;
+            color: var(--text-muted);
+            font-size: 9px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .script-actions {
+            flex: 0 0 auto;
+            gap: 8px;
+        }
+
+        .script-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font: 600 8px "JetBrains Mono", monospace;
+        }
+
+        .script-badge.active {
+            border-color: rgba(91, 221, 170, 0.32);
+            background: rgba(91, 221, 170, 0.08);
+            color: var(--success);
+        }
+
+        .btn-danger {
+            min-height: 32px;
+            padding: 0 10px;
+            border: 1px solid rgba(255, 123, 120, 0.28);
+            background: rgba(255, 123, 120, 0.07);
+            color: var(--danger);
+        }
+
+        .btn-danger:hover {
+            border-color: var(--danger);
+            background: var(--danger);
+            color: #1a0e0e;
+        }
+
+        .pill-select {
+            padding: 3px;
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            background: #0f1216;
+        }
+
+        .pill-option {
+            min-height: 35px;
+            display: grid;
+            place-items: center;
+            padding: 0 9px;
+            border-radius: 4px;
+            color: var(--text-dark);
+            font-size: 10px;
+        }
+
+        .pill-option.active {
+            background: var(--accent-1);
+            color: #17121f;
+            box-shadow: none;
+        }
+
+        .code-title {
+            margin: 23px 0 9px;
+        }
+
+        .code-title h4 {
+            color: var(--accent-2);
+            font: 600 9px "JetBrains Mono", monospace;
+            letter-spacing: 0;
+        }
+
+        .copy-btn {
+            min-height: 34px;
+            padding: 0 11px;
+            border: 1px solid var(--stroke-color);
+            background: var(--container-bg);
+            color: var(--text-dark);
+        }
+
+        .copy-btn:hover {
+            border-color: var(--stroke-strong);
+            background: var(--surface-hover);
+            color: var(--text-main);
+        }
+
+        .copy-btn.copied {
+            border-color: var(--success);
+            background: var(--success);
+            color: #102018;
+        }
+
+        .code-wrapper {
+            max-height: 430px;
+            padding: 17px;
+            border: 1px solid var(--stroke-color);
+            border-radius: 5px;
+            background: var(--code-bg);
+            box-shadow: none;
+        }
+
+        .code-wrapper code,
+        .code-wrapper code * {
+            font-family: "JetBrains Mono", monospace;
+        }
+
+        .code-wrapper code {
+            color: #c7ced8;
+            font-size: 11px;
+            line-height: 1.7;
+        }
+
+        .toast {
+            right: 22px;
+            bottom: 22px;
+            max-width: min(360px, calc(100% - 28px));
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 5px;
+            background: var(--success);
+            color: #102018;
+            font-size: 11px;
+            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.36);
+        }
+
+        .mobile-header,
+        .sidebar-scrim {
+            display: none;
+        }
+
+        @media (max-width: 900px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .stat-card:last-child {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .mobile-header {
+                height: 58px;
+                position: fixed;
+                inset: 0 0 auto;
+                z-index: 90;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 0 14px;
+                border-bottom: 1px solid var(--stroke-color);
+                background: rgba(18, 21, 26, 0.94);
+                backdrop-filter: blur(16px);
+            }
+
+            .mobile-brand {
+                min-width: 0;
+                display: flex;
+                align-items: center;
+                gap: 9px;
+            }
+
+            .mobile-brand strong {
+                overflow: hidden;
+                font-size: 11px;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .mobile-menu-button {
+                width: 34px;
+                height: 34px;
+                display: grid;
+                flex: 0 0 34px;
+                place-items: center;
+                border: 1px solid var(--stroke-color);
+                border-radius: 5px;
+                background: var(--container-bg);
+                color: var(--text-dark);
+                cursor: pointer;
+            }
+
+            .mobile-menu-button svg {
+                width: 17px;
+                height: 17px;
+            }
+
+            .sidebar {
+                width: min(270px, calc(100% - 46px));
+                z-index: 120;
+                transform: translateX(-100%);
+                transition: transform 200ms ease;
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-scrim {
+                position: fixed;
+                inset: 0;
+                z-index: 80;
+                display: block;
+                border: 0;
+                background: rgba(0, 0, 0, 0.64);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 200ms ease;
+            }
+
+            .sidebar-scrim.open {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+            .main-content {
+                width: 100%;
+                margin-left: 0;
+                padding: 82px 14px 44px;
+            }
+
+            .panel-header {
+                margin-bottom: 22px;
+            }
+
+            .panel-header h2 {
+                font-size: 22px;
+            }
+
+            .row-grid {
+                grid-template-columns: 1fr;
+                gap: 0;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .setup-screen,
+            .login-screen {
+                align-items: flex-start;
+                padding: 12px;
+            }
+
+            .setup-card,
+            .login-card {
+                max-height: calc(100svh - 24px);
+                padding: 22px 18px;
+                box-shadow: 7px 8px 0 rgba(0, 0, 0, 0.24);
+            }
+
+            .setup-guide {
+                padding: 14px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-card:last-child {
+                grid-column: auto;
+            }
+
+            .graph-card,
+            .settings-card {
+                padding: 16px;
+            }
+
+            .mock-chart {
+                height: 185px;
+                gap: 5px;
+                padding-inline: 0;
+            }
+
+            .chart-bar {
+                max-width: 24px;
+            }
+
+            .script-item {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .script-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .pill-select {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+            }
+
+            .pill-option {
+                min-width: 0;
+                font-size: 9px;
+            }
+
+            .code-title {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 9px;
+            }
+
+            .copy-btn,
+            .action-button {
+                width: 100%;
+            }
+
+            .toast {
+                right: 14px;
+                bottom: 14px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
 </head>
 <body>
 
     <!-- Toast Banner -->
     <div class="toast" id="toast">Success</div>
 
+    <header class="mobile-header" aria-label="Dashboard header">
+        <div class="mobile-brand">
+            <span class="sidebar-mark" aria-hidden="true"><i data-lucide="command"></i></span>
+            <strong id="mobile-panel-title">Analytics Overview</strong>
+        </div>
+        <button class="mobile-menu-button" id="sidebar-toggle" type="button" aria-label="Open dashboard navigation" aria-expanded="false" aria-controls="dashboard-sidebar"><i data-lucide="menu"></i></button>
+    </header>
+    <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="Close dashboard navigation"></button>
+
     <!-- Configuration Setup Overlay Screen -->
     <div class="setup-screen" id="setup-screen">
         <div class="setup-card">
+            <span class="setup-badge"><i data-lucide="database"></i>Workspace connection</span>
             <h2>Backend Database Integration</h2>
             <p>Lyra UI Library uses <strong>Supabase</strong> (a free, open-source serverless PostgreSQL database) to enable secure user authentication, script registering, and real analytics logging directly from your GitHub Pages. Follow these quick steps to get connected:</p>
             
-            <div style="text-align: left; background: rgba(0, 0, 0, 0.25); padding: 20px; border-radius: 8px; border: 1px solid var(--stroke-color); margin-bottom: 25px; font-size: 13.5px; line-height: 1.6;">
-                <h4 style="color: var(--accent-2); margin-bottom: 10px;">1. Create Database Tables</h4>
-                <p>Sign up at <a href="https://supabase.com" target="_blank" style="color: var(--accent-1); text-decoration: none; font-weight: 600;">supabase.com</a> (completely free), create a project, open the <strong>SQL Editor</strong> tab, paste this SQL script, and click <strong>Run</strong>:</p>
+            <div class="setup-guide">
+                <h4><i data-lucide="table-properties"></i>Create database tables</h4>
+                <p>Sign up at <a href="https://supabase.com" target="_blank" rel="noreferrer">supabase.com</a>, create a project, open the <strong>SQL Editor</strong>, paste this schema, and run it:</p>
                 
-                <div class="code-wrapper" style="margin-top: 10px; max-height: 150px; padding: 10px;">
-                    <pre><code style="font-size: 11.5px;">-- Create Scripts Table
+                <div class="code-wrapper">
+                    <pre><code>-- Create Scripts Table
 create table public.scripts (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users(id) on delete cascade not null,
@@ -765,15 +1757,16 @@ create table public.key_redeems (
                 <input type="text" class="input-field" id="setup-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
             </div>
 
-            <button class="login-btn" id="setup-submit-btn">Save Configuration & Connect</button>
+            <button class="login-btn" id="setup-submit-btn"><i data-lucide="plug-zap"></i><span>Save and connect</span></button>
         </div>
     </div>
 
     <!-- Login Screen -->
     <div class="login-screen hidden" id="login-screen">
         <div class="login-card">
+            <span class="auth-mark" aria-hidden="true"><i data-lucide="shield-check"></i></span>
             <h2>Lyra Portal</h2>
-            <p>Sign in to manage your key systems & scripts</p>
+            <p>Sign in to manage scripts, checkpoints, and key analytics.</p>
             
             <div class="input-group">
                 <label>Email Address</label>
@@ -785,8 +1778,8 @@ create table public.key_redeems (
                 <input type="password" class="input-field" id="login-pass" placeholder="••••••••">
             </div>
 
-            <button class="login-btn" id="login-submit-btn">Log In</button>
-            <button class="google-btn" id="signup-submit-btn" style="margin-top: 10px; background: rgba(0, 150, 255, 0.05); border-color: rgba(0, 150, 255, 0.2);">Sign Up</button>
+            <button class="login-btn" id="login-submit-btn"><i data-lucide="log-in"></i><span>Log in</span></button>
+            <button class="login-btn signup-btn" id="signup-submit-btn"><i data-lucide="user-plus"></i><span>Create account</span></button>
 
             <div class="divider">or</div>
 
@@ -797,7 +1790,7 @@ create table public.key_redeems (
                     <path fill="#FBBC05" d="M5.31 14.55c-.24-.72-.38-1.5-.38-2.3s.14-1.58.38-2.3L1.45 7.45C.52 9.27 0 11.28 0 13.43s.52 4.16 1.45 5.98l3.86-3z"/>
                     <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.7-2.87c-1.03.69-2.34 1.1-4.26 1.1-3.13 0-5.74-2.36-6.69-5.41l-3.86 3C3.4 20.37 7.37 23 12 23z"/>
                 </svg>
-                Continue with Google
+                <span>Continue with Google</span>
             </button>
         </div>
     </div>
@@ -806,23 +1799,23 @@ create table public.key_redeems (
     <div class="dashboard-wrapper" id="dashboard-wrapper">
         
         <!-- Sidebar Navigation -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="dashboard-sidebar">
             <div class="brand">
-                <h1>Lyra UI Library</h1>
-                <p>Developer Console</p>
+                <span class="sidebar-mark" aria-hidden="true"><i data-lucide="command"></i></span>
+                <div><h1>Lyra UI Library</h1><p>Developer Console</p></div>
             </div>
-            <nav style="display: flex; flex-direction: column; height: calc(100% - 100px); justify-content: space-between;">
+            <nav class="sidebar-nav" aria-label="Dashboard navigation">
                 <ul class="nav-menu">
-                    <li><a class="nav-item active" data-panel="analytics">📊 Analytics</a></li>
-                    <li><a class="nav-item" data-panel="scripts">📜 My Scripts</a></li>
-                    <li><a class="nav-item" data-panel="keysettings">🔑 Key Settings</a></li>
+                    <li><a class="nav-item active" data-panel="analytics"><i data-lucide="chart-no-axes-combined"></i><span>Analytics</span></a></li>
+                    <li><a class="nav-item" data-panel="scripts"><i data-lucide="file-code-2"></i><span>My Scripts</span></a></li>
+                    <li><a class="nav-item" data-panel="keysettings"><i data-lucide="key-round"></i><span>Key Settings</span></a></li>
                 </ul>
                 
-                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+                <div class="sidebar-actions">
                     <button class="config-btn" id="reconfigure-btn">
-                        ⚙️ DB Config
+                        <i data-lucide="database-cog"></i><span>Database config</span>
                     </button>
-                    <a class="nav-item" id="logout-btn" style="padding: 10px 16px;">🚪 Sign Out</a>
+                    <a class="nav-item signout-item" id="logout-btn"><i data-lucide="log-out"></i><span>Sign out</span></a>
                 </div>
             </nav>
         </aside>
@@ -839,21 +1832,21 @@ create table public.key_redeems (
 
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-title">Total Key Requests</div>
+                        <div class="stat-top"><div class="stat-title">Total Key Requests</div><span class="stat-icon"><i data-lucide="inbox"></i></span></div>
                         <div class="stat-value" id="stats-total-req">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-title">Total Keys Generated</div>
+                        <div class="stat-top"><div class="stat-title">Total Keys Generated</div><span class="stat-icon"><i data-lucide="key-round"></i></span></div>
                         <div class="stat-value" id="stats-total-redeemed">0</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-title">Verification Completion Rate</div>
+                        <div class="stat-top"><div class="stat-title">Verification Completion Rate</div><span class="stat-icon"><i data-lucide="circle-check-big"></i></span></div>
                         <div class="stat-value" id="stats-pass-rate">0%</div>
                     </div>
                 </div>
 
                 <div class="graph-card">
-                    <h3>Redeems in the last 7 days</h3>
+                    <div class="graph-heading"><h3>Redeems in the last 7 days</h3><span>Completed validations</span></div>
                     <div class="mock-chart" id="analytics-chart">
                         <div class="chart-bar-wrapper">
                             <div class="chart-bar" id="chart-d1"></div>
@@ -906,13 +1899,12 @@ create table public.key_redeems (
                             <input type="text" class="input-field" id="new-script-version" placeholder="e.g. 1.0.0" value="1.0.0">
                         </div>
                     </div>
-                    <button class="login-btn" id="add-script-btn" style="max-width: 180px;">Register Script</button>
+                    <button class="login-btn action-button" id="add-script-btn"><i data-lucide="plus"></i><span>Register script</span></button>
                 </div>
 
-                <h3>Registered Scripts</h3>
-                <br>
+                <h3 class="section-title">Registered Scripts</h3>
                 <div class="script-list" id="script-list-container">
-                    <p style="color: var(--text-dark); font-size: 14px;">Loading registered scripts from database...</p>
+                    <p class="empty-state">Loading registered scripts from database...</p>
                 </div>
             </section>
 
@@ -926,7 +1918,7 @@ create table public.key_redeems (
                 <div class="settings-card">
                     <div class="input-group">
                         <label>Select Script to Configure</label>
-                        <select class="input-field" id="settings-script-selector" style="background: rgba(0, 0, 0, 0.45); color: #fff;">
+                        <select class="input-field" id="settings-script-selector">
                             <option value="">-- Choose Script --</option>
                         </select>
                     </div>
@@ -936,7 +1928,7 @@ create table public.key_redeems (
                     <div class="settings-card">
                         <h3>Redirection Checkpoints</h3>
                         
-                        <div class="input-group" style="margin-bottom: 25px;">
+                        <div class="input-group checkpoint-count">
                             <label>Monetization Steps Count</label>
                             <div class="pill-select">
                                 <div class="pill-option active" data-steps="1">1 Checkpoint</div>
@@ -962,12 +1954,12 @@ create table public.key_redeems (
                                 <input type="text" class="input-field" id="cfg-salt" value="LyraSecureKeySystem_V3_Reset_8F2D">
                             </div>
                         </div>
-                        <button class="login-btn" id="save-settings-btn" style="max-width: 180px;">Save Key Config</button>
+                        <button class="login-btn action-button" id="save-settings-btn"><i data-lucide="save"></i><span>Save key config</span></button>
                     </div>
 
                     <div class="code-title">
                         <h4>Generated Roblox Lua Integration</h4>
-                        <button class="copy-btn" id="copy-lua-btn">Copy Script</button>
+                        <button class="copy-btn" id="copy-lua-btn"><i data-lucide="copy"></i><span>Copy script</span></button>
                     </div>
                     
                     <div class="code-wrapper">
@@ -987,6 +1979,27 @@ create table public.key_redeems (
         const loginScreen = document.getElementById('login-screen');
         const dashboardWrapper = document.getElementById('dashboard-wrapper');
         const toast = document.getElementById('toast');
+        const dashboardSidebar = document.getElementById('dashboard-sidebar');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const sidebarScrim = document.getElementById('sidebar-scrim');
+        const mobilePanelTitle = document.getElementById('mobile-panel-title');
+
+        function setSidebarOpen(open) {
+            dashboardSidebar.classList.toggle('open', open);
+            sidebarScrim.classList.toggle('open', open);
+            sidebarToggle.setAttribute('aria-expanded', String(open));
+            sidebarToggle.setAttribute('aria-label', open ? 'Close dashboard navigation' : 'Open dashboard navigation');
+            sidebarToggle.innerHTML = open ? '<i data-lucide="x"></i>' : '<i data-lucide="menu"></i>';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        sidebarToggle.addEventListener('click', () => {
+            setSidebarOpen(!dashboardSidebar.classList.contains('open'));
+        });
+        sidebarScrim.addEventListener('click', () => setSidebarOpen(false));
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') setSidebarOpen(false);
+        });
 
         // --- Toast Alert Helper ---
         function showToast(msg, isSuccess = true) {
@@ -1134,7 +2147,7 @@ create table public.key_redeems (
             // Render Script List in tab
             container.innerHTML = '';
             if (scripts.length === 0) {
-                container.innerHTML = '<p style="color: var(--text-dark); font-size: 14px;">No scripts registered yet. Add your first script above!</p>';
+                container.innerHTML = '<p class="empty-state">No scripts registered yet. Add your first script above.</p>';
             } else {
                 scripts.forEach(s => {
                     const item = document.createElement('div');
@@ -1146,11 +2159,12 @@ create table public.key_redeems (
                         </div>
                         <div class="script-actions">
                             <span class="script-badge active">${s.status}</span>
-                            <button class="btn-danger" onclick="deleteScript('${s.id}')">Delete</button>
+                            <button class="btn-danger" onclick="deleteScript('${s.id}')"><i data-lucide="trash-2"></i><span>Delete</span></button>
                         </div>
                     `;
                     container.appendChild(item);
                 });
+                if (window.lucide) lucide.createIcons();
             }
 
             // Fill script dropdown in settings tab
@@ -1345,13 +2359,14 @@ create table public.key_redeems (
             }
 
             const gateUrl = 'https://jgrjgirjgo.github.io/Tungsten-Hub/key/';
-            const dbUrl = localStorage.getItem('lyra_sb_url');
-            const dbKey = localStorage.getItem('lyra_sb_key');
+            const dbUrl = localStorage.getItem('lyra_sb_url') || '';
+            const dbKey = localStorage.getItem('lyra_sb_key') || '';
             
             let queryParams = `?hwid=" .. getHashedHWID() .. "&script_id=${scriptId}&db_url=${encodeURIComponent(dbUrl)}&db_key=${encodeURIComponent(dbKey)}&steps=${activeSteps}`;
             
             for (let i = 1; i <= activeSteps; i++) {
-                queryParams += `&link${i}=` .. game:GetService("HttpService"):UrlEncode(urls[i-1] || '')
+                const linkValue = JSON.stringify(urls[i - 1] || '');
+                queryParams += `&link${i}=" .. game:GetService("HttpService"):UrlEncode(${linkValue}) .. "`;
             }
 
             let code = `-- Lyra Secure Key System Loadstring
@@ -1492,11 +2507,13 @@ local Window = Lyra:CreateWindow({
         copyLuaBtn.addEventListener('click', () => {
             const rawText = generatedLuaBlock.innerText;
             navigator.clipboard.writeText(rawText).then(() => {
-                copyLuaBtn.innerText = "Copied!";
+                copyLuaBtn.innerHTML = '<i data-lucide="check"></i><span>Copied</span>';
                 copyLuaBtn.classList.add('copied');
+                if (window.lucide) lucide.createIcons();
                 setTimeout(() => {
-                    copyLuaBtn.innerText = "Copy Script";
+                    copyLuaBtn.innerHTML = '<i data-lucide="copy"></i><span>Copy script</span>';
                     copyLuaBtn.classList.remove('copied');
+                    if (window.lucide) lucide.createIcons();
                 }, 2000);
             });
         });
@@ -1562,11 +2579,25 @@ local Window = Lyra:CreateWindow({
 
         // --- Panel Navigation ---
         const menuNavs = document.querySelectorAll('.nav-item[data-panel]');
+        const panelTitles = {
+            analytics: 'Analytics Overview',
+            scripts: 'Script Manager',
+            keysettings: 'Key System Settings'
+        };
+
         menuNavs.forEach(nav => {
             nav.addEventListener('click', () => {
-                if (nav.getAttribute('data-panel') === 'analytics') {
+                const panelName = nav.getAttribute('data-panel');
+                menuNavs.forEach(item => item.classList.toggle('active', item === nav));
+                document.querySelectorAll('.panel').forEach(panel => {
+                    panel.classList.toggle('active', panel.id === `${panelName}-panel`);
+                });
+                mobilePanelTitle.textContent = panelTitles[panelName] || 'Lyra Developer Console';
+                setSidebarOpen(false);
+
+                if (panelName === 'analytics') {
                     fetchAnalytics();
-                } else if (nav.getAttribute('data-panel') === 'scripts') {
+                } else if (panelName === 'scripts') {
                     fetchScripts();
                 }
             });
@@ -1574,6 +2605,7 @@ local Window = Lyra:CreateWindow({
 
         // Initialize Supabase on load
         initSupabase();
+        if (window.lucide) lucide.createIcons();
     </script>
 </body>
 </html>

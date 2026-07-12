@@ -46,3 +46,10 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
 LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
+
+## TDS: Reanimated Wiki Artwork
+
+Tower and enemy preview artwork used by the project website is sourced from
+the [TDS: Reanimated Wiki tower index](https://tds-reanimated-work.fandom.com/wiki/Towers)
+and [enemy index](https://tds-reanimated-work.fandom.com/wiki/Enemies).
+Copyright remains with the respective creators and rights holders.

@@ -4,122 +4,390 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
-    <title>Lyra Key</title>
+    <meta name="theme-color" content="#0c0e12">
+    <title>Lyra Access | Key Checkpoint</title>
+    <link rel="icon" type="image/webp" href="../assets/towers/commander.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --ink: #101413;
-            --panel: #17201d;
-            --panel-raised: #1d2925;
-            --line: #384a43;
-            --paper: #eff5ef;
-            --muted: #a8b4ae;
-            --mint: #55dfae;
-            --sky: #5bb9e8;
-            --amber: #f0c36d;
-            --danger: #f37566;
+            --page: #0c0e12;
+            --surface: #14171c;
+            --surface-raised: #1a1e24;
+            --surface-hover: #22272e;
+            --line: #2e343d;
+            --line-strong: #414955;
+            --text: #f3f5f8;
+            --muted: #9da5b1;
+            --faint: #707986;
+            --lavender: #c3a6ff;
+            --cyan: #69caed;
+            --mint: #5bddaa;
+            --amber: #efc569;
+            --danger: #ff7b78;
         }
 
-        * { box-sizing: border-box; }
-
-        body {
-            min-width: 320px;
-            min-height: 100vh;
-            margin: 0;
-            display: grid;
-            place-items: center;
-            overflow-x: hidden;
-            background: var(--ink);
-            color: var(--paper);
-            font-family: "Montserrat", sans-serif;
-        }
-
-        .shell {
-            width: min(560px, calc(100% - 32px));
-            padding: 24px 0;
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 14px;
-            color: var(--paper);
-            font-size: 14px;
-            font-weight: 800;
+        * {
+            box-sizing: border-box;
             letter-spacing: 0;
         }
 
-        .brand-mark {
-            width: 30px;
-            height: 30px;
+        body {
+            min-width: 320px;
+            min-height: 100svh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background: var(--page);
+            color: var(--text);
+            font-family: "Montserrat", sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        button,
+        a {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button {
+            font: inherit;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .topbar {
+            height: 58px;
+            flex: 0 0 58px;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface);
+        }
+
+        .topbar-inner {
+            width: min(940px, calc(100% - 32px));
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin: 0 auto;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .brand-mark,
+        .top-link {
             display: grid;
             place-items: center;
-            background: var(--mint);
-            color: var(--ink);
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: var(--surface-raised);
         }
 
-        .brand-mark svg { width: 17px; height: 17px; stroke-width: 3; }
+        .brand-mark {
+            width: 29px;
+            height: 29px;
+            color: var(--lavender);
+        }
+
+        .brand-mark svg {
+            width: 16px;
+            height: 16px;
+            stroke-width: 2.5;
+        }
+
+        .top-links {
+            display: flex;
+            gap: 7px;
+        }
+
+        .top-link {
+            width: 32px;
+            height: 32px;
+            color: var(--muted);
+            transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+        }
+
+        .top-link:hover {
+            border-color: var(--line-strong);
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .top-link svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .page-shell {
+            width: 100%;
+            flex: 1;
+            display: grid;
+            place-items: center;
+            padding: 42px 16px;
+        }
+
+        .access-frame {
+            width: min(900px, 100%);
+            min-height: 520px;
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            overflow: hidden;
+            border: 1px solid var(--line-strong);
+            border-radius: 7px;
+            background: var(--surface);
+            box-shadow: 18px 20px 0 rgba(0, 0, 0, 0.22);
+        }
+
+        .access-rail {
+            min-width: 0;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 31px;
+            border-right: 1px solid var(--line);
+            background: #111419;
+        }
+
+        .rail-kicker,
+        .eyebrow {
+            color: var(--cyan);
+            font: 600 10px "JetBrains Mono", monospace;
+            text-transform: uppercase;
+        }
+
+        .rail-kicker {
+            margin: 0 0 8px;
+        }
+
+        .access-rail h2 {
+            margin: 0 0 7px;
+            font-size: 21px;
+        }
+
+        .rail-copy {
+            margin: 0;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.65;
+        }
+
+        .progress-list {
+            display: grid;
+            gap: 4px;
+            margin-top: 29px;
+        }
+
+        .progress-step {
+            min-height: 54px;
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            position: relative;
+            color: var(--faint);
+        }
+
+        .progress-step::after {
+            width: 1px;
+            height: 20px;
+            position: absolute;
+            top: 44px;
+            left: 13px;
+            content: "";
+            background: var(--line);
+        }
+
+        .progress-step:last-child::after {
+            display: none;
+        }
+
+        .progress-step[hidden] {
+            display: none;
+        }
+
+        .progress-index {
+            width: 28px;
+            height: 28px;
+            display: grid;
+            z-index: 1;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 50%;
+            background: #111419;
+            font: 600 9px "JetBrains Mono", monospace;
+        }
+
+        .progress-copy {
+            min-width: 0;
+            display: grid;
+            line-height: 1.2;
+        }
+
+        .progress-copy strong {
+            color: inherit;
+            font-size: 11px;
+        }
+
+        .progress-copy span {
+            margin-top: 4px;
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .progress-step.current {
+            color: var(--text);
+        }
+
+        .progress-step.current .progress-index {
+            border-color: var(--lavender);
+            background: rgba(195, 166, 255, 0.13);
+            color: var(--lavender);
+            box-shadow: 0 0 0 4px rgba(195, 166, 255, 0.07);
+        }
+
+        .progress-step.complete {
+            color: var(--mint);
+        }
+
+        .progress-step.complete .progress-index {
+            border-color: rgba(91, 221, 170, 0.5);
+            color: var(--mint);
+        }
+
+        .rail-art {
+            min-height: 170px;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            margin: auto -12px -31px;
+            overflow: hidden;
+            border-top: 1px solid var(--line);
+        }
+
+        .rail-art img {
+            width: 148px;
+            height: 180px;
+            position: relative;
+            z-index: 1;
+            object-fit: contain;
+            filter: saturate(0.72) drop-shadow(0 15px 18px rgba(0, 0, 0, 0.48));
+        }
+
+        .rail-art span {
+            position: absolute;
+            top: 17px;
+            left: 13px;
+            color: var(--faint);
+            font: 500 8px "JetBrains Mono", monospace;
+            text-transform: uppercase;
+        }
 
         .key-panel {
-            position: relative;
-            padding: clamp(24px, 6vw, 42px);
-            overflow: hidden;
-            background: var(--panel);
-            border: 1px solid var(--line);
-            box-shadow: 12px 12px 0 rgba(0, 0, 0, 0.24);
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: clamp(30px, 6vw, 54px);
+            background: var(--surface-raised);
         }
 
-        .key-panel::before {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            content: "";
+        .state-line {
+            display: inline-flex;
+            align-items: center;
+            align-self: flex-start;
+            gap: 8px;
+            margin-bottom: 28px;
+            color: var(--muted);
+            font: 600 9px "JetBrains Mono", monospace;
+            text-transform: uppercase;
+        }
+
+        .state-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--amber);
+            box-shadow: 0 0 0 4px rgba(239, 197, 105, 0.1);
+            animation: state-pulse 1.8s ease-in-out infinite;
+        }
+
+        .key-panel.success .state-dot {
             background: var(--mint);
+            box-shadow: 0 0 0 4px rgba(91, 221, 170, 0.1);
+            animation: none;
+        }
+
+        .key-panel.error .state-dot {
+            background: var(--danger);
+            box-shadow: 0 0 0 4px rgba(255, 123, 120, 0.1);
+            animation: none;
         }
 
         .eyebrow {
             margin: 0 0 10px;
-            color: var(--mint);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0;
         }
 
         h1 {
-            max-width: 12ch;
+            max-width: 470px;
             margin: 0;
-            font-size: clamp(30px, 8vw, 48px);
-            line-height: 1.05;
-            letter-spacing: 0;
+            font-size: clamp(31px, 5vw, 46px);
+            font-weight: 800;
+            line-height: 1.06;
         }
 
         .date {
-            margin: 14px 0 28px;
+            min-height: 20px;
+            margin: 12px 0 25px;
             color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 12px;
+            font: 500 10px "JetBrains Mono", monospace;
+        }
+
+        .key-wrap {
+            min-height: 94px;
+            display: grid;
+            grid-template-columns: 46px minmax(0, 1fr);
+            align-items: stretch;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: #0e1115;
+        }
+
+        .key-icon {
+            display: grid;
+            place-items: center;
+            border-right: 1px solid var(--line);
+            color: var(--lavender);
+        }
+
+        .key-icon svg {
+            width: 18px;
+            height: 18px;
         }
 
         .key-field {
-            min-height: 88px;
+            min-width: 0;
             display: grid;
             align-items: center;
-            padding: 16px;
+            padding: 14px 16px;
             overflow-wrap: anywhere;
-            background: var(--panel-raised);
-            border: 1px solid var(--line);
-            color: var(--paper);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: clamp(13px, 3.2vw, 16px);
-            font-weight: 600;
-            line-height: 1.5;
+            color: var(--text);
+            font: 600 clamp(11px, 2vw, 13px)/1.62 "JetBrains Mono", monospace;
         }
 
         .key-field.error {
@@ -127,85 +395,287 @@
         }
 
         .actions {
+            min-height: 44px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-top: 14px;
+            gap: 12px;
+            margin-top: 13px;
         }
 
-        button {
-            min-height: 42px;
+        .copy-button {
+            min-height: 40px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
-            padding: 0 16px;
-            border: 1px solid var(--mint);
-            background: var(--mint);
-            color: var(--ink);
+            padding: 0 15px;
+            border: 1px solid var(--lavender);
+            border-radius: 5px;
+            background: var(--lavender);
+            color: #17121f;
             cursor: pointer;
-            font: 800 13px "Montserrat", sans-serif;
+            font-size: 11px;
+            font-weight: 800;
+            transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
         }
 
-        button:hover { background: var(--sky); border-color: var(--sky); }
-        button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-        button:disabled { cursor: not-allowed; opacity: 0.45; }
-        button svg { width: 16px; height: 16px; stroke-width: 2.5; }
+        .copy-button:hover:not(:disabled) {
+            border-color: #d3bdff;
+            background: #d3bdff;
+            transform: translateY(-1px);
+        }
+
+        .copy-button:focus-visible,
+        .top-link:focus-visible {
+            outline: 2px solid var(--cyan);
+            outline-offset: 3px;
+        }
+
+        .copy-button:disabled {
+            border-color: var(--line);
+            background: var(--surface-hover);
+            color: var(--faint);
+            cursor: not-allowed;
+        }
+
+        .copy-button svg {
+            width: 15px;
+            height: 15px;
+        }
 
         .status {
-            min-height: 18px;
+            min-height: 17px;
             margin: 0;
-            color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 11px;
+            color: var(--mint);
+            font: 500 10px "JetBrains Mono", monospace;
         }
 
-        .footer {
+        .security-meta {
             display: flex;
+            flex-wrap: wrap;
+            gap: 9px 17px;
+            margin-top: 24px;
+            padding-top: 17px;
+            border-top: 1px solid var(--line);
+            color: var(--faint);
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .security-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .security-meta svg {
+            width: 13px;
+            height: 13px;
+            color: var(--cyan);
+        }
+
+        .page-footer {
+            width: min(940px, calc(100% - 32px));
+            min-height: 50px;
+            display: flex;
+            align-items: center;
             justify-content: space-between;
             gap: 16px;
-            margin-top: 18px;
-            color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 10px;
+            margin: 0 auto;
+            color: var(--faint);
+            font: 500 9px "JetBrains Mono", monospace;
         }
 
-        .footer a { color: var(--sky); text-decoration: none; }
-        .footer a:hover { color: var(--mint); }
+        .page-footer a:hover {
+            color: var(--text);
+        }
 
-        @media (max-width: 420px) {
-            .shell { width: min(100% - 24px, 560px); }
-            .key-panel { padding: 24px; }
-            .footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+        @keyframes state-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        @media (max-width: 720px) {
+            .page-shell {
+                place-items: start center;
+                padding: 22px 12px;
+            }
+
+            .access-frame {
+                min-height: 0;
+                grid-template-columns: 1fr;
+                box-shadow: 8px 9px 0 rgba(0, 0, 0, 0.22);
+            }
+
+            .access-rail {
+                padding: 22px;
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .access-rail h2,
+            .rail-copy,
+            .rail-art {
+                display: none;
+            }
+
+            .progress-list {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+                margin-top: 14px;
+            }
+
+            .progress-step {
+                min-height: 48px;
+                grid-template-columns: 24px minmax(0, 1fr);
+                gap: 7px;
+            }
+
+            .progress-step::after {
+                display: none;
+            }
+
+            .progress-index {
+                width: 24px;
+                height: 24px;
+            }
+
+            .progress-copy strong {
+                font-size: 9px;
+            }
+
+            .progress-copy span {
+                font-size: 8px;
+            }
+
+            .key-panel {
+                padding: 28px 22px;
+            }
+
+            .state-line {
+                margin-bottom: 22px;
+            }
+
+            .page-footer {
+                min-height: 62px;
+                align-items: flex-start;
+                flex-direction: column;
+                justify-content: center;
+                gap: 5px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .topbar-inner,
+            .page-footer {
+                width: calc(100% - 24px);
+            }
+
+            .brand span:last-child {
+                font-size: 11px;
+            }
+
+            .access-rail {
+                padding: 18px;
+            }
+
+            .progress-copy span {
+                display: none;
+            }
+
+            .key-panel {
+                padding: 25px 18px;
+            }
+
+            .key-wrap {
+                grid-template-columns: 38px minmax(0, 1fr);
+            }
+
+            .actions {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .copy-button {
+                width: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
 <body>
-    <main class="shell">
-        <div class="brand" aria-label="Lyra">
-            <span class="brand-mark" aria-hidden="true"><i data-lucide="key-round"></i></span>
-            <span>LYRA ACCESS</span>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="../" aria-label="Return to Lyra Macro">
+                <span class="brand-mark" aria-hidden="true"><i data-lucide="key-round"></i></span>
+                <span>LYRA ACCESS</span>
+            </a>
+            <div class="top-links">
+                <a class="top-link" href="../" aria-label="Return to Lyra Macro" title="Lyra Macro"><i data-lucide="home"></i></a>
+                <a class="top-link" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer" aria-label="Open GitHub repository" title="Source"><i data-lucide="code-2"></i></a>
+            </div>
         </div>
+    </header>
 
-        <section class="key-panel" aria-labelledby="key-title">
-            <p class="eyebrow" id="eyebrow">CHECKPOINT ACCESS</p>
-            <h1 id="key-title">Preparing checkpoint</h1>
-            <p class="date" id="date-label">Waiting for your key link...</p>
-            <output class="key-field" id="key-output" aria-live="polite">Preparing checkpoint...</output>
-            <div class="actions">
-                <button type="button" id="copy-button" disabled>
-                    <i data-lucide="copy" aria-hidden="true"></i>
-                    <span>Copy key</span>
-                </button>
-                <p class="status" id="status-message" aria-live="polite"></p>
+    <main class="page-shell">
+        <section class="access-frame" aria-labelledby="key-title">
+            <aside class="access-rail">
+                <p class="rail-kicker">Secure access</p>
+                <h2>Checkpoint flow</h2>
+                <p class="rail-copy">Your active checkpoints and daily device key stay together in one session.</p>
+
+                <div class="progress-list" id="progress-list" aria-label="Checkpoint progress">
+                    <div class="progress-step current" data-step="1"><span class="progress-index">1</span><span class="progress-copy"><strong>Checkpoint 1</strong><span>Waiting</span></span></div>
+                    <div class="progress-step" data-step="2"><span class="progress-index">2</span><span class="progress-copy"><strong>Checkpoint 2</strong><span>Pending</span></span></div>
+                    <div class="progress-step" data-step="3"><span class="progress-index">3</span><span class="progress-copy"><strong>Checkpoint 3</strong><span>Pending</span></span></div>
+                </div>
+
+                <div class="rail-art" aria-hidden="true">
+                    <span>Protected strategy access</span>
+                    <img src="../assets/towers/commander.webp" alt="">
+                </div>
+            </aside>
+
+            <div class="key-panel" id="key-panel">
+                <span class="state-line"><span class="state-dot"></span><span id="state-label">Initializing secure session</span></span>
+                <p class="eyebrow" id="eyebrow">Checkpoint access</p>
+                <h1 id="key-title">Preparing checkpoint</h1>
+                <p class="date" id="date-label">Waiting for your key link...</p>
+
+                <div class="key-wrap">
+                    <span class="key-icon" aria-hidden="true"><i data-lucide="fingerprint"></i></span>
+                    <output class="key-field" id="key-output" aria-live="polite">Preparing checkpoint...</output>
+                </div>
+
+                <div class="actions">
+                    <button class="copy-button" type="button" id="copy-button" disabled>
+                        <i data-lucide="copy" aria-hidden="true"></i>
+                        <span>Copy key</span>
+                    </button>
+                    <p class="status" id="status-message" aria-live="polite"></p>
+                </div>
+
+                <div class="security-meta">
+                    <span><i data-lucide="calendar-clock"></i>UTC daily rotation</span>
+                    <span><i data-lucide="shield-check"></i>Device-bound verification</span>
+                    <span><i data-lucide="hash"></i>SHA-256 digest</span>
+                </div>
             </div>
         </section>
-
-        <footer class="footer">
-            <span>UTC daily rotation</span>
-            <a href="../">Return to Lyra Macro</a>
-        </footer>
     </main>
+
+    <footer class="page-footer">
+        <span>LYRA ACCESS / CHECKPOINT GATEWAY</span>
+        <a href="../">Return to Lyra Macro</a>
+    </footer>
 
     <script>
         const SALT = "LyraSecureKeySystem_V3_Reset_8F2D";
@@ -217,6 +687,9 @@
         const dateLabel = document.getElementById("date-label");
         const eyebrow = document.getElementById("eyebrow");
         const title = document.getElementById("key-title");
+        const keyPanel = document.getElementById("key-panel");
+        const stateLabel = document.getElementById("state-label");
+        const progressSteps = Array.from(document.querySelectorAll(".progress-step"));
         let generatedKey = "";
 
         function getUtcDateCode(date) {
@@ -243,6 +716,31 @@
                 .toUpperCase();
         }
 
+        function setPanelState(state, label) {
+            keyPanel.classList.remove("success", "error");
+            if (state === "success" || state === "error") keyPanel.classList.add(state);
+            stateLabel.textContent = label;
+        }
+
+        function setProgress(activeStep, totalSteps, complete = false) {
+            progressSteps.forEach((step, index) => {
+                const number = index + 1;
+                const label = step.querySelector(".progress-copy span");
+                step.hidden = number > totalSteps;
+                step.classList.remove("current", "complete");
+
+                if (complete || number < activeStep) {
+                    step.classList.add("complete");
+                    label.textContent = "Complete";
+                } else if (number === activeStep) {
+                    step.classList.add("current");
+                    label.textContent = "Active";
+                } else {
+                    label.textContent = "Pending";
+                }
+            });
+        }
+
         async function copyKey() {
             if (!generatedKey) return;
 
@@ -260,15 +758,22 @@
             }
 
             statusMessage.textContent = "Key copied";
-            window.setTimeout(() => { statusMessage.textContent = ""; }, 1600);
+            copyButton.innerHTML = '<i data-lucide="check"></i><span>Copied</span>';
+            lucide.createIcons();
+            window.setTimeout(() => {
+                statusMessage.textContent = "";
+                copyButton.innerHTML = '<i data-lucide="copy"></i><span>Copy key</span>';
+                lucide.createIcons();
+            }, 1600);
         }
 
         function setError(message) {
-            eyebrow.textContent = "KEY LINK ERROR";
+            eyebrow.textContent = "Key link error";
             title.textContent = "Unable to start";
             output.textContent = message;
             output.classList.add("error");
             dateLabel.textContent = "";
+            setPanelState("error", "Session could not be verified");
         }
 
         function parseCheckpointUrl(value) {
@@ -302,17 +807,23 @@
                 return;
             }
 
-            eyebrow.textContent = "CHECKPOINT " + (stepIndex + 1) + " OF " + flow.totalSteps;
+            const activeStep = stepIndex + 1;
+            setProgress(activeStep, flow.totalSteps);
+            setPanelState("loading", "Checkpoint redirect ready");
+            eyebrow.textContent = "Checkpoint " + activeStep + " of " + flow.totalSteps;
             title.textContent = "Opening LootLabs";
             dateLabel.textContent = "Return here after the checkpoint finishes.";
-            output.textContent = "Redirecting to checkpoint " + (stepIndex + 1) + "...";
+            output.classList.remove("error");
+            output.textContent = "Redirecting to checkpoint " + activeStep + "...";
             statusMessage.textContent = "";
             window.setTimeout(() => { window.location.assign(targetUrl); }, 900);
         }
 
-        async function showKey(hwid) {
+        async function showKey(hwid, totalSteps) {
             const now = new Date();
-            eyebrow.textContent = "DAILY DEVICE KEY";
+            setProgress(totalSteps, totalSteps, true);
+            setPanelState("success", "Verification complete");
+            eyebrow.textContent = "Daily device key";
             title.textContent = "Your Lyra key";
             dateLabel.textContent = getUtcDateLabel(now);
             output.classList.remove("error");
@@ -346,6 +857,7 @@
 
                 const flow = { hwid, totalSteps, currentStep: 0, links };
                 if (links.some((link) => !link)) {
+                    setProgress(1, totalSteps);
                     setError("This key link has an incomplete checkpoint configuration.");
                     return;
                 }
@@ -357,6 +869,7 @@
 
             const flow = getSavedFlow();
             if (!flow || !/^[A-F0-9]{64}$/.test(flow.hwid) || !Array.isArray(flow.links)) {
+                setProgress(1, 1);
                 setError("Open this page through Get Key in Lyra to begin the checkpoint flow.");
                 return;
             }
@@ -369,11 +882,13 @@
             }
 
             localStorage.removeItem(FLOW_STORAGE_KEY);
-            await showKey(flow.hwid);
+            await showKey(flow.hwid, flow.totalSteps);
         }
 
         copyButton.addEventListener("click", copyKey);
+        setProgress(1, 1);
         initialize().catch(() => {
+            setPanelState("error", "Key generation unavailable");
             output.textContent = "The key could not be generated in this browser.";
             output.classList.add("error");
         });

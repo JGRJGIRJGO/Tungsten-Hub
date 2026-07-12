@@ -3,55 +3,99 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Lyra Macro is a strategy recorder and replay toolkit for tower defense runs.">
-    <title>Lyra Macro</title>
+    <meta name="description" content="Lyra Macro records and replays complete tower defense strategies with map-aware lobby automation.">
+    <meta name="theme-color" content="#0c0e12">
+    <title>Lyra Macro | Autostrategy Toolkit</title>
+    <link rel="icon" type="image/webp" href="assets/towers/commander.webp">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --ink: #101413;
-            --ink-soft: #18201e;
-            --panel: #1b2522;
-            --line: #33433e;
-            --muted: #9ca9a4;
-            --paper: #eff5ef;
-            --mint: #55dfae;
-            --sky: #5bb9e8;
-            --amber: #f0c36d;
-            --coral: #f37566;
+            --page: #0c0e12;
+            --surface: #13161b;
+            --surface-raised: #191d23;
+            --surface-hover: #20252c;
+            --line: #2d333c;
+            --line-strong: #3d4550;
+            --text: #f3f5f8;
+            --muted: #9da5b1;
+            --faint: #6f7784;
+            --lavender: #c3a6ff;
+            --cyan: #69caed;
+            --mint: #5bddaa;
+            --amber: #efc569;
+            --coral: #ff7b78;
+            --nav-height: 64px;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+            letter-spacing: 0;
+        }
 
-        html { scroll-behavior: smooth; }
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: calc(var(--nav-height) + 22px);
+        }
 
         body {
-            margin: 0;
             min-width: 320px;
-            background: var(--ink);
-            color: var(--paper);
+            margin: 0;
+            overflow-x: hidden;
+            background: var(--page);
+            color: var(--text);
             font-family: "Montserrat", sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
         }
 
-        button, a { font: inherit; }
+        body.menu-open {
+            overflow: hidden;
+        }
 
-        a { color: inherit; text-decoration: none; }
+        button,
+        a {
+            -webkit-tap-highlight-color: transparent;
+        }
 
-        .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+        button,
+        input {
+            font: inherit;
+        }
 
-        .site-nav {
+        button {
+            color: inherit;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        img {
+            display: block;
+            max-width: 100%;
+        }
+
+        .shell {
+            width: min(1160px, calc(100% - 40px));
+            margin: 0 auto;
+        }
+
+        .topbar {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 10;
-            border-bottom: 1px solid rgba(239, 245, 239, 0.16);
+            inset: 0 0 auto;
+            z-index: 30;
+            height: var(--nav-height);
+            border-bottom: 1px solid rgba(243, 245, 248, 0.12);
+            background: rgba(12, 14, 18, 0.84);
+            backdrop-filter: blur(18px);
         }
 
         .nav-inner {
-            height: 70px;
+            height: 100%;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -61,547 +105,1451 @@
         .brand {
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            font-size: 15px;
+            gap: 11px;
             font-weight: 800;
         }
 
         .brand-mark {
+            width: 30px;
+            height: 30px;
             display: grid;
-            width: 28px;
-            height: 28px;
             place-items: center;
-            background: var(--mint);
-            color: var(--ink);
+            border: 1px solid rgba(195, 166, 255, 0.52);
+            background: rgba(195, 166, 255, 0.12);
+            color: var(--lavender);
         }
 
-        .brand-mark i { width: 17px; height: 17px; stroke-width: 3; }
+        .brand-mark svg {
+            width: 17px;
+            height: 17px;
+            stroke-width: 2.6;
+        }
+
+        .brand-copy {
+            display: grid;
+            line-height: 1.1;
+        }
+
+        .brand-copy strong {
+            font-size: 13px;
+        }
+
+        .brand-copy span {
+            margin-top: 4px;
+            color: var(--faint);
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .nav-links,
+        .nav-actions {
+            display: flex;
+            align-items: center;
+        }
 
         .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 24px;
+            gap: 26px;
+            margin-left: auto;
+        }
+
+        .nav-links a {
             color: var(--muted);
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
+            transition: color 150ms ease;
         }
 
-        .nav-links a:hover { color: var(--paper); }
+        .nav-links a:hover,
+        .nav-links a:focus-visible {
+            color: var(--text);
+        }
 
-        .nav-source {
-            display: inline-flex;
-            align-items: center;
+        .nav-actions {
             gap: 8px;
-            color: var(--paper);
-            font-size: 13px;
-            font-weight: 800;
         }
 
-        .nav-source i { width: 17px; height: 17px; }
+        .icon-link,
+        .menu-button {
+            width: 36px;
+            height: 36px;
+            display: grid;
+            flex: 0 0 36px;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: var(--surface);
+            color: var(--muted);
+            cursor: pointer;
+            transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+        }
+
+        .icon-link:hover,
+        .menu-button:hover {
+            border-color: var(--line-strong);
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .icon-link svg,
+        .menu-button svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .menu-button {
+            display: none;
+        }
+
+        .mobile-menu {
+            display: none;
+        }
 
         .hero {
-            min-height: 760px;
+            min-height: min(720px, calc(100svh - 64px));
+            max-height: 760px;
+            position: relative;
             display: flex;
             align-items: center;
-            position: relative;
             overflow: hidden;
             border-bottom: 1px solid var(--line);
-            background: #111a17;
+            background: var(--page);
         }
 
-        .hero::before,
-        .hero::after {
-            content: "";
-            position: absolute;
-            width: 220px;
-            height: 220px;
-            border: 1px solid rgba(85, 223, 174, 0.28);
-            transform: rotate(45deg);
-            pointer-events: none;
+        .hero-copy-block {
+            width: min(610px, 58%);
+            position: relative;
+            z-index: 5;
+            padding-top: var(--nav-height);
         }
 
-        .hero::before { right: -104px; top: 92px; }
-        .hero::after { left: -142px; bottom: -142px; border-color: rgba(240, 195, 109, 0.32); }
-
-        .hero-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 0.93fr) minmax(430px, 1.07fr);
-            gap: 52px;
-            align-items: center;
-            padding-top: 94px;
+        .eyebrow,
+        .section-kicker {
+            margin: 0;
+            color: var(--cyan);
+            font: 600 11px "JetBrains Mono", monospace;
+            text-transform: uppercase;
         }
 
         .eyebrow {
-            margin: 0 0 18px;
-            color: var(--mint);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 12px;
-            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 17px;
+        }
+
+        .eyebrow::before {
+            width: 18px;
+            height: 1px;
+            content: "";
+            background: var(--cyan);
+        }
+
+        h1,
+        h2,
+        h3,
+        p {
+            margin-top: 0;
         }
 
         h1 {
-            max-width: 580px;
-            margin: 0;
-            font-size: 68px;
-            line-height: 0.96;
+            max-width: 650px;
+            margin-bottom: 22px;
+            font-size: clamp(52px, 7.3vw, 88px);
             font-weight: 800;
+            line-height: 0.94;
         }
 
         .hero-copy {
-            max-width: 500px;
-            margin: 24px 0 32px;
+            max-width: 555px;
+            margin-bottom: 27px;
             color: var(--muted);
-            font-size: 17px;
+            font-size: clamp(15px, 1.45vw, 17px);
             font-weight: 600;
-            line-height: 1.6;
+            line-height: 1.72;
         }
 
-        .loader {
-            width: min(100%, 506px);
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .primary-button,
+        .secondary-button {
+            min-height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            padding: 0 16px;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
+        }
+
+        .primary-button {
+            border-color: var(--lavender);
+            background: var(--lavender);
+            color: #16111f;
+        }
+
+        .primary-button:hover {
+            border-color: #d3bdff;
+            background: #d3bdff;
+            transform: translateY(-1px);
+        }
+
+        .secondary-button {
+            border-color: var(--line);
+            background: var(--surface);
+            color: var(--text);
+        }
+
+        .secondary-button:hover {
+            border-color: var(--line-strong);
+            background: var(--surface-hover);
+        }
+
+        .primary-button svg,
+        .secondary-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .loader-line {
+            width: min(100%, 590px);
+            min-height: 44px;
             display: grid;
-            grid-template-columns: 1fr 46px;
-            align-items: stretch;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
             border: 1px solid var(--line);
-            background: #0c1210;
+            border-radius: 5px;
+            background: #090b0e;
         }
 
-        .loader code {
-            display: block;
+        .loader-line code {
             min-width: 0;
-            padding: 13px 15px;
+            padding: 0 14px;
             overflow: hidden;
-            color: #c8d8d0;
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 11px;
-            line-height: 20px;
+            color: #b7c1ce;
+            font: 500 10px/42px "JetBrains Mono", monospace;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .icon-button {
+        .loader-state {
+            min-width: 72px;
+            padding: 0 12px;
+            border-left: 1px solid var(--line);
+            color: var(--faint);
+            font: 600 9px/42px "JetBrains Mono", monospace;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .loader-state.success {
+            color: var(--mint);
+        }
+
+        .signal-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px 18px;
+            margin: 20px 0 0;
+            padding: 0;
+            list-style: none;
+            color: var(--muted);
+            font: 500 10px "JetBrains Mono", monospace;
+        }
+
+        .signal-list li {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .signal-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--mint);
+            box-shadow: 0 0 0 3px rgba(91, 221, 170, 0.12);
+        }
+
+        .battlefield {
+            position: absolute;
+            inset: var(--nav-height) 0 0 42%;
+            z-index: 1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .field-grid {
+            width: 820px;
+            height: 610px;
+            position: absolute;
+            top: 7%;
+            left: 8%;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            border-top: 1px solid rgba(105, 202, 237, 0.2);
+            border-left: 1px solid rgba(105, 202, 237, 0.2);
+            opacity: 0.54;
+            transform: perspective(900px) rotateX(58deg) rotateZ(-16deg) translateY(-32px);
+            transform-origin: center;
+        }
+
+        .field-grid span {
+            border-right: 1px solid rgba(105, 202, 237, 0.2);
+            border-bottom: 1px solid rgba(105, 202, 237, 0.2);
+            background: rgba(19, 22, 27, 0.48);
+        }
+
+        .field-grid span.path {
+            background: rgba(105, 202, 237, 0.14);
+        }
+
+        .field-grid span.target {
+            background: rgba(195, 166, 255, 0.2);
+        }
+
+        .tower-figure {
+            position: absolute;
+            z-index: 2;
+            margin: 0;
+            filter: drop-shadow(0 22px 24px rgba(0, 0, 0, 0.55));
+            animation: tower-float 5s ease-in-out infinite;
+        }
+
+        .tower-figure img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .tower-figure.commander {
+            width: 190px;
+            height: 250px;
+            right: 35%;
+            bottom: 8%;
+        }
+
+        .tower-figure.minigunner {
+            width: 250px;
+            height: 290px;
+            right: 2%;
+            bottom: 19%;
+            animation-delay: -1.4s;
+        }
+
+        .tower-figure.commando {
+            width: 155px;
+            height: 200px;
+            right: 54%;
+            top: 9%;
+            opacity: 0.82;
+            animation-delay: -2.7s;
+        }
+
+        .enemy-figure {
+            position: absolute;
+            z-index: 1;
+            margin: 0;
+            opacity: 0.34;
+            filter: saturate(0.78) drop-shadow(0 18px 22px rgba(0, 0, 0, 0.58));
+            animation: enemy-advance 7s ease-in-out infinite;
+        }
+
+        .enemy-figure img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .enemy-figure.normal {
+            width: 105px;
+            height: 135px;
+            right: 62%;
+            bottom: 31%;
+        }
+
+        .enemy-figure.fallen-king {
+            width: 155px;
+            height: 190px;
+            right: 17%;
+            top: 4%;
+            opacity: 0.25;
+            animation-delay: -3.2s;
+        }
+
+        .target-ring {
+            width: 178px;
+            height: 178px;
+            position: absolute;
+            right: 36%;
+            bottom: 6%;
+            border: 1px solid rgba(91, 221, 170, 0.46);
+            border-radius: 50%;
+            animation: target-pulse 2.2s ease-out infinite;
+        }
+
+        .scene-status {
+            position: absolute;
+            top: 34px;
+            right: 36px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--faint);
+            font: 500 9px "JetBrains Mono", monospace;
+            text-transform: uppercase;
+        }
+
+        .scene-status::before {
+            width: 7px;
+            height: 7px;
+            content: "";
+            border-radius: 50%;
+            background: var(--mint);
+            animation: status-blink 1.8s ease-in-out infinite;
+        }
+
+        .status-rail {
+            position: relative;
+            z-index: 7;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border-bottom: 1px solid var(--line);
+            background: var(--surface);
+        }
+
+        .status-item {
+            min-width: 0;
+            padding: 20px clamp(16px, 2.7vw, 34px);
+            border-right: 1px solid var(--line);
+        }
+
+        .status-item:first-child {
+            padding-left: max(20px, calc((100vw - 1160px) / 2));
+        }
+
+        .status-item:last-child {
+            padding-right: max(20px, calc((100vw - 1160px) / 2));
+            border-right: 0;
+        }
+
+        .status-value,
+        .status-label {
+            display: block;
+        }
+
+        .status-value {
+            color: var(--text);
+            font: 600 12px "JetBrains Mono", monospace;
+        }
+
+        .status-label {
+            margin-top: 5px;
+            color: var(--faint);
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.45;
+        }
+
+        .band {
+            padding: 94px 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .band-muted {
+            background: var(--surface);
+        }
+
+        .section-heading {
+            display: grid;
+            grid-template-columns: minmax(0, 0.82fr) minmax(300px, 0.58fr);
+            gap: 70px;
+            align-items: end;
+        }
+
+        .section-kicker {
+            margin-bottom: 12px;
+        }
+
+        h2 {
+            max-width: 720px;
+            margin-bottom: 0;
+            font-size: clamp(31px, 4vw, 48px);
+            font-weight: 800;
+            line-height: 1.08;
+        }
+
+        .section-description {
+            margin-bottom: 3px;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.72;
+        }
+
+        .pipeline {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            margin-top: 54px;
+            border-top: 1px solid var(--line);
+        }
+
+        .pipeline-step {
+            min-height: 214px;
+            padding: 24px 28px 26px 0;
+            border-right: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .pipeline-step + .pipeline-step {
+            padding-left: 28px;
+        }
+
+        .pipeline-step:last-child {
+            padding-right: 0;
+            border-right: 0;
+        }
+
+        .step-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 36px;
+        }
+
+        .step-number {
+            color: var(--lavender);
+            font: 600 11px "JetBrains Mono", monospace;
+        }
+
+        .step-icon {
+            width: 34px;
+            height: 34px;
             display: grid;
             place-items: center;
-            border: 0;
-            border-left: 1px solid var(--line);
-            background: var(--mint);
-            color: var(--ink);
-            cursor: pointer;
-        }
-
-        .icon-button:hover { background: var(--amber); }
-        .icon-button i { width: 19px; height: 19px; stroke-width: 2.5; }
-
-        .copy-state {
-            display: block;
-            min-height: 18px;
-            margin-top: 10px;
-            color: var(--mint);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 11px;
-        }
-
-        .hero-notes {
-            display: flex;
-            gap: 22px;
-            margin-top: 34px;
+            border: 1px solid var(--line);
             color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
+        }
+
+        .step-icon svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .pipeline-step h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .pipeline-step p {
+            max-width: 315px;
+            margin-bottom: 0;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.68;
+        }
+
+        .replay-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 0.72fr) minmax(430px, 1fr);
+            gap: 76px;
+            align-items: center;
+        }
+
+        .feature-list {
+            display: grid;
+            margin-top: 34px;
+            border-top: 1px solid var(--line);
+        }
+
+        .feature-row {
+            min-height: 63px;
+            display: grid;
+            grid-template-columns: 28px 1fr;
+            gap: 13px;
+            align-items: center;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .feature-row svg {
+            width: 17px;
+            height: 17px;
+            color: var(--cyan);
+        }
+
+        .feature-row strong {
+            display: block;
+            font-size: 12px;
+        }
+
+        .feature-row span {
+            display: block;
+            margin-top: 3px;
+            color: var(--faint);
+            font: 500 9px "JetBrains Mono", monospace;
+        }
+
+        .log-window {
+            overflow: hidden;
+            border: 1px solid var(--line-strong);
+            border-radius: 6px;
+            background: #0d1014;
+            box-shadow: 16px 18px 0 rgba(0, 0, 0, 0.23);
+        }
+
+        .log-titlebar {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            border-bottom: 1px solid var(--line);
+            background: var(--surface-raised);
+        }
+
+        .log-titlebar strong {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
             font-size: 11px;
         }
 
-        .hero-notes span { display: inline-flex; align-items: center; gap: 7px; }
-        .hero-notes i { width: 15px; height: 15px; color: var(--sky); }
+        .log-titlebar strong svg {
+            width: 15px;
+            height: 15px;
+            color: var(--lavender);
+        }
 
-        .tower-roster {
-            width: min(100%, 506px);
+        .live-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            color: var(--mint);
+            font: 600 9px "JetBrains Mono", monospace;
+        }
+
+        .live-label::before {
+            width: 6px;
+            height: 6px;
+            content: "";
+            border-radius: 50%;
+            background: var(--mint);
+        }
+
+        .log-table {
+            padding: 7px 13px 11px;
+        }
+
+        .log-row {
+            min-height: 49px;
             display: grid;
-            grid-template-columns: 106px repeat(4, minmax(0, 1fr));
-            margin-top: 24px;
+            grid-template-columns: 48px 28px minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid var(--line);
+            font: 500 10px "JetBrains Mono", monospace;
+        }
+
+        .log-row:last-child {
+            border-bottom: 0;
+        }
+
+        .log-index,
+        .log-time {
+            color: var(--faint);
+        }
+
+        .log-type {
+            width: 25px;
+            height: 25px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line);
+            color: var(--muted);
+        }
+
+        .log-type svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        .log-action {
+            overflow: hidden;
+            color: var(--text);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-action.mint { color: var(--mint); }
+        .log-action.amber { color: var(--amber); }
+        .log-action.coral { color: var(--coral); }
+
+        .roster-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 48px;
+        }
+
+        .tower-card {
+            min-width: 0;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--surface-raised);
+            transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+        }
+
+        .tower-card:hover {
+            border-color: var(--line-strong);
+            background: var(--surface-hover);
+            transform: translateY(-3px);
+        }
+
+        .tower-image {
+            height: 205px;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border-bottom: 1px solid var(--line);
+            background: #101318;
+        }
+
+        .tower-image img {
+            width: 82%;
+            height: 90%;
+            object-fit: contain;
+            filter: drop-shadow(0 18px 18px rgba(0, 0, 0, 0.48));
+            transition: transform 220ms ease;
+        }
+
+        .tower-card:hover .tower-image img {
+            transform: scale(1.045);
+        }
+
+        .tower-meta {
+            padding: 16px;
+        }
+
+        .tower-name {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .tower-name strong {
+            overflow: hidden;
+            font-size: 13px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tower-name span {
+            color: var(--lavender);
+            font: 600 9px "JetBrains Mono", monospace;
+        }
+
+        .tower-meta p {
+            margin: 8px 0 0;
+            color: var(--faint);
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .threat-track {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            margin-top: 48px;
             border-top: 1px solid var(--line);
             border-bottom: 1px solid var(--line);
         }
 
-        .roster-label {
+        .enemy-node {
+            min-width: 0;
+            padding: 22px;
+            border-right: 1px solid var(--line);
+        }
+
+        .enemy-node:first-child {
+            padding-left: 0;
+        }
+
+        .enemy-node:last-child {
+            padding-right: 0;
+            border-right: 0;
+        }
+
+        .enemy-image {
+            height: 172px;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background: #101318;
+        }
+
+        .enemy-image img {
+            width: 88%;
+            height: 92%;
+            object-fit: contain;
+            filter: drop-shadow(0 16px 16px rgba(0, 0, 0, 0.48));
+            transition: transform 220ms ease;
+        }
+
+        .enemy-node:hover .enemy-image img {
+            transform: translateY(-3px) scale(1.035);
+        }
+
+        .enemy-caption {
             display: flex;
             align-items: center;
-            padding: 12px 10px 12px 0;
-            color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 10px;
-            font-weight: 600;
-            line-height: 1.35;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 14px;
         }
 
-        .roster-unit {
-            min-width: 0;
-            position: relative;
-            display: grid;
-            justify-items: center;
-            gap: 5px;
-            padding: 9px 4px 8px;
-            border-left: 1px solid var(--line);
-            color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 8px;
-            font-weight: 600;
-            text-align: center;
-            transition: background 160ms ease, color 160ms ease;
-        }
-
-        .roster-unit:hover { background: #1c2924; color: var(--paper); }
-        .tower-art { width: 31px; height: 31px; object-fit: contain; image-rendering: auto; }
-        .tower-fallback {
-            width: 31px;
-            height: 31px;
-            place-items: center;
-            color: var(--ink);
-            background: var(--sky);
-            font-family: "Montserrat", sans-serif;
+        .enemy-caption strong {
+            overflow: hidden;
             font-size: 12px;
-            font-weight: 800;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .tower-fallback[hidden] { display: none; }
-        .tower-fallback:not([hidden]) { display: grid; }
-
-        .tower-fallback.commander { background: var(--mint); }
-        .tower-fallback.crook { background: var(--coral); }
-        .tower-fallback.commando { background: var(--amber); }
-
-        .tactical-visual {
-            min-height: 470px;
-            position: relative;
-            display: grid;
-            align-items: center;
+        .enemy-caption span {
+            flex: 0 0 auto;
+            color: var(--coral);
+            font: 600 9px "JetBrains Mono", monospace;
+            text-transform: uppercase;
         }
 
-        .visual-label {
-            position: absolute;
-            top: 26px;
-            right: 0;
-            color: var(--muted);
-            font-family: "IBM Plex Mono", monospace;
-            font-size: 11px;
-        }
-
-        .map-board {
-            width: 100%;
-            aspect-ratio: 1.26;
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            grid-template-rows: repeat(6, 1fr);
-            gap: 7px;
-            padding: 18px;
-            background: #141f1b;
-            border: 1px solid #43564e;
-            box-shadow: 16px 16px 0 #0a0f0d;
-            transform: rotate(-3deg);
-        }
-
-        .cell {
-            background: #1b2924;
-            border: 1px solid #2c3b35;
-            position: relative;
-        }
-
-        .cell.path { background: #2c4439; }
-        .cell.path::after {
-            content: "";
-            position: absolute;
-            inset: 36% 12%;
-            background: var(--amber);
-            opacity: 0.8;
-        }
-
-        .cell.tower::before,
-        .cell.tower::after {
-            content: "";
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            background: var(--sky);
-        }
-
-        .cell.tower::before { width: 44%; height: 44%; }
-        .cell.tower::after { width: 14%; height: 68%; background: var(--paper); transform: translate(-50%, -90%) rotate(42deg); }
-        .cell.tower.mint::before { background: var(--mint); }
-        .cell.tower.coral::before { background: var(--coral); }
-
-        .map-tower-art {
-            position: absolute;
-            z-index: 2;
-            inset: 8%;
-            width: 84%;
-            height: 84%;
-            object-fit: contain;
-        }
-
-        .map-hud {
-            position: absolute;
-            right: 18px;
-            bottom: 14px;
-            width: 256px;
-            padding: 14px;
-            background: #0f1714;
-            border: 1px solid #52665c;
-            box-shadow: 10px 10px 0 rgba(7, 11, 9, 0.68);
-            transform: rotate(2deg);
-        }
-
-        .hud-top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
-        .hud-top strong { color: var(--mint); font-size: 11px; }
-        .hud-line { height: 1px; margin: 12px 0; background: #394b43; }
-        .hud-bottom { display: flex; align-items: end; justify-content: space-between; }
-        .hud-number { color: var(--paper); font-size: 31px; font-weight: 800; line-height: 1; }
-        .hud-status { color: var(--amber); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
-
-        .rail {
-            min-height: 92px;
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
+        .cta-band {
+            padding: 52px 0;
             border-bottom: 1px solid var(--line);
+            background: var(--surface);
         }
 
-        .rail-item { padding: 22px max(20px, calc((100vw - 1180px) / 2)); border-right: 1px solid var(--line); }
-        .rail-item:first-child { padding-left: max(20px, calc((100vw - 1180px) / 2)); }
-        .rail-item:last-child { border-right: 0; padding-right: max(20px, calc((100vw - 1180px) / 2)); }
-        .rail-value { display: block; color: var(--paper); font-family: "IBM Plex Mono", monospace; font-size: 15px; font-weight: 600; }
-        .rail-label { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
-
-        .section { padding: 104px 0; border-bottom: 1px solid var(--line); }
-        .section-label { margin: 0 0 13px; color: var(--sky); font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; }
-        h2 { margin: 0; max-width: 700px; font-size: 38px; line-height: 1.08; }
-        .section-copy { max-width: 620px; margin: 17px 0 0; color: var(--muted); font-size: 16px; font-weight: 600; line-height: 1.65; }
-
-        .capabilities { margin-top: 56px; border-top: 1px solid var(--line); }
-        .capability { display: grid; grid-template-columns: 74px minmax(160px, 0.7fr) minmax(260px, 1.25fr) 36px; gap: 24px; align-items: center; min-height: 118px; border-bottom: 1px solid var(--line); }
-        .capability-icon { display: grid; width: 42px; height: 42px; place-items: center; color: var(--ink); background: var(--mint); }
-        .capability:nth-child(2) .capability-icon { background: var(--sky); }
-        .capability:nth-child(3) .capability-icon { background: var(--amber); }
-        .capability:nth-child(4) .capability-icon { background: var(--coral); }
-        .capability-icon i { width: 20px; height: 20px; stroke-width: 2.5; }
-        .capability h3 { margin: 0; font-size: 17px; }
-        .capability p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1.55; }
-        .capability > i { color: var(--muted); width: 18px; height: 18px; }
-
-        .log-section { background: var(--ink-soft); }
-        .log-layout { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(380px, 1.18fr); gap: 70px; align-items: center; }
-        .strategy-log { border: 1px solid #43564e; background: #101815; box-shadow: 14px 14px 0 #0b100e; }
-        .log-cap { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #43564e; color: var(--paper); font-size: 12px; font-weight: 800; }
-        .log-cap span { color: var(--mint); font-family: "IBM Plex Mono", monospace; font-size: 10px; }
-        .log-list { padding: 10px; }
-        .log-row { display: grid; grid-template-columns: 48px 1fr; gap: 12px; min-height: 45px; align-items: center; border-bottom: 1px solid #283a33; font-family: "IBM Plex Mono", monospace; font-size: 12px; }
-        .log-row:last-child { border-bottom: 0; }
-        .log-row time { color: var(--muted); }
-        .log-row strong { color: var(--paper); font-weight: 500; }
-        .log-row strong.mint { color: var(--mint); }
-        .log-row strong.amber { color: var(--amber); }
-        .log-row strong.coral { color: var(--coral); }
-
-        .workflow { display: grid; margin-top: 56px; border-top: 1px solid var(--line); }
-        .workflow-step { display: grid; grid-template-columns: 70px 1fr; gap: 24px; padding: 28px 0; border-bottom: 1px solid var(--line); }
-        .workflow-number { color: var(--mint); font-family: "IBM Plex Mono", monospace; font-size: 14px; font-weight: 600; }
-        .workflow-step h3 { margin: 0 0 8px; font-size: 17px; }
-        .workflow-step p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 600; line-height: 1.6; }
-
-        footer { padding: 34px 0; background: #0b100e; }
-        .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 11px; }
-        .footer-link { display: inline-flex; align-items: center; gap: 7px; color: var(--paper); }
-        .footer-link i { width: 15px; height: 15px; }
-        .footer-meta { display: flex; align-items: center; gap: 16px; }
-        .tower-credit { color: var(--muted); }
-        .tower-credit:hover { color: var(--paper); }
-
-        @media (max-width: 820px) {
-            .shell { width: min(100% - 28px, 620px); }
-            .nav-inner { height: 62px; }
-            .nav-links { display: none; }
-            .hero { min-height: auto; padding: 110px 0 54px; }
-            .hero-grid, .log-layout { grid-template-columns: 1fr; gap: 42px; }
-            h1 { font-size: 52px; }
-            .hero-copy { font-size: 16px; }
-            .tactical-visual { min-height: 360px; }
-            .map-board { width: calc(100% - 16px); justify-self: center; }
-            .map-hud { width: 220px; }
-            .tower-roster { grid-template-columns: 88px repeat(4, minmax(0, 1fr)); }
-            .rail { grid-template-columns: 1fr 1fr; }
-            .rail-item { padding: 17px 20px; }
-            .rail-item:nth-child(2) { border-right: 0; }
-            .rail-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-            .section { padding: 72px 0; }
-            h2 { font-size: 31px; }
-            .capability { grid-template-columns: 54px 1fr 22px; gap: 14px; padding: 23px 0; }
-            .capability p { grid-column: 2 / 4; }
-            .log-layout { gap: 46px; }
+        .cta-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 30px;
         }
 
-        @media (max-width: 480px) {
-            .nav-source span { display: none; }
-            .hero-notes { flex-wrap: wrap; gap: 12px 18px; }
-            .tower-roster { grid-template-columns: repeat(4, 1fr); }
-            .roster-label { grid-column: 1 / -1; padding: 9px 0 0; }
-            .roster-unit:first-of-type { border-left: 0; }
-            h1 { font-size: 44px; }
-            .loader { grid-template-columns: 1fr 42px; }
-            .loader code { padding: 12px; font-size: 10px; }
-            .tactical-visual { min-height: 315px; }
-            .map-board { padding: 12px; gap: 5px; }
-            .map-hud { right: 0; bottom: 4px; width: 196px; padding: 11px; }
-            .hud-number { font-size: 25px; }
-            .capability { grid-template-columns: 48px 1fr 18px; }
-            .capability-icon { width: 36px; height: 36px; }
-            .footer-inner { align-items: flex-start; flex-direction: column; }
+        .cta-inner h2 {
+            max-width: 630px;
+            font-size: clamp(25px, 3.2vw, 37px);
+        }
+
+        .cta-actions {
+            display: flex;
+            flex: 0 0 auto;
+            gap: 9px;
+        }
+
+        footer {
+            padding: 28px 0;
+        }
+
+        .footer-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            color: var(--faint);
+            font: 500 10px "JetBrains Mono", monospace;
+        }
+
+        .footer-links {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .footer-links a {
+            transition: color 150ms ease;
+        }
+
+        .footer-links a:hover {
+            color: var(--text);
+        }
+
+        .reveal {
+            opacity: 1;
+            transform: none;
+        }
+
+        .reveal.visible {
+            animation: reveal-in 520ms ease both;
+        }
+
+        @keyframes reveal-in {
+            from { opacity: 0; transform: translateY(18px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes tower-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        @keyframes target-pulse {
+            0% { opacity: 0.7; transform: scale(0.78); }
+            80%, 100% { opacity: 0; transform: scale(1.12); }
+        }
+
+        @keyframes enemy-advance {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-12px, 7px); }
+        }
+
+        @keyframes status-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        @media (max-width: 900px) {
+            .nav-links {
+                display: none;
+            }
+
+            .menu-button {
+                display: grid;
+            }
+
+            .mobile-menu {
+                position: fixed;
+                inset: var(--nav-height) 0 auto;
+                z-index: 29;
+                display: grid;
+                padding: 10px 20px 16px;
+                border-bottom: 1px solid var(--line);
+                background: var(--surface);
+                opacity: 0;
+                pointer-events: none;
+                transform: translateY(-10px);
+                transition: opacity 160ms ease, transform 160ms ease;
+            }
+
+            .mobile-menu.open {
+                opacity: 1;
+                pointer-events: auto;
+                transform: translateY(0);
+            }
+
+            .mobile-menu a {
+                min-height: 44px;
+                display: flex;
+                align-items: center;
+                border-bottom: 1px solid var(--line);
+                color: var(--muted);
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            .mobile-menu a:last-child {
+                border-bottom: 0;
+            }
+
+            .hero-copy-block {
+                width: min(640px, 74%);
+            }
+
+            .battlefield {
+                left: 50%;
+                opacity: 0.58;
+            }
+
+            .section-heading,
+            .replay-layout {
+                grid-template-columns: 1fr;
+                gap: 26px;
+            }
+
+            .pipeline {
+                grid-template-columns: 1fr;
+            }
+
+            .pipeline-step,
+            .pipeline-step + .pipeline-step {
+                min-height: auto;
+                display: grid;
+                grid-template-columns: 48px minmax(0, 1fr);
+                gap: 18px;
+                padding: 23px 0;
+                border-right: 0;
+            }
+
+            .step-top {
+                display: grid;
+                gap: 11px;
+                margin: 0;
+            }
+
+            .pipeline-step h3 {
+                margin-top: 1px;
+            }
+
+            .roster-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .threat-track {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .enemy-node:nth-child(2) {
+                border-right: 0;
+            }
+
+            .enemy-node:nth-child(-n+2) {
+                border-bottom: 1px solid var(--line);
+            }
+
+            .enemy-node:nth-child(3) {
+                padding-left: 0;
+            }
+        }
+
+        @media (max-width: 640px) {
+            :root {
+                --nav-height: 58px;
+            }
+
+            .shell {
+                width: min(100% - 28px, 560px);
+            }
+
+            .brand-copy span,
+            .docs-link {
+                display: none;
+            }
+
+            .hero {
+                min-height: min(650px, calc(100svh - 34px));
+                max-height: none;
+                align-items: flex-start;
+            }
+
+            .hero-copy-block {
+                width: 100%;
+                padding-top: 96px;
+            }
+
+            h1 {
+                max-width: 310px;
+                margin-bottom: 17px;
+                font-size: clamp(47px, 15vw, 64px);
+            }
+
+            .hero-copy {
+                max-width: 430px;
+                margin-bottom: 20px;
+                font-size: 14px;
+                line-height: 1.62;
+            }
+
+            .hero-actions {
+                align-items: stretch;
+                flex-direction: column;
+                width: min(100%, 280px);
+            }
+
+            .loader-line {
+                width: 100%;
+            }
+
+            .signal-list {
+                max-width: 330px;
+                margin-top: 16px;
+            }
+
+            .battlefield {
+                inset: 34% -16% -10% 24%;
+                opacity: 0.3;
+            }
+
+            .field-grid {
+                left: 0;
+            }
+
+            .tower-figure.commander {
+                right: 28%;
+            }
+
+            .tower-figure.minigunner {
+                right: -8%;
+            }
+
+            .tower-figure.commando {
+                display: none;
+            }
+
+            .enemy-figure {
+                display: none;
+            }
+
+            .target-ring {
+                right: 29%;
+            }
+
+            .status-rail {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .status-item {
+                padding: 15px 14px;
+            }
+
+            .status-item:first-child,
+            .status-item:last-child {
+                padding: 15px 14px;
+            }
+
+            .status-item:nth-child(2) {
+                border-right: 0;
+            }
+
+            .status-item:nth-child(-n+2) {
+                border-bottom: 1px solid var(--line);
+            }
+
+            .band {
+                padding: 68px 0;
+            }
+
+            .section-heading {
+                gap: 17px;
+            }
+
+            h2 {
+                font-size: 31px;
+            }
+
+            .pipeline {
+                margin-top: 38px;
+            }
+
+            .replay-layout {
+                gap: 42px;
+            }
+
+            .log-window {
+                box-shadow: 8px 9px 0 rgba(0, 0, 0, 0.23);
+            }
+
+            .log-row {
+                grid-template-columns: 31px 25px minmax(0, 1fr);
+            }
+
+            .log-time {
+                display: none;
+            }
+
+            .roster-grid {
+                gap: 8px;
+            }
+
+            .tower-image {
+                height: 160px;
+            }
+
+            .tower-meta {
+                padding: 13px;
+            }
+
+            .enemy-node {
+                padding: 14px;
+            }
+
+            .enemy-node:first-child,
+            .enemy-node:nth-child(3) {
+                padding-left: 0;
+            }
+
+            .enemy-node:nth-child(2),
+            .enemy-node:last-child {
+                padding-right: 0;
+            }
+
+            .enemy-image {
+                height: 145px;
+            }
+
+            .cta-inner,
+            .footer-inner {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .cta-actions {
+                width: 100%;
+            }
+
+            .cta-actions > * {
+                flex: 1;
+            }
+
+            .footer-links {
+                flex-wrap: wrap;
+            }
+        }
+
+        @media (max-width: 390px) {
+            .loader-state {
+                min-width: 58px;
+                padding: 0 8px;
+            }
+
+            .roster-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tower-card {
+                display: grid;
+                grid-template-columns: 112px minmax(0, 1fr);
+            }
+
+            .tower-image {
+                height: 126px;
+                border-right: 1px solid var(--line);
+                border-bottom: 0;
+            }
+
+            .tower-meta {
+                align-self: center;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            html { scroll-behavior: auto; }
+            html {
+                scroll-behavior: auto;
+            }
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
+
+            .reveal {
+                opacity: 1;
+                transform: none;
+                animation: none;
+            }
         }
     </style>
 </head>
 <body>
-    <nav class="site-nav" aria-label="Primary navigation">
+    <header class="topbar">
         <div class="shell nav-inner">
             <a class="brand" href="#top" aria-label="Lyra Macro home">
-                <span class="brand-mark"><i data-lucide="crosshair"></i></span>
-                <span>LYRA MACRO</span>
+                <span class="brand-mark" aria-hidden="true"><i data-lucide="scan-line"></i></span>
+                <span class="brand-copy"><strong>LYRA MACRO</strong><span>AUTOSTRATEGY SYSTEM</span></span>
             </a>
-            <div class="nav-links">
-                <a href="#systems">Systems</a>
-                <a href="#action-log">Action log</a>
-                <a href="#workflow">Workflow</a>
+
+            <nav class="nav-links" aria-label="Primary navigation">
+                <a href="#pipeline">Workflow</a>
+                <a href="#replay">Replay</a>
+                <a href="#loadout">Loadout</a>
+            </nav>
+
+            <div class="nav-actions">
+                <a class="icon-link docs-link" href="library-documentation/" aria-label="Open Lyra UI documentation" title="Documentation"><i data-lucide="book-open"></i></a>
+                <a class="icon-link" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer" aria-label="Open GitHub repository" title="Source"><i data-lucide="code-2"></i></a>
+                <button class="menu-button" id="menu-button" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-menu"><i data-lucide="menu"></i></button>
             </div>
-            <a class="nav-source" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer">
-                <i data-lucide="github"></i><span>Source</span>
-            </a>
         </div>
+    </header>
+
+    <nav class="mobile-menu" id="mobile-menu" aria-label="Mobile navigation">
+        <a href="#pipeline">Workflow</a>
+        <a href="#replay">Replay surface</a>
+        <a href="#loadout">Strategy loadout</a>
+        <a href="library-documentation/">UI documentation</a>
     </nav>
 
     <main id="top">
         <section class="hero" aria-labelledby="hero-title">
-            <div class="shell hero-grid">
-                <div>
-                    <p class="eyebrow">TOWER DEFENSE AUTOSTRATEGY TOOLKIT</p>
-                    <h1 id="hero-title">LYRA<br>MACRO</h1>
-                    <p class="hero-copy">Record a run once. Lyra preserves the placements, upgrades, abilities, skips, loadout, and map context needed to replay it with intent.</p>
-                    <div class="loader" aria-label="Lyra Macro loader">
-                        <code id="loader-code">loadstring(game:HttpGet(&quot;https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua&quot;))()</code>
-                        <button class="icon-button" id="copy-loader" type="button" aria-label="Copy Lyra Macro loader" title="Copy loader"><i data-lucide="copy"></i></button>
-                    </div>
-                    <span class="copy-state" id="copy-state" aria-live="polite"></span>
-                    <div class="hero-notes">
-                        <span><i data-lucide="map-pin"></i>Map-aware replay</span>
-                        <span><i data-lucide="list-checks"></i>Action-level logs</span>
-                    </div>
-                    <div class="tower-roster" aria-label="Example tower loadout">
-                        <span class="roster-label">CORE<br>LOADOUT</span>
-                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Commander icon from TDS: Reanimated Wiki">
-                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/a/a5/Commander_tdsre.webp/revision/latest?cb=20251005210103" alt="Commander tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-                            <span class="tower-fallback commander" hidden>C</span><span>COMMANDER</span>
-                        </a>
-                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Minigunner icon from TDS: Reanimated Wiki">
-                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/6/61/MinigunnerIcon.png/revision/latest" alt="Minigunner tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-                            <span class="tower-fallback" hidden>M</span><span>MINIGUNNER</span>
-                        </a>
-                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Crook Boss icon from TDS: Reanimated Wiki">
-                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/d/da/CrookBossIcon.png/revision/latest?cb=20260212112609" alt="Crook Boss tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-                            <span class="tower-fallback crook" hidden>CB</span><span>CROOK BOSS</span>
-                        </a>
-                        <a class="roster-unit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer" title="Commando icon from TDS: Reanimated Wiki">
-                            <img class="tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/e/e5/CommandoNew.png/revision/latest?cb=20260212112504" alt="Commando tower icon" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-                            <span class="tower-fallback commando" hidden>CO</span><span>COMMANDO</span>
-                        </a>
-                    </div>
-                </div>
-
-                <div class="tactical-visual" aria-label="Tactical strategy board visual">
-                    <span class="visual-label">LIVE STRATEGY SURFACE / 01</span>
-                    <div class="map-board" aria-hidden="true">
-                        <div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell tower mint"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/a/a5/Commander_tdsre.webp/revision/latest?cb=20251005210103" alt=""></div><div class="cell"></div><div class="cell"></div><div class="cell tower"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/6/61/MinigunnerIcon.png/revision/latest" alt=""></div><div class="cell"></div>
-                        <div class="cell tower coral"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/d/da/CrookBossIcon.png/revision/latest?cb=20260212112609" alt=""></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell path"></div><div class="cell"></div><div class="cell"></div><div class="cell tower mint"><img class="map-tower-art" src="https://static.wikia.nocookie.net/tds-reanimated-work/images/e/e5/CommandoNew.png/revision/latest?cb=20260212112504" alt=""></div>
-                        <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell tower"></div><div class="cell path"></div><div class="cell path"></div><div class="cell"></div><div class="cell"></div>
-                        <div class="cell"></div><div class="cell tower mint"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div><div class="cell tower coral"></div>
-                        <div class="cell tower"></div><div class="cell"></div><div class="cell"></div><div class="cell tower mint"></div><div class="cell"></div><div class="cell"></div><div class="cell path"></div><div class="cell path"></div>
-                        <div class="cell"></div><div class="cell"></div><div class="cell tower coral"></div><div class="cell"></div><div class="cell tower"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
-                    </div>
-                    <div class="map-hud">
-                        <div class="hud-top"><span>RUN STATUS</span><strong>ARMED</strong></div>
-                        <div class="hud-line"></div>
-                        <div class="hud-bottom"><span class="hud-number">45</span><span class="hud-status">WAVE TARGET</span></div>
-                    </div>
-                </div>
+            <div class="battlefield" aria-hidden="true">
+                <span class="scene-status">Strategy surface online</span>
+                <div class="field-grid" id="field-grid"></div>
+                <figure class="tower-figure commander"><img src="assets/towers/commander.webp" alt=""></figure>
+                <figure class="tower-figure minigunner"><img src="assets/towers/minigunner.webp" alt=""></figure>
+                <figure class="tower-figure commando"><img src="assets/towers/commando.webp" alt=""></figure>
+                <figure class="enemy-figure normal"><img src="assets/enemies/normal.webp" alt=""></figure>
+                <figure class="enemy-figure fallen-king"><img src="assets/enemies/fallen-king.webp" alt=""></figure>
+                <span class="target-ring"></span>
             </div>
-        </section>
 
-        <section class="rail" aria-label="Lyra systems overview">
-            <div class="rail-item"><span class="rail-value">MAP LOCK</span><span class="rail-label">Fingerprinted strategy context</span></div>
-            <div class="rail-item"><span class="rail-value">5-SLOT SYNC</span><span class="rail-label">Loadout prepared before entry</span></div>
-            <div class="rail-item"><span class="rail-value">10.2 SEC</span><span class="rail-label">Chain COA rotation</span></div>
-            <div class="rail-item"><span class="rail-value">RESULTS WATCH</span><span class="rail-label">Automatic strategy export</span></div>
-        </section>
-
-        <section class="section" id="systems">
             <div class="shell">
-                <p class="section-label">SYSTEMS</p>
-                <h2>Built around the decisions that matter in a run.</h2>
-                <p class="section-copy">Lyra keeps the strategy state close to the game state: tower IDs stay stable, elevator selection is map-aware, and every replay carries its own actionable context.</p>
-                <div class="capabilities">
-                    <article class="capability">
-                        <div class="capability-icon"><i data-lucide="radio-tower"></i></div>
-                        <h3>Elevator handoff</h3>
-                        <p>Locates the matching lobby elevator, enters through its normal touch flow, and continues after the match teleport.</p>
-                        <i data-lucide="arrow-up-right"></i>
+                <div class="hero-copy-block">
+                    <p class="eyebrow">Tower defense autostrategy toolkit</p>
+                    <h1 id="hero-title">Lyra Macro</h1>
+                    <p class="hero-copy">Capture a complete run, carry its exact loadout into the lobby, and replay every placement, upgrade, ability, and skip with visible action-level feedback.</p>
+
+                    <div class="hero-actions">
+                        <button class="primary-button" id="copy-loader" type="button"><i data-lucide="copy"></i><span>Copy loader</span></button>
+                        <a class="secondary-button" href="#pipeline"><i data-lucide="arrow-down"></i><span>Explore workflow</span></a>
+                    </div>
+
+                    <div class="loader-line" aria-label="Lyra Macro loader">
+                        <code id="loader-code">loadstring(game:HttpGet("https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua"))()</code>
+                        <span class="loader-state" id="copy-state" aria-live="polite">Ready</span>
+                    </div>
+
+                    <ul class="signal-list" aria-label="Lyra Macro capabilities">
+                        <li><span class="signal-dot"></span>Map-aware replay</li>
+                        <li><span class="signal-dot"></span>Automatic loadout sync</li>
+                        <li><span class="signal-dot"></span>Action-level logs</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="status-rail" aria-label="System overview">
+            <div class="status-item"><span class="status-value">MAP LOCK</span><span class="status-label">Strategy context validation</span></div>
+            <div class="status-item"><span class="status-value">5-SLOT SYNC</span><span class="status-label">Lobby loadout preparation</span></div>
+            <div class="status-item"><span class="status-value">10.2 SEC</span><span class="status-label">Call of Arms rotation</span></div>
+            <div class="status-item"><span class="status-value">RESULTS WATCH</span><span class="status-label">Automatic strategy export</span></div>
+        </section>
+
+        <section class="band" id="pipeline">
+            <div class="shell">
+                <div class="section-heading reveal">
+                    <div>
+                        <p class="section-kicker">Run pipeline</p>
+                        <h2>One recording becomes a repeatable strategy.</h2>
+                    </div>
+                    <p class="section-description">Lyra keeps lobby setup, map selection, and in-match execution connected so a strategy does not lose context between servers.</p>
+                </div>
+
+                <div class="pipeline reveal">
+                    <article class="pipeline-step">
+                        <div class="step-top"><span class="step-number">01</span><span class="step-icon"><i data-lucide="circle-dot-dashed"></i></span></div>
+                        <div><h3>Record the run</h3><p>Capture placements, upgrades, sales, difficulty votes, abilities, and manual wave skips in their original order.</p></div>
                     </article>
-                    <article class="capability">
-                        <div class="capability-icon"><i data-lucide="boxes"></i></div>
-                        <h3>Loadout sync</h3>
-                        <p>Derives the exact towers placed in a strategy, clears the current loadout, equips the required five-slot set, and verifies it.</p>
-                        <i data-lucide="arrow-up-right"></i>
+                    <article class="pipeline-step">
+                        <div class="step-top"><span class="step-number">02</span><span class="step-icon"><i data-lucide="layers-3"></i></span></div>
+                        <div><h3>Prepare the lobby</h3><p>Read the strategy tower list, synchronize the five-slot loadout, and wait for the configured map elevator.</p></div>
                     </article>
-                    <article class="capability">
-                        <div class="capability-icon"><i data-lucide="zap"></i></div>
-                        <h3>Ability capture</h3>
-                        <p>Records Call Of Arms, Mafia Call, Overcharge, and Chain COA rotations as strategy actions tied to their placed towers.</p>
-                        <i data-lucide="arrow-up-right"></i>
-                    </article>
-                    <article class="capability">
-                        <div class="capability-icon"><i data-lucide="scroll-text"></i></div>
-                        <h3>Replay logger</h3>
-                        <p>Streams every replay action into the always-on-top Lyra Autostrategies log, then exports the run when results arrive.</p>
-                        <i data-lucide="arrow-up-right"></i>
+                    <article class="pipeline-step">
+                        <div class="step-top"><span class="step-number">03</span><span class="step-icon"><i data-lucide="play"></i></span></div>
+                        <div><h3>Execute with context</h3><p>Resolve stable tower references, follow the recorded queue, and surface each action as the match progresses.</p></div>
                     </article>
                 </div>
             </div>
         </section>
 
-        <section class="section log-section" id="action-log">
-            <div class="shell log-layout">
-                <div>
-                    <p class="section-label">ACTION LOG</p>
-                    <h2>Every action stays visible while the strategy runs.</h2>
-                    <p class="section-copy">The in-game logger remains fixed above the game UI and records the precise replay sequence as it unfolds, from placement through final wave skip.</p>
+        <section class="band band-muted" id="replay">
+            <div class="shell replay-layout">
+                <div class="reveal">
+                    <p class="section-kicker">Replay surface</p>
+                    <h2>The run stays readable while it plays.</h2>
+                    <p class="section-description">A compact always-on-top logger shows what Lyra just completed and what remains in the strategy queue.</p>
+                    <div class="feature-list">
+                        <div class="feature-row"><i data-lucide="route"></i><div><strong>Stable action order</strong><span>Placement to results, without hidden steps</span></div></div>
+                        <div class="feature-row"><i data-lucide="radio-tower"></i><div><strong>Lobby elevator handoff</strong><span>Map title detection across the elevator set</span></div></div>
+                        <div class="feature-row"><i data-lucide="zap"></i><div><strong>Ability-aware recording</strong><span>COA, Mafia Call, and Overcharge support</span></div></div>
+                    </div>
                 </div>
-                <div class="strategy-log" aria-label="Lyra Autostrategies action log preview">
-                    <div class="log-cap">LYRA AUTOSTRATEGIES <span>ACTIVE</span></div>
-                    <div class="log-list">
-                        <div class="log-row"><time>01/12</time><strong>PLACE MINIGUNNER</strong></div>
-                        <div class="log-row"><time>02/12</time><strong>UPGRADE TOWER #1</strong></div>
-                        <div class="log-row"><time>03/12</time><strong class="mint">ACTIVATE CALL OF ARMS</strong></div>
-                        <div class="log-row"><time>04/12</time><strong class="amber">SKIP WAVE</strong></div>
-                        <div class="log-row"><time>05/12</time><strong class="coral">SELL TOWER #2</strong></div>
+
+                <div class="log-window reveal" aria-label="Lyra Autostrategies logger preview">
+                    <div class="log-titlebar">
+                        <strong><i data-lucide="list-tree"></i>LYRA AUTOSTRATEGIES</strong>
+                        <span class="live-label">Live replay</span>
+                    </div>
+                    <div class="log-table">
+                        <div class="log-row"><span class="log-index">01/12</span><span class="log-type"><i data-lucide="map-pin"></i></span><strong class="log-action">Place Minigunner #1</strong><time class="log-time">00:14</time></div>
+                        <div class="log-row"><span class="log-index">02/12</span><span class="log-type"><i data-lucide="arrow-up"></i></span><strong class="log-action">Upgrade tower #1 to level 2</strong><time class="log-time">00:28</time></div>
+                        <div class="log-row"><span class="log-index">03/12</span><span class="log-type"><i data-lucide="zap"></i></span><strong class="log-action mint">Activate Call of Arms</strong><time class="log-time">00:39</time></div>
+                        <div class="log-row"><span class="log-index">04/12</span><span class="log-type"><i data-lucide="fast-forward"></i></span><strong class="log-action amber">Skip wave 8</strong><time class="log-time">00:45</time></div>
+                        <div class="log-row"><span class="log-index">05/12</span><span class="log-type"><i data-lucide="trash-2"></i></span><strong class="log-action coral">Sell tower #2</strong><time class="log-time">01:02</time></div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section class="section" id="workflow">
+        <section class="band" id="threats">
             <div class="shell">
-                <p class="section-label">WORKFLOW</p>
-                <h2>Record once. Replay with the map, towers, and timing intact.</h2>
-                <div class="workflow">
-                    <article class="workflow-step"><span class="workflow-number">01</span><div><h3>Record the match</h3><p>Lyra captures placements, upgrades, sales, ability activations, difficulty votes, and every wave skip.</p></div></article>
-                    <article class="workflow-step"><span class="workflow-number">02</span><div><h3>Load the strategy in the lobby</h3><p>The recorded tower list synchronizes to the lobby loadout while Lyra waits for the selected map.</p></div></article>
-                    <article class="workflow-step"><span class="workflow-number">03</span><div><h3>Enter and execute</h3><p>Lyra follows the map-matched elevator into the match, validates the fingerprint, and shows every replay action in the fixed log.</p></div></article>
+                <div class="section-heading reveal">
+                    <div>
+                        <p class="section-kicker">Wave context</p>
+                        <h2>A strategy is recorded against the pressure it solves.</h2>
+                    </div>
+                    <p class="section-description">Wave timing stays attached to the action sequence, from the opening enemies through the final target.</p>
+                </div>
+
+                <div class="threat-track reveal">
+                    <a class="enemy-node" href="https://tds-reanimated-work.fandom.com/wiki/Enemies" target="_blank" rel="noreferrer">
+                        <div class="enemy-image"><img src="assets/enemies/normal.webp" alt="Normal enemy"></div>
+                        <div class="enemy-caption"><strong>Normal</strong><span>Opening</span></div>
+                    </a>
+                    <a class="enemy-node" href="https://tds-reanimated-work.fandom.com/wiki/Enemies" target="_blank" rel="noreferrer">
+                        <div class="enemy-image"><img src="assets/enemies/necromancer.webp" alt="Necromancer enemy"></div>
+                        <div class="enemy-caption"><strong>Necromancer</strong><span>Pressure</span></div>
+                    </a>
+                    <a class="enemy-node" href="https://tds-reanimated-work.fandom.com/wiki/Enemies" target="_blank" rel="noreferrer">
+                        <div class="enemy-image"><img src="assets/enemies/fallen-king.webp" alt="Fallen King enemy"></div>
+                        <div class="enemy-caption"><strong>Fallen King</strong><span>Boss</span></div>
+                    </a>
+                    <a class="enemy-node" href="https://tds-reanimated-work.fandom.com/wiki/Enemies" target="_blank" rel="noreferrer">
+                        <div class="enemy-image"><img src="assets/enemies/void-reaver.webp" alt="Void Reaver enemy"></div>
+                        <div class="enemy-caption"><strong>Void Reaver</strong><span>Final</span></div>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="band" id="loadout">
+            <div class="shell">
+                <div class="section-heading reveal">
+                    <div>
+                        <p class="section-kicker">Strategy loadout</p>
+                        <h2>The towers used in a run travel with it.</h2>
+                    </div>
+                    <p class="section-description">Recorded placements become the source of truth for lobby equipment, reducing manual setup before every replay.</p>
+                </div>
+
+                <div class="roster-grid reveal">
+                    <a class="tower-card" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">
+                        <div class="tower-image"><img src="assets/towers/commander.webp" alt="Commander tower"></div>
+                        <div class="tower-meta"><div class="tower-name"><strong>Commander</strong><span>SUPPORT</span></div><p>Call of Arms chain rotation</p></div>
+                    </a>
+                    <a class="tower-card" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">
+                        <div class="tower-image"><img src="assets/towers/minigunner.webp" alt="Minigunner tower"></div>
+                        <div class="tower-meta"><div class="tower-name"><strong>Minigunner</strong><span>DAMAGE</span></div><p>High-output lane coverage</p></div>
+                    </a>
+                    <a class="tower-card" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">
+                        <div class="tower-image"><img src="assets/towers/crook-boss.webp" alt="Crook Boss tower"></div>
+                        <div class="tower-meta"><div class="tower-name"><strong>Crook Boss</strong><span>SPAWNER</span></div><p>Mafia Call ability capture</p></div>
+                    </a>
+                    <a class="tower-card" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">
+                        <div class="tower-image"><img src="assets/towers/commando.webp" alt="Commando tower"></div>
+                        <div class="tower-meta"><div class="tower-name"><strong>Commando</strong><span>BURST</span></div><p>Overcharge ability capture</p></div>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="cta-band">
+            <div class="shell cta-inner reveal">
+                <h2>Record the decisions once. Keep the strategy moving.</h2>
+                <div class="cta-actions">
+                    <button class="primary-button copy-loader-secondary" type="button"><i data-lucide="copy"></i><span>Copy loader</span></button>
+                    <a class="secondary-button" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer"><i data-lucide="code-2"></i><span>Source</span></a>
                 </div>
             </div>
         </section>
@@ -609,35 +1557,83 @@
 
     <footer>
         <div class="shell footer-inner">
-            <span>LYRA MACRO / TACTICAL REPLAY TOOLKIT</span>
-            <div class="footer-meta">
-                <a class="tower-credit" href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">Tower icons: TDS: Reanimated Wiki</a>
-                <a class="footer-link" href="https://github.com/JGRJGIRJGO/Tungsten-Hub" target="_blank" rel="noreferrer"><i data-lucide="github"></i>View repository</a>
+            <span>LYRA MACRO / AUTOSTRATEGY TOOLKIT</span>
+            <div class="footer-links">
+                <a href="library-documentation/">UI documentation</a>
+                <a href="https://tds-reanimated-work.fandom.com/wiki/Towers" target="_blank" rel="noreferrer">Tower artwork</a>
+                <a href="https://tds-reanimated-work.fandom.com/wiki/Enemies" target="_blank" rel="noreferrer">Enemy artwork</a>
             </div>
         </div>
     </footer>
 
     <script>
-        const loader = document.getElementById('loader-code').textContent;
-        const button = document.getElementById('copy-loader');
-        const state = document.getElementById('copy-state');
+        const loader = document.getElementById("loader-code").textContent;
+        const copyState = document.getElementById("copy-state");
+        const menuButton = document.getElementById("menu-button");
+        const mobileMenu = document.getElementById("mobile-menu");
+        const fieldGrid = document.getElementById("field-grid");
+        const pathCells = new Set([2, 3, 4, 12, 20, 21, 22, 23, 31, 39, 40, 41, 42, 43]);
+        const targetCells = new Set([11, 28, 46]);
 
-        button.addEventListener('click', async () => {
+        for (let index = 1; index <= 48; index += 1) {
+            const cell = document.createElement("span");
+            if (pathCells.has(index)) cell.classList.add("path");
+            if (targetCells.has(index)) cell.classList.add("target");
+            fieldGrid.appendChild(cell);
+        }
+
+        async function copyLoader(button) {
             try {
                 await navigator.clipboard.writeText(loader);
-                state.textContent = 'LOADER COPIED';
-                button.innerHTML = '<i data-lucide="check"></i>';
+                copyState.textContent = "Copied";
+                copyState.classList.add("success");
+                button.innerHTML = '<i data-lucide="check"></i><span>Copied</span>';
                 lucide.createIcons();
                 window.setTimeout(() => {
-                    state.textContent = '';
-                    button.innerHTML = '<i data-lucide="copy"></i>';
+                    copyState.textContent = "Ready";
+                    copyState.classList.remove("success");
+                    button.innerHTML = '<i data-lucide="copy"></i><span>Copy loader</span>';
                     lucide.createIcons();
                 }, 1800);
-            } catch {
-                state.textContent = 'COPY FAILED';
+            } catch (_) {
+                copyState.textContent = "Copy failed";
             }
+        }
+
+        document.querySelectorAll("#copy-loader, .copy-loader-secondary").forEach((button) => {
+            button.addEventListener("click", () => copyLoader(button));
         });
 
+        menuButton.addEventListener("click", () => {
+            const open = mobileMenu.classList.toggle("open");
+            menuButton.setAttribute("aria-expanded", String(open));
+            menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+            menuButton.innerHTML = open ? '<i data-lucide="x"></i>' : '<i data-lucide="menu"></i>';
+            document.body.classList.toggle("menu-open", open);
+            lucide.createIcons();
+        });
+
+        mobileMenu.querySelectorAll("a").forEach((link) => {
+            link.addEventListener("click", () => {
+                mobileMenu.classList.remove("open");
+                menuButton.setAttribute("aria-expanded", "false");
+                menuButton.setAttribute("aria-label", "Open navigation");
+                menuButton.innerHTML = '<i data-lucide="menu"></i>';
+                document.body.classList.remove("menu-open");
+                lucide.createIcons();
+            });
+        });
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add("visible");
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.14 });
+
+        document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
         lucide.createIcons();
     </script>
 </body>
