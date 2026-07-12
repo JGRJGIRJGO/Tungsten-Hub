@@ -2076,7 +2076,9 @@ function LyraMacro:FindElevatorForMap(mapName)
         return nil, "workspace.Elevators is not available."
     end
 
-    for _, elevator in ipairs(elevators:GetChildren()) do
+    local elevatorChildren = safeGetChildren(elevators)
+
+    for _, elevator in ipairs(elevatorChildren) do
         local elevatorMapTitle = getElevatorMapTitle(elevator)
 
         if elevatorMapTitle and normalizeLookupKey(elevatorMapTitle) == targetMapKey then
@@ -2084,7 +2086,12 @@ function LyraMacro:FindElevatorForMap(mapName)
         end
     end
 
-    return nil, "No elevator currently has map " .. tostring(mapName) .. "."
+    return nil,
+        "No elevator currently has map "
+            .. tostring(mapName)
+            .. " after checking "
+            .. tostring(#elevatorChildren)
+            .. " elevators."
 end
 
 function LyraMacro:EnterElevatorForMap(mapName, options)
@@ -2132,16 +2139,22 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
     local touch = elevator:FindFirstChild("Touch")
 
     if options.TeleportImmediately == true then
-        local destination = liftMain or touch
+        -- Match the lobby controller's order: touch first, server entry second,
+        -- then move into Lift.Main only after the server accepts the request.
+        local destination = touch or liftMain
 
         if destination then
             local movedImmediately, moveError = pcall(function()
-                local heightOffset = destination == liftMain and 5 or 3
+                local heightOffset = destination == touch and 3 or 5
                 character:PivotTo(destination.CFrame + Vector3.new(0, heightOffset, 0))
             end)
 
             if not movedImmediately then
                 return false, "Could not teleport into elevator for " .. tostring(elevatorMapTitle) .. ": " .. tostring(moveError)
+            end
+
+            if destination == touch then
+                task.wait()
             end
         end
     end
@@ -2167,8 +2180,13 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
         end
     end
 
+    local args = {
+        "Elevators",
+        "Enter",
+        elevator,
+    }
     local invoked, acceptedOrError = pcall(function()
-        return RemoteFunction:InvokeServer("Elevators", "Enter", elevator)
+        return RemoteFunction:InvokeServer(unpack(args))
     end)
 
     if not invoked then
@@ -2193,6 +2211,7 @@ function LyraMacro:_autoEnterPendingReplay(replay)
         local lastRefreshAt = -math.huge
         local lastRefreshError
         local lastEntryAttemptAt = -math.huge
+        local lastEntryError
         local lockedElevator
         local announcedPrivateWorkflow = false
 
@@ -2264,8 +2283,17 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                     UseTouch = false,
                 })
 
-                if not entered and normalizeLookupKey(getElevatorMapTitle(lockedElevator)) ~= normalizeLookupKey(replay.TargetMap) then
-                    lockedElevator = nil
+                if entered then
+                    lastEntryError = nil
+                else
+                    if elevatorMapTitle ~= lastEntryError then
+                        warn("[LyraMacro] Elevator entry retry: " .. tostring(elevatorMapTitle))
+                        lastEntryError = elevatorMapTitle
+                    end
+
+                    if normalizeLookupKey(getElevatorMapTitle(lockedElevator)) ~= normalizeLookupKey(replay.TargetMap) then
+                        lockedElevator = nil
+                    end
                 end
             end
 
@@ -2965,20 +2993,30 @@ function LyraMacro:_installRecorder()
     local recorderNamecall = function(remote, ...)
         local method = getnamecallmethod()
 
-        if method == "InvokeServer" and remote == RemoteFunction then
-            local args = { ... }
-            self:_observeElevatorEnter(args)
-            self:_observeChainCOAPlacement(args)
-            local recorded, recordError = pcall(function()
-                self:_recordRemoteInvoke(args)
-            end)
-
-            if not recorded then
-                warn("[LyraMacro] Failed to record remote call: " .. tostring(recordError))
-            end
+        if method ~= "InvokeServer" or remote ~= RemoteFunction then
+            return oldNamecall(remote, ...)
         end
 
-        return oldNamecall(remote, ...)
+        local args = { ... }
+        local remoteResults = table.pack(oldNamecall(remote, ...))
+        local isElevatorEnter = normalizeLookupKey(args[1]) == "elevators"
+            and normalizeLookupKey(args[2]) == "enter"
+
+        -- Queue teleport continuation only after the elevator server confirms entry.
+        if isElevatorEnter and remoteResults[1] == true then
+            self:_observeElevatorEnter(args)
+        end
+
+        self:_observeChainCOAPlacement(args)
+        local recorded, recordError = pcall(function()
+            self:_recordRemoteInvoke(args)
+        end)
+
+        if not recorded then
+            warn("[LyraMacro] Failed to record remote call: " .. tostring(recordError))
+        end
+
+        return table.unpack(remoteResults, 1, remoteResults.n)
     end
 
     if type(newcclosure) == "function" then
