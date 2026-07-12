@@ -1882,6 +1882,91 @@ local function getTeleportQueueFunction()
     return nil
 end
 
+local function getTextChatMessageStatusName(message)
+    local gotStatus, status = pcall(function()
+        return message and message.Status
+    end)
+
+    if not gotStatus or status == nil then
+        return nil
+    end
+
+    local gotName, name = pcall(function()
+        return status.Name
+    end)
+
+    if gotName and type(name) == "string" then
+        return name
+    end
+
+    local statusText = tostring(status)
+    return statusText:match("%.([%w_]+)$") or statusText
+end
+
+local function textChannelCanSendForLocalPlayer(channel)
+    for _, source in ipairs(safeGetChildren(channel)) do
+        if instanceIsA(source, "TextSource") then
+            local gotUserId, userId = pcall(function()
+                return source.UserId
+            end)
+
+            if gotUserId and userId == LocalPlayer.UserId then
+                local gotCanSend, canSend = pcall(function()
+                    return source.CanSend
+                end)
+
+                return not gotCanSend or canSend ~= false
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getTextChatChannelCandidates(textChatService)
+    local candidates = {}
+    local seen = {}
+
+    local function addCandidate(channel, requireConfirmedSendable)
+        if not instanceIsA(channel, "TextChannel") or seen[channel] then
+            return
+        end
+
+        local canSend = textChannelCanSendForLocalPlayer(channel)
+
+        if canSend == false or (requireConfirmedSendable and canSend ~= true) then
+            return
+        end
+
+        seen[channel] = true
+        table.insert(candidates, channel)
+    end
+
+    local textChannels = safeFindFirstChild(textChatService, "TextChannels")
+
+    if textChannels then
+        addCandidate(safeFindFirstChild(textChannels, "RBXGeneral"), false)
+        addCandidate(safeFindFirstChild(textChannels, "General"), false)
+    end
+
+    local inputBarConfiguration = safeFindFirstChild(textChatService, "ChatInputBarConfiguration")
+    local gotTargetChannel, targetChannel = pcall(function()
+        return inputBarConfiguration and inputBarConfiguration.TargetTextChannel
+    end)
+
+    if gotTargetChannel then
+        addCandidate(targetChannel, false)
+    end
+
+    if textChannels then
+        for _, channel in ipairs(safeGetChildren(textChannels)) do
+            addCandidate(channel, true)
+        end
+    end
+
+    return candidates
+end
+
 function LyraMacro:_sendPrivateServerCommand(command)
     local privateWorkflowEnabled, privateWorkflowReason = self:ShouldUsePrivateServerWorkflow()
 
@@ -1898,31 +1983,32 @@ function LyraMacro:_sendPrivateServerCommand(command)
         textChatService = game:GetService("TextChatService")
     end)
 
-    local textChannels = textChatService and safeFindFirstChild(textChatService, "TextChannels")
-    local generalChannel = textChannels and (
-        safeFindFirstChild(textChannels, "RBXGeneral")
-        or safeFindFirstChild(textChannels, "General")
-    )
+    local sendFailures = {}
 
-    if not generalChannel and textChannels then
-        for _, channel in ipairs(safeGetChildren(textChannels)) do
-            if instanceIsA(channel, "TextChannel") then
-                generalChannel = channel
-                break
+    if textChatService then
+        for _, channel in ipairs(getTextChatChannelCandidates(textChatService)) do
+            local sent, messageOrError = pcall(function()
+                return channel:SendAsync(command)
+            end)
+
+            if sent then
+                local statusName = getTextChatMessageStatusName(messageOrError)
+
+                if statusName == "Success" or statusName == "Sending" then
+                    return true, "TextChatService/" .. tostring(getInstanceName(channel) or "TextChannel")
+                end
+
+                table.insert(
+                    sendFailures,
+                    tostring(getInstanceName(channel) or "TextChannel") .. " returned " .. tostring(statusName or "no message status")
+                )
+            else
+                table.insert(
+                    sendFailures,
+                    tostring(getInstanceName(channel) or "TextChannel") .. " failed: " .. tostring(messageOrError)
+                )
             end
         end
-    end
-
-    if generalChannel and instanceIsA(generalChannel, "TextChannel") then
-        local sent, sendError = pcall(function()
-            generalChannel:SendAsync(command)
-        end)
-
-        if sent then
-            return true
-        end
-
-        warn("[LyraMacro] TextChatService command failed: " .. tostring(sendError))
     end
 
     local legacyChat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
@@ -1934,13 +2020,17 @@ function LyraMacro:_sendPrivateServerCommand(command)
         end)
 
         if sent then
-            return true
+            return true, "legacy chat"
         end
 
-        return false, "Legacy chat command failed: " .. tostring(sendError)
+        table.insert(sendFailures, "legacy chat failed: " .. tostring(sendError))
     end
 
-    return false, "No supported Roblox chat channel is available."
+    if #sendFailures > 0 then
+        return false, table.concat(sendFailures, "; ")
+    end
+
+    return false, "No sendable Roblox chat channel is available."
 end
 
 local function getElevatorMapTitle(elevator)
@@ -2063,15 +2153,18 @@ end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
-        local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
         local lastRefreshAt = -math.huge
         local lastRefreshError
-
-        if privateServer then
-            print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
-        end
+        local announcedPrivateWorkflow = false
 
         while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
+            local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+            if privateServer and not announcedPrivateWorkflow then
+                announcedPrivateWorkflow = true
+                print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
+            end
+
             local elevator = self:FindElevatorForMap(replay.TargetMap)
 
             if not elevator and privateServer and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL then
@@ -2080,7 +2173,14 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                 local refreshed, refreshMessage = self:_sendPrivateServerCommand("!refresh")
 
                 if refreshed then
-                    print("[LyraMacro] Private server refresh requested while waiting for " .. tostring(replay.TargetMap) .. ".")
+                    print(
+                        "[LyraMacro] Sent !refresh via "
+                            .. tostring(refreshMessage)
+                            .. " while waiting for "
+                            .. tostring(replay.TargetMap)
+                            .. "."
+                    )
+                    lastRefreshError = nil
                 elseif refreshMessage ~= lastRefreshError then
                     warn("[LyraMacro] Could not send private-server refresh: " .. tostring(refreshMessage))
                     lastRefreshError = refreshMessage
@@ -2102,7 +2202,7 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                     local started, startMessage = self:_sendPrivateServerCommand("!start")
 
                     if started then
-                        print("[LyraMacro] Private server match start requested.")
+                        print("[LyraMacro] Sent !start via " .. tostring(startMessage) .. ".")
                     else
                         warn("[LyraMacro] Could not send private-server start: " .. tostring(startMessage))
                     end
