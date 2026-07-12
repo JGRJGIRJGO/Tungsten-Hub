@@ -104,6 +104,8 @@ local CHAIN_COA_REQUIRED_TOWERS = 3
 local CHAIN_COA_MIN_UPGRADE = 3
 local CHAIN_COA_RETRY_DELAY = 0.75
 local CHAIN_COA_POLL_INTERVAL = 0.15
+local PRIVATE_SERVER_REFRESH_INTERVAL = 1
+local PRIVATE_SERVER_START_DELAY = 0.35
 
 local TRACKED_ABILITIES = {
     callofarms = "Call Of Arms",
@@ -139,6 +141,7 @@ local LyraMacro = {
     SelectedLoadout = {},
     SelectedMode = "Normal",
     SelectedMap = "",
+    SelectedPrivateServerLinkCode = nil,
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
@@ -1610,12 +1613,55 @@ function LyraMacro:VoteMode(modeName, confirmed)
     RemoteFunction:InvokeServer("Difficulty", "Vote", modeName, confirmed)
 end
 
-function LyraMacro:GameInfo(mapName, options)
-    options = options or {}
+local function normalizePrivateServerLinkCode(value)
+    if value == nil then
+        return nil
+    end
+
+    local linkCode = trimString(value)
+    return linkCode ~= "" and linkCode or nil
+end
+
+function LyraMacro:SetPrivateServerLinkCode(linkCode)
+    self.SelectedPrivateServerLinkCode = normalizePrivateServerLinkCode(linkCode)
+
+    if self.SelectedPrivateServerLinkCode then
+        print("[LyraMacro] Private server link code configured.")
+    else
+        print("[LyraMacro] Private server link code cleared.")
+    end
+
+    return self.SelectedPrivateServerLinkCode
+end
+
+function LyraMacro:IsPrivateServer()
+    local gotPrivateServerId, privateServerId = pcall(function()
+        return game.PrivateServerId
+    end)
+
+    return gotPrivateServerId and type(privateServerId) == "string" and privateServerId ~= ""
+end
+
+function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
+    local options
+    local privateServerLinkCode
+
+    if type(privateServerLinkCodeOrOptions) == "table" then
+        options = privateServerLinkCodeOrOptions
+        privateServerLinkCode = options.PrivateServerLinkCode
+    else
+        privateServerLinkCode = privateServerLinkCodeOrOptions
+        options = type(maybeOptions) == "table" and maybeOptions or {}
+
+        if privateServerLinkCode == nil then
+            privateServerLinkCode = options.PrivateServerLinkCode
+        end
+    end
 
     local normalizedMapName = normalizeMapCandidate(mapName) or tostring(mapName or "")
     self.SelectedMap = normalizedMapName
     self.LastDetectedMapSource = options.Source or "manual"
+    self:SetPrivateServerLinkCode(privateServerLinkCode)
     print("[LyraMacro] Match configured for map: " .. normalizedMapName)
 end
 
@@ -1640,6 +1686,65 @@ local function getTeleportQueueFunction()
     end
 
     return nil
+end
+
+function LyraMacro:_sendPrivateServerCommand(command)
+    if not self:IsPrivateServer() then
+        return false, "Private-server commands are disabled outside private servers."
+    end
+
+    if type(command) ~= "string" or command == "" then
+        return false, "A chat command is required."
+    end
+
+    local textChatService
+    pcall(function()
+        textChatService = game:GetService("TextChatService")
+    end)
+
+    local textChannels = textChatService and safeFindFirstChild(textChatService, "TextChannels")
+    local generalChannel = textChannels and (
+        safeFindFirstChild(textChannels, "RBXGeneral")
+        or safeFindFirstChild(textChannels, "General")
+    )
+
+    if not generalChannel and textChannels then
+        for _, channel in ipairs(safeGetChildren(textChannels)) do
+            if instanceIsA(channel, "TextChannel") then
+                generalChannel = channel
+                break
+            end
+        end
+    end
+
+    if generalChannel and instanceIsA(generalChannel, "TextChannel") then
+        local sent, sendError = pcall(function()
+            generalChannel:SendAsync(command)
+        end)
+
+        if sent then
+            return true
+        end
+
+        warn("[LyraMacro] TextChatService command failed: " .. tostring(sendError))
+    end
+
+    local legacyChat = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    local sayMessageRequest = legacyChat and legacyChat:FindFirstChild("SayMessageRequest")
+
+    if sayMessageRequest and instanceIsA(sayMessageRequest, "RemoteEvent") then
+        local sent, sendError = pcall(function()
+            sayMessageRequest:FireServer(command, "All")
+        end)
+
+        if sent then
+            return true
+        end
+
+        return false, "Legacy chat command failed: " .. tostring(sendError)
+    end
+
+    return false, "No supported Roblox chat channel is available."
 end
 
 local function getElevatorMapTitle(elevator)
@@ -1753,15 +1858,47 @@ end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
+        local privateServer = self:IsPrivateServer()
+        local lastRefreshAt = -math.huge
+        local lastRefreshError
+
         while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
+            local elevator = self:FindElevatorForMap(replay.TargetMap)
+
+            if not elevator and privateServer and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL then
+                lastRefreshAt = os.clock()
+
+                local refreshed, refreshMessage = self:_sendPrivateServerCommand("!refresh")
+
+                if refreshed then
+                    print("[LyraMacro] Private server refresh requested while waiting for " .. tostring(replay.TargetMap) .. ".")
+                elseif refreshMessage ~= lastRefreshError then
+                    warn("[LyraMacro] Could not send private-server refresh: " .. tostring(refreshMessage))
+                    lastRefreshError = refreshMessage
+                end
+            end
+
             local entered, elevatorMapTitle = self:EnterElevatorForMap(replay.TargetMap)
 
             if entered then
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
+
+                if privateServer then
+                    task.wait(PRIVATE_SERVER_START_DELAY)
+
+                    local started, startMessage = self:_sendPrivateServerCommand("!start")
+
+                    if started then
+                        print("[LyraMacro] Private server match start requested.")
+                    else
+                        warn("[LyraMacro] Could not send private-server start: " .. tostring(startMessage))
+                    end
+                end
+
                 return
             end
 
-            task.wait(1)
+            task.wait(privateServer and 0.2 or 1)
         end
     end)
 end
@@ -2619,7 +2756,14 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
     }
 
     if type(self.SelectedMap) == "string" and self.SelectedMap ~= "" then
-        table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(self.SelectedMap) .. ", { Source = " .. formatLuaValue(self.LastDetectedMapSource or "recorded") .. " })")
+        local gameInfoOptions = "{ Source = " .. formatLuaValue(self.LastDetectedMapSource or "recorded") .. " }"
+
+        if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
+            table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(self.SelectedMap) .. ", " .. formatLuaValue(self.SelectedPrivateServerLinkCode) .. ", " .. gameInfoOptions .. ")")
+        else
+            table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(self.SelectedMap) .. ", " .. gameInfoOptions .. ")")
+        end
+
         table.insert(lines, "")
     end
 
@@ -2857,6 +3001,10 @@ end
 function LyraMacro:CreateRecorderWindow(config)
     config = config or {}
 
+    if config.PrivateServerLinkCode ~= nil then
+        self:SetPrivateServerLinkCode(config.PrivateServerLinkCode)
+    end
+
     if self.RecorderWindow then
         return self.RecorderWindow
     end
@@ -2902,6 +3050,17 @@ function LyraMacro:CreateRecorderWindow(config)
 
             descriptionLabel.UpdateText(message or "Elevator auto-recording could not be enabled.")
             window:Notify("Elevator Watcher Unavailable", message or "Your executor cannot queue scripts across teleports.", 4)
+        end)
+
+        strategyTab:CreateTextbox("Private server link code", self.SelectedPrivateServerLinkCode or "Optional privateServerLinkCode", function(linkCode)
+            local configuredCode = self:SetPrivateServerLinkCode(linkCode)
+
+            if configuredCode then
+                descriptionLabel.UpdateText("Private server link code will be included in the next AutoStrategy export.")
+                window:Notify("Private Server Code Set", "The next AutoStrategy will include the configured link code.", 3)
+            else
+                descriptionLabel.UpdateText("Private server link code cleared. AutoStrategy exports will use the standard format.")
+            end
         end)
 
         strategyTab:CreateToggle("Chain COA", self.ChainCOAEnabled, function(enabled)
