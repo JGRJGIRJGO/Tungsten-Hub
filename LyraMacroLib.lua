@@ -169,6 +169,7 @@ local LyraMacro = {
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
     RecordedTowerUpgradeLevels = {},
+    PendingRecordedPlacements = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
     LastStrategyExport = nil,
@@ -1506,7 +1507,20 @@ local function remoteResponseWasAccepted(response)
         return true
     end
 
-    return type(response) == "table" and response.Success == true
+    return type(response) == "table"
+        and (response.Success == true or response.Successful == true or response.Ok == true)
+end
+
+local function remoteResponseWasRejected(response)
+    if response == false then
+        return true
+    end
+
+    if type(response) == "table" then
+        return response.Success == false or response.Successful == false or response.Ok == false
+    end
+
+    return false
 end
 
 local function isCallOfArmsTowerStunned(tower)
@@ -1720,18 +1734,6 @@ function LyraMacro:SetChainCOA(enabled)
             return readyTowers[nextIndex]
         end
 
-        local function wasActivationRejected(response)
-            if response == false then
-                return true
-            end
-
-            if type(response) == "table" then
-                return response.Success == false or response.Successful == false or response.Ok == false
-            end
-
-            return false
-        end
-
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers, readyTowers, states = getReadyRoster()
 
@@ -1795,7 +1797,7 @@ function LyraMacro:SetChainCOA(enabled)
 
                         activationInFlight = false
 
-                        if not activated or wasActivationRejected(responseOrError) then
+                        if not activated or remoteResponseWasRejected(responseOrError) then
                             if self.ChainCOAEnabled and self._chainCOAToken == chainToken then
                                 nextActivationAt = math.min(nextActivationAt or math.huge, os.clock() + CHAIN_COA_RETRY_DELAY)
                             end
@@ -3203,17 +3205,79 @@ function LyraMacro:_appendRecordedStep(step)
     print("[LyraMacro] Recorded step #" .. #self.RecordedStrategy .. ": " .. step.action)
 end
 
-function LyraMacro:_trackNextRecordedTower(troopType, position)
+function LyraMacro:_prepareRecorderObservation(args)
+    if not self.IsRecording
+        or normalizeLookupKey(args[1]) ~= "troops"
+        or normalizeLookupKey(args[2]) ~= "place" then
+        return nil
+    end
+
+    local towersFolder = getTowersFolder()
+
+    return {
+        TowersFolder = towersFolder,
+        ExistingTowers = snapshotTowers(towersFolder),
+    }
+end
+
+function LyraMacro:_bindRecordedTower(pendingPlacement, tower)
+    if not pendingPlacement or pendingPlacement.Resolved or not tower then
+        return nil
+    end
+
+    local existingIndex = self.RecordedTowerIndexes[tower]
+
+    if existingIndex and existingIndex ~= pendingPlacement.TowerIndex then
+        return nil
+    end
+
+    pendingPlacement.Resolved = true
+    self.RecordedTowerIndexes[tower] = pendingPlacement.TowerIndex
+    self.RecordedTowerUpgradeLevels[tower] = 0
+    self.KnownTowerUpgradeLevels[tower] = 0
+
+    if type(pendingPlacement.TroopType) == "string" and pendingPlacement.TroopType ~= "" then
+        self.KnownTowerTroops[tower] = pendingPlacement.TroopType
+    end
+
+    for index = #self.PendingRecordedPlacements, 1, -1 do
+        if self.PendingRecordedPlacements[index] == pendingPlacement then
+            table.remove(self.PendingRecordedPlacements, index)
+            break
+        end
+    end
+
+    print("[LyraMacro] Recorded tower #" .. tostring(pendingPlacement.TowerIndex) .. " bound to its placement.")
+    return pendingPlacement.TowerIndex
+end
+
+function LyraMacro:_trackNextRecordedTower(troopType, position, recorderObservation)
     self.NextRecordedTowerIndex += 1
 
     local towerIndex = self.NextRecordedTowerIndex
-    local towersFolder = getTowersFolder()
-    local existingTowers = snapshotTowers(towersFolder)
+    local towersFolder = recorderObservation and recorderObservation.TowersFolder or getTowersFolder()
+    local existingTowers = recorderObservation and recorderObservation.ExistingTowers or snapshotTowers(towersFolder)
+    local pendingPlacement = {
+        TowerIndex = towerIndex,
+        TroopType = troopType,
+        Position = position,
+        TowersFolder = towersFolder,
+        ExistingTowers = existingTowers,
+        Resolved = false,
+    }
+    table.insert(self.PendingRecordedPlacements, pendingPlacement)
+
+    local immediateTower = findNewTowerCandidate(towersFolder, existingTowers, position)
+
+    if immediateTower then
+        self:_bindRecordedTower(pendingPlacement, immediateTower)
+        return towerIndex
+    end
 
     task.spawn(function()
         local tower = waitForNewTowerCandidate(towersFolder, existingTowers, position)
 
-        if not self.IsRecording then
+        if not self.IsRecording or pendingPlacement.Resolved then
             return
         end
 
@@ -3222,16 +3286,10 @@ function LyraMacro:_trackNextRecordedTower(troopType, position)
             return
         end
 
-        self.RecordedTowerIndexes[tower] = towerIndex
-        self.RecordedTowerUpgradeLevels[tower] = 0
-        self.KnownTowerUpgradeLevels[tower] = 0
-
-        if type(troopType) == "string" and troopType ~= "" then
-            self.KnownTowerTroops[tower] = troopType
-        end
-
-        print("[LyraMacro] Recorded tower #" .. tostring(towerIndex) .. ".")
+        self:_bindRecordedTower(pendingPlacement, tower)
     end)
+
+    return towerIndex
 end
 
 function LyraMacro:_prepareChainCOAObservation(args)
@@ -3317,7 +3375,7 @@ function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
 
     local response = remoteResults and remoteResults[1]
 
-    if response == false then
+    if remoteResponseWasRejected(response) then
         return
     end
 
@@ -3392,19 +3450,40 @@ function LyraMacro:_getRecordedTowerIndex(tower)
 
     local towerIndex = self.RecordedTowerIndexes[tower]
 
+    if not towerIndex and isDirectTowerChild(tower, getTowersFolder()) then
+        local closestPending
+        local closestDistance
+
+        for _, pendingPlacement in ipairs(self.PendingRecordedPlacements) do
+            if not pendingPlacement.Resolved and not pendingPlacement.ExistingTowers[tower] then
+                local distance = getTowerDistanceFrom(tower, pendingPlacement.Position)
+                local comparisonDistance = distance or (REPLAY_PLACEMENT_MATCH_RADIUS * 2)
+
+                if not closestDistance or comparisonDistance < closestDistance then
+                    closestPending = pendingPlacement
+                    closestDistance = comparisonDistance
+                end
+            end
+        end
+
+        if closestPending then
+            towerIndex = self:_bindRecordedTower(closestPending, tower)
+        end
+    end
+
     if not towerIndex then
-        warn("[LyraMacro] Ignored tower action because that tower was not placed after recording started.")
+        warn("[LyraMacro] Could not bind a tower action to any successful recorded placement.")
     end
 
     return towerIndex
 end
 
-function LyraMacro:_recordRemoteInvoke(args, remoteResults)
+function LyraMacro:_recordRemoteInvoke(args, remoteResults, recorderObservation)
     if not self.IsRecording then
         return
     end
 
-    if remoteResults and remoteResults[1] == false then
+    if remoteResults and remoteResponseWasRejected(remoteResults[1]) then
         print("[LyraMacro] Ignored a rejected remote action while recording.")
         return
     end
@@ -3498,7 +3577,7 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
             z = roundNumber(position.Z),
             rotation = placementInfo.Rotation,
         })
-        self:_trackNextRecordedTower(troopType, position)
+        self:_trackNextRecordedTower(troopType, position, recorderObservation)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
@@ -3545,6 +3624,7 @@ function LyraMacro:_installRecorder()
 
         local args = { ... }
         local chainObservation = self:_prepareChainCOAObservation(args)
+        local recorderObservation = self:_prepareRecorderObservation(args)
         local remoteResults = table.pack(oldNamecall(remote, ...))
         local isElevatorEnter = normalizeLookupKey(args[1]) == "elevators"
             and normalizeLookupKey(args[2]) == "enter"
@@ -3556,7 +3636,7 @@ function LyraMacro:_installRecorder()
 
         self:_completeChainCOAObservation(chainObservation, remoteResults)
         local recorded, recordError = pcall(function()
-            self:_recordRemoteInvoke(args, remoteResults)
+            self:_recordRemoteInvoke(args, remoteResults, recorderObservation)
         end)
 
         if not recorded then
@@ -3639,6 +3719,7 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedStrategy)
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordedTowerUpgradeLevels)
+    table.clear(self.PendingRecordedPlacements)
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
     self.SelectedMapFingerprint = ""
@@ -3673,6 +3754,7 @@ function LyraMacro:StopRecording()
     end
 
     table.clear(self.RecordingConnections)
+    table.clear(self.PendingRecordedPlacements)
 
     if self.SelectedMap == "" then
         self:DetectMap({ Silent = true })
@@ -3681,10 +3763,54 @@ function LyraMacro:StopRecording()
     self:DetectMapFingerprint({ Silent = true, Force = true })
 
     local recordedStrategy = self:GetRecordedStrategy()
+    local actionCounts = {
+        ability = 0,
+        mode = 0,
+        place = 0,
+        sell = 0,
+        skip = 0,
+        upgrade = 0,
+    }
+    local upgradesMissingLevel = 0
+
+    for _, step in ipairs(recordedStrategy) do
+        if actionCounts[step.action] ~= nil then
+            actionCounts[step.action] += 1
+        end
+
+        if step.action == "upgrade" and type(step.level) ~= "number" then
+            upgradesMissingLevel += 1
+        end
+    end
+
     local exportResult = self:SaveRecordedStrategy()
     local strategySource = exportResult.Source
 
     print("[LyraMacro] Strategy recording stopped. Recorded " .. #recordedStrategy .. " steps.")
+    print(
+        "[LyraMacro] Recorder integrity: "
+            .. tostring(actionCounts.place)
+            .. " placements, "
+            .. tostring(actionCounts.upgrade)
+            .. " upgrades, "
+            .. tostring(actionCounts.sell)
+            .. " sells, "
+            .. tostring(actionCounts.ability)
+            .. " abilities, "
+            .. tostring(actionCounts.skip)
+            .. " skips, "
+            .. tostring(actionCounts.mode)
+            .. " mode votes."
+    )
+
+    if upgradesMissingLevel > 0 then
+        warn(
+            "[LyraMacro] Recorder integrity warning: "
+                .. tostring(upgradesMissingLevel)
+                .. " upgrade actions are missing levels."
+        )
+    end
+
     print(strategySource)
 
     if exportResult.Saved then
@@ -4189,7 +4315,9 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
             error("[LyraMacro] Place " .. tostring(troopType) .. " failed: " .. tostring(responseOrError), 2)
         end
 
-        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+        local confirmationTimeout = remoteResponseWasRejected(responseOrError)
+            and REPLAY_CONFIRM_POLL_INTERVAL
+            or REPLAY_CONFIRM_TIMEOUT
         local placedTower = waitForNewTowerCandidate(
             towersFolder,
             existingTowers,
@@ -4314,7 +4442,25 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             return currentLevel and currentLevel > levelBeforeRequest
         end
 
-        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+        local cashAfterRequest = cash.Value
+        local requestWasAccepted = remoteResponseWasAccepted(responseOrError)
+            or (tonumber(cashAfterRequest) and tonumber(cashBeforeRequest) and cashAfterRequest < cashBeforeRequest)
+
+        if requestWasAccepted and replicatedLevelBeforeRequest == nil then
+            local confirmedLevel = rememberConfirmedLevel(targetLevel or (levelBeforeRequest + 1))
+            print(
+                "[LyraMacro] Upgraded tower #"
+                    .. tostring(towerIndex)
+                    .. " immediately (server-confirmed; tracking level "
+                    .. tostring(confirmedLevel or "unknown")
+                    .. ")."
+            )
+            return
+        end
+
+        local confirmationTimeout = remoteResponseWasRejected(responseOrError)
+            and REPLAY_CONFIRM_POLL_INTERVAL
+            or REPLAY_CONFIRM_TIMEOUT
         local upgraded = waitForCondition(confirmationTimeout, reachedRecordedLevel)
 
         if upgraded then
@@ -4323,8 +4469,8 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
             return
         end
 
-        local cashAfterRequest = cash.Value
-        local requestWasAccepted = remoteResponseWasAccepted(responseOrError)
+        cashAfterRequest = cash.Value
+        requestWasAccepted = requestWasAccepted
             or (tonumber(cashAfterRequest) and tonumber(cashBeforeRequest) and cashAfterRequest < cashBeforeRequest)
 
         if requestWasAccepted then
@@ -4382,7 +4528,9 @@ function LyraMacro:Sell(towerIndex)
             error("[LyraMacro] Sell tower #" .. tostring(towerIndex) .. " failed: " .. tostring(responseOrError), 2)
         end
 
-        local confirmationTimeout = responseOrError == false and REPLAY_CONFIRM_POLL_INTERVAL or REPLAY_CONFIRM_TIMEOUT
+        local confirmationTimeout = remoteResponseWasRejected(responseOrError)
+            and REPLAY_CONFIRM_POLL_INTERVAL
+            or REPLAY_CONFIRM_TIMEOUT
 
         if waitForCondition(confirmationTimeout, function()
             return targetTower.Parent == nil
