@@ -8,6 +8,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 
 local DEFAULT_MACRO_LIBRARY_URL = "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua"
@@ -113,6 +114,9 @@ local PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN = 3
 local PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN = 30
 local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
 local PRIVATE_SERVER_START_TIMEOUT = 35
+local LOBBY_RETURN_MAX_ATTEMPTS = 3
+local LOBBY_RETURN_RETRY_DELAY = 2
+local LOBBY_RETURN_STATE_TIMEOUT = 10
 local MODE_VOTE_RETRY_INTERVAL = 0.25
 local MODE_VOTE_RETRY_TIMEOUT = 10
 local RECORD_PLACEMENT_CONFIRM_TIMEOUT = 1
@@ -199,6 +203,8 @@ local LyraMacro = {
     _strategyResultsWatchToken = 0,
     _strategyResultsConnection = nil,
     _privateServerReturnStarted = false,
+    _privateServerReturnToken = 0,
+    _privateServerReturnConnections = {},
     _chatFloodcheckCount = 0,
     _chatFloodcheckedUntil = 0,
     _chatMessageResults = {},
@@ -2139,99 +2145,193 @@ function LyraMacro:GetPrivateServerReturnUrl()
     return PRIVATE_SERVER_RETURN_URL_PREFIX .. linkCode
 end
 
-function LyraMacro:_launchPrivateServerUrl(url)
-    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
-    local failures = {}
-
-    if type(self.PrivateServerReturnProvider) == "function" then
-        local launched, result = pcall(self.PrivateServerReturnProvider, url, linkCode, LOBBY_PLACE_ID)
-
-        if launched and result ~= false then
-            return true, "configured return provider"
-        end
-
-        table.insert(failures, "configured provider: " .. tostring(result))
-    end
-
-    local environment = type(getgenv) == "function" and getgenv() or _G
-    local launchers = {}
-    local seenLaunchers = {}
-
-    local function addLauncher(label, launcher)
-        if type(launcher) == "function" and not seenLaunchers[launcher] then
-            seenLaunchers[launcher] = true
-            table.insert(launchers, {
-                Label = label,
-                Launch = launcher,
-            })
-        end
-    end
-
-    if type(environment) == "table" then
-        for _, name in ipairs({ "openurl", "open_url", "openbrowser", "open_browser" }) do
-            addLauncher(name, environment[name])
-        end
-
-        if type(environment.syn) == "table" then
-            addLauncher("syn.open_url", environment.syn.open_url)
-        end
-    end
-
-    for _, launcher in ipairs(launchers) do
-        local launched, result = pcall(launcher.Launch, url)
-
-        if launched and result ~= false then
-            return true, launcher.Label
-        end
-
-        table.insert(failures, launcher.Label .. ": " .. tostring(result))
-    end
-
-    for _, serviceName in ipairs({ "BrowserService", "GuiService" }) do
-        local launched, result = pcall(function()
-            local service = game:GetService(serviceName)
-            return service:OpenBrowserWindow(url)
+function LyraMacro:_clearLobbyReturnConnections()
+    for _, connection in ipairs(self._privateServerReturnConnections) do
+        pcall(function()
+            connection:Disconnect()
         end)
-
-        if launched and result ~= false then
-            return true, serviceName .. ".OpenBrowserWindow"
-        end
-
-        table.insert(failures, serviceName .. ": " .. tostring(result))
     end
 
-    return false, table.concat(failures, "; ")
+    table.clear(self._privateServerReturnConnections)
+end
+
+function LyraMacro:_cancelLobbyReturn()
+    self._privateServerReturnToken += 1
+    self._privateServerReturnStarted = false
+    self:_clearLobbyReturnConnections()
 end
 
 function LyraMacro:ReturnToPrivateServer()
-    local url = self:GetPrivateServerReturnUrl()
-
-    if not url then
-        return false, "No valid privateServerCode is configured."
-    end
-
     if self._privateServerReturnStarted then
-        return true, "Private-server return is already in progress."
+        return true, "Lobby return is already in progress."
     end
 
+    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+    local url = linkCode and self:GetPrivateServerReturnUrl() or nil
+    local destinationName = linkCode and "configured private lobby" or "public lobby"
+    local usesProvider = linkCode and type(self.PrivateServerReturnProvider) == "function"
+
+    self:_clearLobbyReturnConnections()
+    self._privateServerReturnToken += 1
+    local returnToken = self._privateServerReturnToken
     self._privateServerReturnStarted = true
     self.PrivateServerReturnUrl = url
 
-    local launched, launcherOrError = self:_launchPrivateServerUrl(url)
+    local attempts = 0
+    local completed = false
+    local retryScheduled = false
+    local attemptTeleport
+    local scheduleRetry
 
-    if not launched then
-        self._privateServerReturnStarted = false
-        local message = "Could not open the private-server return URL: " .. tostring(launcherOrError)
-        warn("[LyraMacro] " .. message)
-        return false, message
+    local function isCurrentReturn()
+        return not completed and self._privateServerReturnToken == returnToken
     end
 
-    print(
-        "[LyraMacro] Match finished. Returning to the configured private server via "
-            .. tostring(launcherOrError)
-            .. "."
+    local function finishSuccess(source)
+        if not isCurrentReturn() then
+            return
+        end
+
+        completed = true
+        self:_clearLobbyReturnConnections()
+        print(
+            "[LyraMacro] Lobby return started for "
+                .. destinationName
+                .. " via "
+                .. tostring(source)
+                .. "."
+        )
+    end
+
+    local function finishFailure(reason)
+        if not isCurrentReturn() then
+            return
+        end
+
+        completed = true
+        self._privateServerReturnStarted = false
+        self:_clearLobbyReturnConnections()
+        warn(
+            "[LyraMacro] Lobby return to "
+                .. destinationName
+                .. " failed after "
+                .. tostring(attempts)
+                .. " attempts: "
+                .. tostring(reason)
+        )
+    end
+
+    scheduleRetry = function(reason, failedAttempt)
+        if not isCurrentReturn()
+            or retryScheduled
+            or (failedAttempt and failedAttempt ~= attempts) then
+            return
+        end
+
+        if attempts >= LOBBY_RETURN_MAX_ATTEMPTS then
+            finishFailure(reason)
+            return
+        end
+
+        retryScheduled = true
+        warn(
+            "[LyraMacro] Lobby return attempt "
+                .. tostring(attempts)
+                .. " failed: "
+                .. tostring(reason)
+                .. ". Retrying in "
+                .. tostring(LOBBY_RETURN_RETRY_DELAY)
+                .. " seconds."
+        )
+
+        task.delay(LOBBY_RETURN_RETRY_DELAY, function()
+            if not isCurrentReturn() then
+                return
+            end
+
+            retryScheduled = false
+            attemptTeleport()
+        end)
+    end
+
+    attemptTeleport = function()
+        if not isCurrentReturn() then
+            return
+        end
+
+        attempts += 1
+        local attemptNumber = attempts
+        print(
+            "[LyraMacro] Returning to "
+                .. destinationName
+                .. " (attempt "
+                .. tostring(attemptNumber)
+                .. "/"
+                .. tostring(LOBBY_RETURN_MAX_ATTEMPTS)
+                .. ")."
+        )
+
+        local invoked, result = pcall(function()
+            if usesProvider then
+                return self.PrivateServerReturnProvider(url, linkCode, LOBBY_PLACE_ID)
+            end
+
+            if linkCode then
+                return TeleportService:TeleportToPrivateServer(LOBBY_PLACE_ID, linkCode, { LocalPlayer })
+            end
+
+            return TeleportService:Teleport(LOBBY_PLACE_ID, LocalPlayer)
+        end)
+
+        if not invoked or (usesProvider and result == false) then
+            scheduleRetry(invoked and "the configured return provider rejected the request" or result, attemptNumber)
+            return
+        end
+
+        if usesProvider then
+            finishSuccess("configured return provider")
+            return
+        end
+
+        task.delay(LOBBY_RETURN_STATE_TIMEOUT, function()
+            if isCurrentReturn() and attempts == attemptNumber and not retryScheduled then
+                scheduleRetry("no teleport state was observed within " .. tostring(LOBBY_RETURN_STATE_TIMEOUT) .. " seconds", attemptNumber)
+            end
+        end)
+    end
+
+    table.insert(self._privateServerReturnConnections, LocalPlayer.OnTeleport:Connect(function(state, placeId)
+        if not isCurrentReturn() or placeId ~= LOBBY_PLACE_ID then
+            return
+        end
+
+        if state == Enum.TeleportState.Started
+            or state == Enum.TeleportState.WaitingForServer
+            or state == Enum.TeleportState.InProgress then
+            finishSuccess("TeleportService (" .. state.Name .. ")")
+        elseif state == Enum.TeleportState.Failed then
+            scheduleRetry("LocalPlayer.OnTeleport reported Failed", attempts)
+        end
+    end))
+
+    table.insert(self._privateServerReturnConnections, TeleportService.TeleportInitFailed:Connect(function(
+        player,
+        teleportResult,
+        errorMessage,
+        placeId
     )
-    return true, url
+        if not isCurrentReturn() or player ~= LocalPlayer or placeId ~= LOBBY_PLACE_ID then
+            return
+        end
+
+        scheduleRetry(
+            tostring(teleportResult and teleportResult.Name or teleportResult) .. ": " .. tostring(errorMessage),
+            attempts
+        )
+    end))
+
+    attemptTeleport()
+    return true, url or tostring(LOBBY_PLACE_ID)
 end
 
 local function getTextChatMessageStatusName(message)
@@ -3927,11 +4027,7 @@ function LyraMacro:_watchForAutoStrategyResults()
         self._strategyResultsConnection = nil
     end
 
-    self._privateServerReturnStarted = false
-
-    if not normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode) then
-        return false, "No privateServerCode is configured; automatic return is disabled."
-    end
+    self:_cancelLobbyReturn()
 
     task.spawn(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 30)
@@ -3943,7 +4039,7 @@ function LyraMacro:_watchForAutoStrategyResults()
         end
 
         if not results then
-            warn("[LyraMacro] Automatic private-server return could not find PlayerGui.GameGui.Results.")
+            warn("[LyraMacro] Automatic lobby return could not find PlayerGui.GameGui.Results.")
             return
         end
 
@@ -3964,12 +4060,12 @@ function LyraMacro:_watchForAutoStrategyResults()
                 self:SetChainCOA(false)
             end
 
-            print("[LyraMacro] Match results are visible. Starting automatic private-server return.")
+            print("[LyraMacro] Match results are visible. Starting automatic lobby return.")
             task.defer(function()
                 local returned, returnMessage = self:ReturnToPrivateServer()
 
                 if not returned then
-                    warn("[LyraMacro] Automatic private-server return failed: " .. tostring(returnMessage))
+                    warn("[LyraMacro] Automatic lobby return failed: " .. tostring(returnMessage))
                 end
             end)
         end
@@ -3986,7 +4082,11 @@ function LyraMacro:_watchForAutoStrategyResults()
         end)
     end)
 
-    print("[LyraMacro] Automatic private-server return armed for match results.")
+    if normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode) then
+        print("[LyraMacro] Automatic private-lobby return armed for match results.")
+    else
+        print("[LyraMacro] Automatic public-lobby return armed for match results.")
+    end
     return true
 end
 
