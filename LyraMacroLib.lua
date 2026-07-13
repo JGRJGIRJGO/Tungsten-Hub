@@ -16,6 +16,7 @@ local DEFAULT_STRATEGY_FOLDER = "LyraStrategies"
 local MAP_SCAN_LIMIT = 2500
 local LOBBY_PLACE_ID = 113331026373939
 local MATCH_PLACE_ID = 133260551256133
+local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/113331026373939/TDS-Reanimated?privateServerLinkCode="
 
 local MAP_NAME_KEYS = {
     currentmap = true,
@@ -166,6 +167,8 @@ local LyraMacro = {
     SelectedMap = "",
     SelectedPrivateServerLinkCode = nil,
     PrivateServerStatusProvider = nil,
+    PrivateServerReturnProvider = nil,
+    PrivateServerReturnUrl = nil,
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
@@ -193,6 +196,9 @@ local LyraMacro = {
     _chainCOAToken = 0,
     _chainCOAConnections = {},
     _resultsWatchToken = 0,
+    _strategyResultsWatchToken = 0,
+    _strategyResultsConnection = nil,
+    _privateServerReturnStarted = false,
     _chatFloodcheckCount = 0,
     _chatFloodcheckedUntil = 0,
     _chatMessageResults = {},
@@ -1969,7 +1975,18 @@ local function normalizePrivateServerLinkCode(value)
     end
 
     local linkCode = trimString(value)
-    return linkCode ~= "" and linkCode or nil
+
+    local codeFromUrl = linkCode:match("[?&]privateServerLinkCode=([^&#]+)")
+
+    if codeFromUrl then
+        linkCode = codeFromUrl
+    end
+
+    if linkCode == "" or #linkCode > 256 or not linkCode:match("^[%w_%-]+$") then
+        return nil
+    end
+
+    return linkCode
 end
 
 function LyraMacro:SetPrivateServerLinkCode(linkCode)
@@ -1991,6 +2008,15 @@ function LyraMacro:SetPrivateServerStatusProvider(provider)
     )
 
     self.PrivateServerStatusProvider = provider
+end
+
+function LyraMacro:SetPrivateServerReturnProvider(provider)
+    assert(
+        provider == nil or type(provider) == "function",
+        "[LyraMacro] Private server return provider must be a function or nil."
+    )
+
+    self.PrivateServerReturnProvider = provider
 end
 
 local function isReplicatedPrivateServerMarker(value)
@@ -2054,12 +2080,18 @@ function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOption
     if type(privateServerLinkCodeOrOptions) == "table" then
         options = privateServerLinkCodeOrOptions
         privateServerLinkCode = options.PrivateServerLinkCode
+            or options.PrivateServerCode
+            or options.privateServerLinkCode
+            or options.privateServerCode
     else
         privateServerLinkCode = privateServerLinkCodeOrOptions
         options = type(maybeOptions) == "table" and maybeOptions or {}
 
         if privateServerLinkCode == nil then
             privateServerLinkCode = options.PrivateServerLinkCode
+                or options.PrivateServerCode
+                or options.privateServerLinkCode
+                or options.privateServerCode
         end
     end
 
@@ -2095,6 +2127,111 @@ local function getTeleportQueueFunction()
     end
 
     return nil
+end
+
+function LyraMacro:GetPrivateServerReturnUrl()
+    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+
+    if not linkCode then
+        return nil
+    end
+
+    return PRIVATE_SERVER_RETURN_URL_PREFIX .. linkCode
+end
+
+function LyraMacro:_launchPrivateServerUrl(url)
+    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+    local failures = {}
+
+    if type(self.PrivateServerReturnProvider) == "function" then
+        local launched, result = pcall(self.PrivateServerReturnProvider, url, linkCode, LOBBY_PLACE_ID)
+
+        if launched and result ~= false then
+            return true, "configured return provider"
+        end
+
+        table.insert(failures, "configured provider: " .. tostring(result))
+    end
+
+    local environment = type(getgenv) == "function" and getgenv() or _G
+    local launchers = {}
+    local seenLaunchers = {}
+
+    local function addLauncher(label, launcher)
+        if type(launcher) == "function" and not seenLaunchers[launcher] then
+            seenLaunchers[launcher] = true
+            table.insert(launchers, {
+                Label = label,
+                Launch = launcher,
+            })
+        end
+    end
+
+    if type(environment) == "table" then
+        for _, name in ipairs({ "openurl", "open_url", "openbrowser", "open_browser" }) do
+            addLauncher(name, environment[name])
+        end
+
+        if type(environment.syn) == "table" then
+            addLauncher("syn.open_url", environment.syn.open_url)
+        end
+    end
+
+    for _, launcher in ipairs(launchers) do
+        local launched, result = pcall(launcher.Launch, url)
+
+        if launched and result ~= false then
+            return true, launcher.Label
+        end
+
+        table.insert(failures, launcher.Label .. ": " .. tostring(result))
+    end
+
+    for _, serviceName in ipairs({ "BrowserService", "GuiService" }) do
+        local launched, result = pcall(function()
+            local service = game:GetService(serviceName)
+            return service:OpenBrowserWindow(url)
+        end)
+
+        if launched and result ~= false then
+            return true, serviceName .. ".OpenBrowserWindow"
+        end
+
+        table.insert(failures, serviceName .. ": " .. tostring(result))
+    end
+
+    return false, table.concat(failures, "; ")
+end
+
+function LyraMacro:ReturnToPrivateServer()
+    local url = self:GetPrivateServerReturnUrl()
+
+    if not url then
+        return false, "No valid privateServerCode is configured."
+    end
+
+    if self._privateServerReturnStarted then
+        return true, "Private-server return is already in progress."
+    end
+
+    self._privateServerReturnStarted = true
+    self.PrivateServerReturnUrl = url
+
+    local launched, launcherOrError = self:_launchPrivateServerUrl(url)
+
+    if not launched then
+        self._privateServerReturnStarted = false
+        local message = "Could not open the private-server return URL: " .. tostring(launcherOrError)
+        warn("[LyraMacro] " .. message)
+        return false, message
+    end
+
+    print(
+        "[LyraMacro] Match finished. Returning to the configured private server via "
+            .. tostring(launcherOrError)
+            .. "."
+    )
+    return true, url
 end
 
 local function getTextChatMessageStatusName(message)
@@ -2854,6 +2991,29 @@ function LyraMacro:_getStrategyReplayTeleportSource(replay, mapTitle)
     table.insert(lines, "end")
     table.insert(lines, "")
 
+    local replayMapName = normalizeMapCandidate(mapTitle or replay.TargetMap)
+    local privateServerLinkCode = normalizePrivateServerLinkCode(replay.PrivateServerLinkCode)
+
+    if replayMapName then
+        if privateServerLinkCode then
+            table.insert(
+                lines,
+                "LyraMacro:GameInfo("
+                    .. formatLuaValue(replayMapName)
+                    .. ", "
+                    .. formatLuaValue(privateServerLinkCode)
+                    .. ", { Source = \"elevator\" })"
+            )
+        else
+            table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(replayMapName) .. ", { Source = \"elevator\" })")
+        end
+
+        table.insert(lines, "")
+    elseif privateServerLinkCode then
+        table.insert(lines, "LyraMacro:SetPrivateServerLinkCode(" .. formatLuaValue(privateServerLinkCode) .. ")")
+        table.insert(lines, "")
+    end
+
     appendRecordedStrategyLines(lines, replay.Strategy)
     table.insert(lines, "")
     table.insert(lines, "local completed, message = LyraMacro:RunWhenMapReady(Strategy, " .. formatLuaValue(replay.ExpectedFingerprint) .. ", { Timeout = " .. tostring(timeout) .. " })")
@@ -2949,12 +3109,20 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
     end
 
     local targetMap = normalizeMapCandidate(options.MapName or self.SelectedMap)
+    local privateServerLinkCode = normalizePrivateServerLinkCode(
+        options.PrivateServerLinkCode
+            or options.PrivateServerCode
+            or options.privateServerLinkCode
+            or options.privateServerCode
+            or self.SelectedPrivateServerLinkCode
+    )
     self.PendingElevatorReplay = {
         Strategy = cloneStrategy(strategy),
         ExpectedFingerprint = type(expectedFingerprint) == "string" and expectedFingerprint or nil,
         LibraryUrl = options.LibraryUrl,
         Timeout = options.Timeout or self.AutoRecordTimeout,
         TargetMap = targetMap,
+        PrivateServerLinkCode = privateServerLinkCode,
     }
     self.AutoRecordTeleportArmed = false
 
@@ -3746,6 +3914,80 @@ function LyraMacro:_watchForMatchResults(watchToken)
 
         table.insert(self.RecordingConnections, connection)
     end)
+end
+
+function LyraMacro:_watchForAutoStrategyResults()
+    self._strategyResultsWatchToken += 1
+    local watchToken = self._strategyResultsWatchToken
+
+    if self._strategyResultsConnection then
+        pcall(function()
+            self._strategyResultsConnection:Disconnect()
+        end)
+        self._strategyResultsConnection = nil
+    end
+
+    self._privateServerReturnStarted = false
+
+    if not normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode) then
+        return false, "No privateServerCode is configured; automatic return is disabled."
+    end
+
+    task.spawn(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 30)
+        local gameGui = playerGui and (playerGui:FindFirstChild("GameGui") or playerGui:WaitForChild("GameGui", 60))
+        local results = gameGui and (gameGui:FindFirstChild("Results") or gameGui:WaitForChild("Results", 60))
+
+        if self._strategyResultsWatchToken ~= watchToken then
+            return
+        end
+
+        if not results then
+            warn("[LyraMacro] Automatic private-server return could not find PlayerGui.GameGui.Results.")
+            return
+        end
+
+        local finished = false
+        local function returnAfterMatch()
+            if finished or self._strategyResultsWatchToken ~= watchToken then
+                return
+            end
+
+            finished = true
+
+            if self._strategyResultsConnection then
+                self._strategyResultsConnection:Disconnect()
+                self._strategyResultsConnection = nil
+            end
+
+            if self.ChainCOAEnabled then
+                self:SetChainCOA(false)
+            end
+
+            print("[LyraMacro] Match results are visible. Starting automatic private-server return.")
+            task.defer(function()
+                local returned, returnMessage = self:ReturnToPrivateServer()
+
+                if not returned then
+                    warn("[LyraMacro] Automatic private-server return failed: " .. tostring(returnMessage))
+                end
+            end)
+        end
+
+        if results.Visible then
+            returnAfterMatch()
+            return
+        end
+
+        self._strategyResultsConnection = results:GetPropertyChangedSignal("Visible"):Connect(function()
+            if results.Visible then
+                returnAfterMatch()
+            end
+        end)
+    end)
+
+    print("[LyraMacro] Automatic private-server return armed for match results.")
+    return true
 end
 
 function LyraMacro:StartRecording()
@@ -4886,6 +5128,7 @@ function LyraMacro:Run(strategy)
 
     self:RemoveIndex()
     self:Ready()
+    self:_watchForAutoStrategyResults()
     self:CreateStrategyLogger()
     self:LogStrategyAction("STRATEGY STARTED - " .. tostring(actionCount) .. " ACTIONS")
 
