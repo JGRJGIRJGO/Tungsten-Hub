@@ -114,6 +114,7 @@ local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
 local PRIVATE_SERVER_START_TIMEOUT = 35
 local MODE_VOTE_RETRY_INTERVAL = 0.25
 local MODE_VOTE_RETRY_TIMEOUT = 10
+local RECORD_PLACEMENT_CONFIRM_TIMEOUT = 1
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
@@ -170,6 +171,7 @@ local LyraMacro = {
     RecordedTowerIndexes = {},
     RecordedTowerUpgradeLevels = {},
     PendingRecordedPlacements = {},
+    RecordingSeenTowers = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
     LastStrategyExport = nil,
@@ -187,6 +189,7 @@ local LyraMacro = {
     ChainCOAEnabled = false,
     ChainCOAInterval = CHAIN_COA_INTERVAL,
     ChainCOANextIndex = 0,
+    ChainCOASeenTowers = {},
     _chainCOAToken = 0,
     _chainCOAConnections = {},
     _resultsWatchToken = 0,
@@ -200,6 +203,8 @@ local LyraMacro = {
     StrategyLogger = nil,
     _recordHookInstalled = false,
     _originalNamecall = nil,
+    _remoteObservationQueue = {},
+    _remoteObservationWorkerRunning = false,
 }
 
 local function getValueKind(value)
@@ -1312,6 +1317,16 @@ local function snapshotTowers(towersFolder)
     return snapshot
 end
 
+local function copyTowerSnapshot(snapshot)
+    local copy = {}
+
+    for tower in pairs(snapshot or {}) do
+        copy[tower] = true
+    end
+
+    return copy
+end
+
 local function isDirectTowerChild(tower, towersFolder)
     local gotParent, parent = pcall(function()
         return tower.Parent
@@ -1629,6 +1644,7 @@ function LyraMacro:SetChainCOA(enabled)
     self:_clearChainCOAConnections()
 
     if not enabled then
+        table.clear(self.ChainCOASeenTowers)
         print("[LyraMacro] Chain COA disabled.")
         return true, "Chain COA disabled."
     end
@@ -1643,6 +1659,7 @@ function LyraMacro:SetChainCOA(enabled)
     local chainToken = self._chainCOAToken
     local rosterChanged = true
     local towersFolder = getTowersFolder()
+    self.ChainCOASeenTowers = snapshotTowers(towersFolder)
 
     local function markRosterChanged(tower)
         self.CallOfArmsTowerCache[tower] = nil
@@ -3205,21 +3222,6 @@ function LyraMacro:_appendRecordedStep(step)
     print("[LyraMacro] Recorded step #" .. #self.RecordedStrategy .. ": " .. step.action)
 end
 
-function LyraMacro:_prepareRecorderObservation(args)
-    if not self.IsRecording
-        or normalizeLookupKey(args[1]) ~= "troops"
-        or normalizeLookupKey(args[2]) ~= "place" then
-        return nil
-    end
-
-    local towersFolder = getTowersFolder()
-
-    return {
-        TowersFolder = towersFolder,
-        ExistingTowers = snapshotTowers(towersFolder),
-    }
-end
-
 function LyraMacro:_bindRecordedTower(pendingPlacement, tower)
     if not pendingPlacement or pendingPlacement.Resolved or not tower then
         return nil
@@ -3251,23 +3253,22 @@ function LyraMacro:_bindRecordedTower(pendingPlacement, tower)
     return pendingPlacement.TowerIndex
 end
 
-function LyraMacro:_trackNextRecordedTower(troopType, position, recorderObservation)
+function LyraMacro:_trackNextRecordedTower(troopType, position, existingTowers, matchedTower)
     self.NextRecordedTowerIndex += 1
 
     local towerIndex = self.NextRecordedTowerIndex
-    local towersFolder = recorderObservation and recorderObservation.TowersFolder or getTowersFolder()
-    local existingTowers = recorderObservation and recorderObservation.ExistingTowers or snapshotTowers(towersFolder)
+    local towersFolder = getTowersFolder()
     local pendingPlacement = {
         TowerIndex = towerIndex,
         TroopType = troopType,
         Position = position,
         TowersFolder = towersFolder,
-        ExistingTowers = existingTowers,
+        ExistingTowers = existingTowers or {},
         Resolved = false,
     }
     table.insert(self.PendingRecordedPlacements, pendingPlacement)
 
-    local immediateTower = findNewTowerCandidate(towersFolder, existingTowers, position)
+    local immediateTower = matchedTower or findNewTowerCandidate(towersFolder, existingTowers, position)
 
     if immediateTower then
         self:_bindRecordedTower(pendingPlacement, immediateTower)
@@ -3324,7 +3325,7 @@ function LyraMacro:_prepareChainCOAObservation(args)
             TroopType = tostring(troopType),
             Position = placementInfo.Position or args[6],
             TowersFolder = towersFolder,
-            ExistingTowers = snapshotTowers(towersFolder),
+            ExistingTowers = copyTowerSnapshot(self.ChainCOASeenTowers),
         }
     end
 
@@ -3342,16 +3343,10 @@ function LyraMacro:_prepareChainCOAObservation(args)
             return nil
         end
 
-        local cashBefore
-        pcall(function()
-            cashBefore = getCashValue().Value
-        end)
-
         return {
             Kind = "upgrade",
             Token = self._chainCOAToken,
             Tower = tower,
-            CashBefore = cashBefore,
         }
     end
 
@@ -3380,30 +3375,29 @@ function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
     end
 
     if observation.Kind == "place" then
-        task.spawn(function()
-            local tower = waitForNewTowerCandidate(
-                observation.TowersFolder,
-                observation.ExistingTowers,
-                observation.Position,
-                nil,
-                REPLAY_CONFIRM_TIMEOUT
-            )
+        local tower = waitForNewTowerCandidate(
+            observation.TowersFolder,
+            observation.ExistingTowers,
+            observation.Position,
+            nil,
+            REPLAY_CONFIRM_TIMEOUT
+        )
 
-            if not tower or observation.Token ~= self._chainCOAToken then
-                return
-            end
+        if not tower or observation.Token ~= self._chainCOAToken then
+            return
+        end
 
-            self.KnownTowerTroops[tower] = observation.TroopType
-            self.KnownTowerUpgradeLevels[tower] = getTowerUpgradeLevel(tower) or 0
-            self.CallOfArmsTowerCache[tower] = nil
-            print(
-                "[LyraMacro] Chain COA linked "
-                    .. tostring(getInstanceName(tower) or "tower")
-                    .. " skin to "
-                    .. tostring(observation.TroopType)
-                    .. "."
-            )
-        end)
+        self.ChainCOASeenTowers[tower] = true
+        self.KnownTowerTroops[tower] = observation.TroopType
+        self.KnownTowerUpgradeLevels[tower] = getTowerUpgradeLevel(tower) or 0
+        self.CallOfArmsTowerCache[tower] = nil
+        print(
+            "[LyraMacro] Chain COA linked "
+                .. tostring(getInstanceName(tower) or "tower")
+                .. " skin to "
+                .. tostring(observation.TroopType)
+                .. "."
+        )
         return
     end
 
@@ -3424,13 +3418,7 @@ function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
 
     local replicatedLevel = getTowerUpgradeLevel(tower)
     local previousLevel = tonumber(self.KnownTowerUpgradeLevels[tower]) or 0
-    local cashAfter
-    pcall(function()
-        cashAfter = getCashValue().Value
-    end)
-
     local accepted = remoteResponseWasAccepted(response)
-        or (tonumber(cashAfter) and tonumber(observation.CashBefore) and cashAfter < observation.CashBefore)
         or (replicatedLevel and replicatedLevel > previousLevel)
 
     if accepted then
@@ -3478,7 +3466,7 @@ function LyraMacro:_getRecordedTowerIndex(tower)
     return towerIndex
 end
 
-function LyraMacro:_recordRemoteInvoke(args, remoteResults, recorderObservation)
+function LyraMacro:_recordRemoteInvoke(args, remoteResults)
     if not self.IsRecording then
         return
     end
@@ -3568,6 +3556,23 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, recorderObservation)
             skin = "Default"
         end
 
+        local towersFolder = getTowersFolder()
+        local existingTowers = copyTowerSnapshot(self.RecordingSeenTowers)
+        local placedTower = waitForNewTowerCandidate(
+            towersFolder,
+            existingTowers,
+            position,
+            nil,
+            RECORD_PLACEMENT_CONFIRM_TIMEOUT
+        )
+
+        if not placedTower then
+            warn("[LyraMacro] Ignored a place remote because the server did not create a new tower.")
+            return
+        end
+
+        self.RecordingSeenTowers[placedTower] = true
+
         self:_appendRecordedStep({
             action = "place",
             troop = troopType,
@@ -3577,7 +3582,7 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, recorderObservation)
             z = roundNumber(position.Z),
             rotation = placementInfo.Rotation,
         })
-        self:_trackNextRecordedTower(troopType, position, recorderObservation)
+        self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
@@ -3605,6 +3610,60 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, recorderObservation)
     end
 end
 
+function LyraMacro:_processRemoteObservation(args, remoteResults)
+    local categoryKey = normalizeLookupKey(args[1])
+    local actionKey = normalizeLookupKey(args[2])
+    local chainObservation = self:_prepareChainCOAObservation(args)
+
+    -- Queue teleport continuation only after the elevator server confirms entry.
+    if categoryKey == "elevators" and actionKey == "enter" and remoteResults[1] == true then
+        self:_observeElevatorEnter(args)
+    end
+
+    self:_completeChainCOAObservation(chainObservation, remoteResults)
+
+    if self.ChainCOAEnabled and categoryKey == "troops" and actionKey == "place" then
+        for tower in pairs(snapshotTowers(getTowersFolder())) do
+            self.ChainCOASeenTowers[tower] = true
+        end
+    end
+
+    local recorded, recordError = pcall(function()
+        self:_recordRemoteInvoke(args, remoteResults)
+    end)
+
+    if not recorded then
+        warn("[LyraMacro] Failed to record remote call: " .. tostring(recordError))
+    end
+end
+
+function LyraMacro:_queueRemoteObservation(args, remoteResults)
+    table.insert(self._remoteObservationQueue, {
+        Args = args,
+        Results = remoteResults,
+    })
+
+    if self._remoteObservationWorkerRunning then
+        return
+    end
+
+    self._remoteObservationWorkerRunning = true
+    task.defer(function()
+        while #self._remoteObservationQueue > 0 do
+            local observation = table.remove(self._remoteObservationQueue, 1)
+            local processed, processError = pcall(function()
+                self:_processRemoteObservation(observation.Args, observation.Results)
+            end)
+
+            if not processed then
+                warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
+            end
+        end
+
+        self._remoteObservationWorkerRunning = false
+    end)
+end
+
 function LyraMacro:_installRecorder()
     if self._recordHookInstalled then
         return true
@@ -3622,26 +3681,11 @@ function LyraMacro:_installRecorder()
             return oldNamecall(remote, ...)
         end
 
-        local args = { ... }
-        local chainObservation = self:_prepareChainCOAObservation(args)
-        local recorderObservation = self:_prepareRecorderObservation(args)
+        -- Do not run Instance namecalls before forwarding this call. Some executors
+        -- leak nested namecall state and can otherwise dispatch the wrong method.
+        local args = table.pack(...)
         local remoteResults = table.pack(oldNamecall(remote, ...))
-        local isElevatorEnter = normalizeLookupKey(args[1]) == "elevators"
-            and normalizeLookupKey(args[2]) == "enter"
-
-        -- Queue teleport continuation only after the elevator server confirms entry.
-        if isElevatorEnter and remoteResults[1] == true then
-            self:_observeElevatorEnter(args)
-        end
-
-        self:_completeChainCOAObservation(chainObservation, remoteResults)
-        local recorded, recordError = pcall(function()
-            self:_recordRemoteInvoke(args, remoteResults, recorderObservation)
-        end)
-
-        if not recorded then
-            warn("[LyraMacro] Failed to record remote call: " .. tostring(recordError))
-        end
+        self:_queueRemoteObservation(args, remoteResults)
 
         return table.unpack(remoteResults, 1, remoteResults.n)
     end
@@ -3720,6 +3764,7 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordedTowerUpgradeLevels)
     table.clear(self.PendingRecordedPlacements)
+    self.RecordingSeenTowers = snapshotTowers(getTowersFolder())
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
     self.SelectedMapFingerprint = ""
@@ -3755,6 +3800,7 @@ function LyraMacro:StopRecording()
 
     table.clear(self.RecordingConnections)
     table.clear(self.PendingRecordedPlacements)
+    table.clear(self.RecordingSeenTowers)
 
     if self.SelectedMap == "" then
         self:DetectMap({ Silent = true })
