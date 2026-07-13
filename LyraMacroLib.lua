@@ -18,6 +18,7 @@ local MAP_SCAN_LIMIT = 2500
 local LOBBY_PLACE_ID = 113331026373939
 local MATCH_PLACE_ID = 133260551256133
 local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/113331026373939/TDS-Reanimated?privateServerLinkCode="
+local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 
 local MAP_NAME_KEYS = {
     currentmap = true,
@@ -217,6 +218,7 @@ local LyraMacro = {
     _originalNamecall = nil,
     _remoteObservationQueue = {},
     _remoteObservationWorkerRunning = false,
+    _replayOwnershipToken = nil,
 }
 
 local function getValueKind(value)
@@ -405,6 +407,15 @@ end
 
 local function trimString(value)
     return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function getSharedEnvironment()
+    if type(getgenv) ~= "function" then
+        return nil
+    end
+
+    local available, environment = pcall(getgenv)
+    return available and type(environment) == "table" and environment or nil
 end
 
 local function normalizeMapCandidate(value)
@@ -1544,10 +1555,56 @@ local function remoteResponseWasRejected(response)
     end
 
     if type(response) == "table" then
-        return response.Success == false or response.Successful == false or response.Ok == false
+        if response.Success == false
+            or response.Successful == false
+            or response.Ok == false
+            or response[1] == false
+            or response.Error ~= nil
+            or response.ErrorMessage ~= nil then
+            return true
+        end
+
+        local statusKey = normalizeLookupKey(response.Status)
+        return statusKey == "error" or statusKey == "failed" or statusKey == "rejected"
     end
 
     return false
+end
+
+local function summarizeRemoteResponse(response)
+    if response == nil then
+        return "nil"
+    end
+
+    if type(response) ~= "table" then
+        return tostring(response)
+    end
+
+    local entries = {}
+
+    for key, value in pairs(response) do
+        if #entries >= 10 then
+            table.insert(entries, "...")
+            break
+        end
+
+        local valueType = type(value)
+        local valueKind = getValueKind(value)
+        local formattedValue
+
+        if valueType == "string" or valueType == "number" or valueType == "boolean" then
+            formattedValue = tostring(value)
+        elseif valueKind == "Instance" then
+            formattedValue = getInstanceName(value) or "Instance"
+        else
+            formattedValue = valueKind
+        end
+
+        table.insert(entries, tostring(key) .. "=" .. tostring(formattedValue))
+    end
+
+    table.sort(entries)
+    return "{" .. table.concat(entries, ", ") .. "}"
 end
 
 local function isCallOfArmsTowerStunned(tower)
@@ -2161,7 +2218,115 @@ function LyraMacro:_cancelLobbyReturn()
     self:_clearLobbyReturnConnections()
 end
 
-function LyraMacro:ReturnToPrivateServer()
+local function findResultsLobbyButton(results)
+    if not results then
+        return nil
+    end
+
+    local fallbackButton
+
+    for _, descendant in ipairs(safeGetDescendants(results)) do
+        if descendant:IsA("GuiButton") then
+            local nameKey = normalizeLookupKey(descendant.Name)
+            local hasLobbyName = nameKey:find("lobby", 1, true) ~= nil
+            local hasReturnName = nameKey:find("return", 1, true) ~= nil
+
+            if hasLobbyName and hasReturnName then
+                return descendant
+            end
+
+            if hasLobbyName then
+                fallbackButton = fallbackButton or descendant
+            end
+
+            local textCandidates = {}
+
+            if descendant:IsA("TextButton") then
+                table.insert(textCandidates, descendant.Text)
+            end
+
+            for _, label in ipairs(safeGetDescendants(descendant)) do
+                if label:IsA("TextLabel") or label:IsA("TextButton") then
+                    table.insert(textCandidates, label.Text)
+                end
+            end
+
+            for _, text in ipairs(textCandidates) do
+                local textKey = normalizeLookupKey(text)
+
+                if textKey == "returntolobby"
+                    or (textKey:find("return", 1, true) and textKey:find("lobby", 1, true)) then
+                    return descendant
+                end
+            end
+        end
+    end
+
+    return fallbackButton
+end
+
+local function activateResultsLobbyButton(button)
+    if not button then
+        return false, "PlayerGui.GameGui.Results has no Return to Lobby button"
+    end
+
+    local signals = {
+        { Name = "Activated", Signal = button.Activated },
+        { Name = "MouseButton1Click", Signal = button.MouseButton1Click },
+    }
+
+    if type(getconnections) == "function" then
+        for _, signalInfo in ipairs(signals) do
+            local gotConnections, connections = pcall(getconnections, signalInfo.Signal)
+
+            if gotConnections and type(connections) == "table" and #connections > 0 then
+                if type(firesignal) == "function" then
+                    local fired, fireError = pcall(firesignal, signalInfo.Signal)
+
+                    if fired then
+                        return true, "Results button " .. signalInfo.Name
+                    end
+
+                    return false, tostring(fireError)
+                end
+
+                local firedConnection = false
+
+                for _, connection in ipairs(connections) do
+                    local fired = pcall(function()
+                        if type(connection.Fire) == "function" then
+                            connection:Fire()
+                            firedConnection = true
+                        elseif type(connection.Function) == "function" then
+                            task.spawn(connection.Function)
+                            firedConnection = true
+                        end
+                    end)
+
+                    -- Keep any earlier successful connection invocation.
+                end
+
+                if firedConnection then
+                    return true, "Results button " .. signalInfo.Name
+                end
+            end
+        end
+    end
+
+    if type(firesignal) == "function" then
+        local fired, fireError = pcall(firesignal, button.Activated)
+
+        if fired then
+            return true, "Results button Activated"
+        end
+
+        return false, tostring(fireError)
+    end
+
+    return false, "executor does not expose firesignal or usable getconnections"
+end
+
+function LyraMacro:ReturnToPrivateServer(results)
     if self._privateServerReturnStarted then
         return true, "Lobby return is already in progress."
     end
@@ -2276,8 +2441,20 @@ function LyraMacro:ReturnToPrivateServer()
                 return self.PrivateServerReturnProvider(url, linkCode, LOBBY_PLACE_ID)
             end
 
+            local returnButton = findResultsLobbyButton(results)
+
+            if returnButton then
+                local activated, activationMethod = activateResultsLobbyButton(returnButton)
+
+                if not activated then
+                    error(activationMethod, 0)
+                end
+
+                return activationMethod
+            end
+
             if linkCode then
-                return TeleportService:TeleportToPrivateServer(LOBBY_PLACE_ID, linkCode, { LocalPlayer })
+                error("the game Return to Lobby button is required for a server-side private-lobby teleport", 0)
             end
 
             return TeleportService:Teleport(LOBBY_PLACE_ID, LocalPlayer)
@@ -4060,9 +4237,11 @@ function LyraMacro:_watchForAutoStrategyResults()
                 self:SetChainCOA(false)
             end
 
+            self:_releaseReplayOwnership()
+
             print("[LyraMacro] Match results are visible. Starting automatic lobby return.")
             task.defer(function()
-                local returned, returnMessage = self:ReturnToPrivateServer()
+                local returned, returnMessage = self:ReturnToPrivateServer(results)
 
                 if not returned then
                     warn("[LyraMacro] Automatic lobby return failed: " .. tostring(returnMessage))
@@ -4745,6 +4924,15 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
             error("[LyraMacro] Place " .. tostring(troopType) .. " was accepted but its new workspace.Towers child did not replicate within " .. tostring(REPLAY_ACCEPTED_RECOVERY_TIMEOUT) .. " seconds. Replay stopped before issuing a duplicate placement.", 2)
         end
 
+        if attempt == 1 or attempt % 10 == 0 then
+            warn(
+                "[LyraMacro] Place "
+                    .. tostring(troopType)
+                    .. " received no tower. Server response: "
+                    .. summarizeRemoteResponse(responseOrError)
+            )
+        end
+
         print("[LyraMacro] Place " .. tostring(troopType) .. " is pending (attempt " .. tostring(attempt) .. ", cash " .. tostring(cash.Value) .. "); retrying shortly.")
         waitForCashChange(cash, cash.Value, REPLAY_RETRY_INTERVAL)
     end
@@ -5205,6 +5393,45 @@ local function validateStrategyActions(strategy)
     return highestIndex
 end
 
+function LyraMacro:_acquireReplayOwnership()
+    local environment = getSharedEnvironment()
+
+    if not environment then
+        return true
+    end
+
+    local activeReplay = environment[ACTIVE_REPLAY_LOCK_KEY]
+
+    if type(activeReplay) == "table"
+        and activeReplay.Active == true
+        and activeReplay.JobId == game.JobId then
+        return false,
+            "Another Lyra AutoStrategy is already running in this match. Duplicate execution was blocked to prevent conflicting tower placements."
+    end
+
+    local ownershipToken = {}
+    environment[ACTIVE_REPLAY_LOCK_KEY] = {
+        Active = true,
+        JobId = game.JobId,
+        Owner = ownershipToken,
+        StartedAt = os.clock(),
+    }
+    self._replayOwnershipToken = ownershipToken
+    return true
+end
+
+function LyraMacro:_releaseReplayOwnership()
+    local environment = getSharedEnvironment()
+    local activeReplay = environment and environment[ACTIVE_REPLAY_LOCK_KEY]
+
+    if type(activeReplay) == "table" and activeReplay.Owner == self._replayOwnershipToken then
+        activeReplay.Active = false
+        environment[ACTIVE_REPLAY_LOCK_KEY] = nil
+    end
+
+    self._replayOwnershipToken = nil
+end
+
 function LyraMacro:Run(strategy)
     assert(type(strategy) == "table", "[LyraMacro] Strategy must be a table of step tables.")
     local actionCount = validateStrategyActions(strategy)
@@ -5224,6 +5451,12 @@ function LyraMacro:Run(strategy)
         end
 
         error("[LyraMacro] Strategy replay must be started from the match, or include a recorded map fingerprint to queue through an elevator.", 2)
+    end
+
+    local ownsReplay, ownershipError = self:_acquireReplayOwnership()
+
+    if not ownsReplay then
+        error("[LyraMacro] " .. tostring(ownershipError), 2)
     end
 
     self:RemoveIndex()
@@ -5258,6 +5491,7 @@ function LyraMacro:Run(strategy)
         end, debug.traceback)
 
         if not executed then
+            self:_releaseReplayOwnership()
             error("[LyraMacro] Strategy step " .. tostring(stepNumber) .. " (" .. actionDescription .. ") failed: " .. tostring(actionError), 0)
         end
     end
