@@ -157,6 +157,7 @@ local LyraMacro = {
     SpawnedTowers = {},
     SpawnedTowerUpgradeLevels = {},
     KnownTowerTroops = {},
+    KnownTowerUpgradeLevels = {},
     CallOfArmsTowerCache = {},
     NextTowerIndex = 0,
     SelectedLoadout = {},
@@ -1524,14 +1525,10 @@ local function isCallOfArmsTowerStunned(tower)
     return stunFlag and readInstanceValue(stunFlag) == true or false
 end
 
-local function getCallOfArmsTowerReadiness(tower)
-    local upgrade = getTowerUpgradeLevel(tower)
+local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
+    local upgrade = getTowerUpgradeLevel(tower) or tonumber(knownUpgradeLevel)
 
-    if upgrade == nil then
-        return false, "initializing"
-    end
-
-    if upgrade < CHAIN_COA_MIN_UPGRADE then
+    if upgrade and upgrade < CHAIN_COA_MIN_UPGRADE then
         return false, "needs upgrade"
     end
 
@@ -1586,7 +1583,9 @@ function LyraMacro:_getCallOfArmsTowers()
             }
         end
 
-        if tower.Parent and isCallOfArms and isTowerOwnedByLocalPlayer(tower) then
+        -- Lyra replay is solo-only. Known macro placements remain trustworthy even
+        -- when this game does not replicate a direct Owner child on tower skins.
+        if tower.Parent and isCallOfArms then
             table.insert(callOfArmsTowers, tower)
         end
     end
@@ -1646,7 +1645,7 @@ function LyraMacro:SetChainCOA(enabled)
     end))
     table.insert(self._chainCOAConnections, towersFolder.ChildRemoved:Connect(markRosterChanged))
 
-    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " owned, upgrade-ready Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected, upgrade-ready Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
 
     task.spawn(function()
         local towerOrder = {}
@@ -1668,7 +1667,6 @@ function LyraMacro:SetChainCOA(enabled)
             local allTowers = self:_getCallOfArmsTowers()
             local readyTowers = {}
             local states = {
-                Initializing = 0,
                 NeedsUpgrade = 0,
                 Stunned = 0,
             }
@@ -1680,12 +1678,10 @@ function LyraMacro:SetChainCOA(enabled)
                     rosterChanged = true
                 end
 
-                local ready, reason = getCallOfArmsTowerReadiness(tower)
+                local ready, reason = getCallOfArmsTowerReadiness(tower, self.KnownTowerUpgradeLevels[tower])
 
                 if ready then
                     table.insert(readyTowers, tower)
-                elseif reason == "initializing" then
-                    states.Initializing += 1
                 elseif reason == "needs upgrade" then
                     states.NeedsUpgrade += 1
                 elseif reason == "stunned" then
@@ -1740,7 +1736,7 @@ function LyraMacro:SetChainCOA(enabled)
             local callOfArmsTowers, readyTowers, states = getReadyRoster()
 
             if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
-                reportStatus("Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " owned Commander/Lifeguard towers.")
+                reportStatus("Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected Commander/Lifeguard towers.")
                 rotationActive = false
                 lastActivatedTower = nil
                 self.ChainCOANextIndex = 0
@@ -1749,9 +1745,6 @@ function LyraMacro:SetChainCOA(enabled)
             elseif #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
                 local waiting = {}
 
-                if states.Initializing > 0 then
-                    table.insert(waiting, tostring(states.Initializing) .. " initializing")
-                end
                 if states.NeedsUpgrade > 0 then
                     table.insert(waiting, tostring(states.NeedsUpgrade) .. " need upgrade " .. tostring(CHAIN_COA_MIN_UPGRADE))
                 end
@@ -1808,6 +1801,14 @@ function LyraMacro:SetChainCOA(enabled)
                             end
 
                             warn("[LyraMacro] Chain COA skipped a rejected commander activation: " .. tostring(responseOrError))
+                        else
+                            print(
+                                "[LyraMacro] Chain COA activated commander slot "
+                                    .. tostring(towerOrder[targetTower] or "?")
+                                    .. "; next activation in "
+                                    .. tostring(self.ChainCOAInterval)
+                                    .. " seconds."
+                            )
                         end
                     end)
                 end
@@ -2054,6 +2055,9 @@ end
 function LyraMacro:RemoveIndex()
     table.clear(self.SpawnedTowers)
     table.clear(self.SpawnedTowerUpgradeLevels)
+    table.clear(self.KnownTowerTroops)
+    table.clear(self.KnownTowerUpgradeLevels)
+    table.clear(self.CallOfArmsTowerCache)
     self.NextTowerIndex = 0
     print("[LyraMacro] Tower tracking reset.")
 end
@@ -3220,6 +3224,7 @@ function LyraMacro:_trackNextRecordedTower(troopType, position)
 
         self.RecordedTowerIndexes[tower] = towerIndex
         self.RecordedTowerUpgradeLevels[tower] = 0
+        self.KnownTowerUpgradeLevels[tower] = 0
 
         if type(troopType) == "string" and troopType ~= "" then
             self.KnownTowerTroops[tower] = troopType
@@ -3229,42 +3234,155 @@ function LyraMacro:_trackNextRecordedTower(troopType, position)
     end)
 end
 
-function LyraMacro:_observeChainCOAPlacement(args)
+function LyraMacro:_prepareChainCOAObservation(args)
     if not self.ChainCOAEnabled then
-        return
+        return nil
     end
 
-    if normalizeLookupKey(args[1]) ~= "troops" or normalizeLookupKey(args[2]) ~= "place" then
-        return
+    if normalizeLookupKey(args[1]) ~= "troops" then
+        return nil
     end
 
-    local placementOptions = type(args[5]) == "table" and args[5] or {}
-    local troopType = args[3]
+    local actionKey = normalizeLookupKey(args[2])
 
-    if not isCallOfArmsIdentifier(troopType) then
-        troopType = placementOptions.Type or placementOptions.Name
-    end
+    if actionKey == "place" then
+        local placementInfo = type(args[4]) == "table" and args[4] or {}
+        local placementOptions = type(args[5]) == "table" and args[5] or {}
+        local troopType = args[3]
 
-    if not isCallOfArmsIdentifier(troopType) then
-        return
-    end
-
-    local connection
-    connection = getTowersFolder().ChildAdded:Connect(function(tower)
-        if connection then
-            connection:Disconnect()
-            connection = nil
+        if not isCallOfArmsIdentifier(troopType) then
+            troopType = placementOptions.Type or placementOptions.Name
         end
 
-        self.KnownTowerTroops[tower] = tostring(troopType)
-        print("[LyraMacro] Chain COA linked " .. tostring(getInstanceName(tower) or "tower") .. " skin to " .. tostring(troopType) .. ".")
+        if not isCallOfArmsIdentifier(troopType) then
+            return nil
+        end
+
+        local towersFolder = getTowersFolder()
+
+        return {
+            Kind = "place",
+            Token = self._chainCOAToken,
+            TroopType = tostring(troopType),
+            Position = placementInfo.Position or args[6],
+            TowersFolder = towersFolder,
+            ExistingTowers = snapshotTowers(towersFolder),
+        }
+    end
+
+    if actionKey == "upgrade" and normalizeLookupKey(args[3]) == "set" then
+        local upgradeInfo = type(args[4]) == "table" and args[4] or {}
+        local tower = upgradeInfo.Troop
+
+        if not tower then
+            return nil
+        end
+
+        local knownTroopType = self.KnownTowerTroops[tower]
+
+        if not isCallOfArmsIdentifier(knownTroopType) and not isCallOfArmsTower(tower, knownTroopType) then
+            return nil
+        end
+
+        local cashBefore
+        pcall(function()
+            cashBefore = getCashValue().Value
+        end)
+
+        return {
+            Kind = "upgrade",
+            Token = self._chainCOAToken,
+            Tower = tower,
+            CashBefore = cashBefore,
+        }
+    end
+
+    if actionKey == "sell" then
+        local sellInfo = type(args[3]) == "table" and args[3] or {}
+
+        return {
+            Kind = "sell",
+            Token = self._chainCOAToken,
+            Tower = sellInfo.Troop,
+        }
+    end
+
+    return nil
+end
+
+function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
+    if not observation or observation.Token ~= self._chainCOAToken then
+        return
+    end
+
+    local response = remoteResults and remoteResults[1]
+
+    if response == false then
+        return
+    end
+
+    if observation.Kind == "place" then
+        task.spawn(function()
+            local tower = waitForNewTowerCandidate(
+                observation.TowersFolder,
+                observation.ExistingTowers,
+                observation.Position,
+                nil,
+                REPLAY_CONFIRM_TIMEOUT
+            )
+
+            if not tower or observation.Token ~= self._chainCOAToken then
+                return
+            end
+
+            self.KnownTowerTroops[tower] = observation.TroopType
+            self.KnownTowerUpgradeLevels[tower] = getTowerUpgradeLevel(tower) or 0
+            self.CallOfArmsTowerCache[tower] = nil
+            print(
+                "[LyraMacro] Chain COA linked "
+                    .. tostring(getInstanceName(tower) or "tower")
+                    .. " skin to "
+                    .. tostring(observation.TroopType)
+                    .. "."
+            )
+        end)
+        return
+    end
+
+    local tower = observation.Tower
+
+    if not tower then
+        return
+    end
+
+    if observation.Kind == "sell" then
+        if tower.Parent == nil or remoteResponseWasAccepted(response) then
+            self.KnownTowerTroops[tower] = nil
+            self.KnownTowerUpgradeLevels[tower] = nil
+            self.CallOfArmsTowerCache[tower] = nil
+        end
+        return
+    end
+
+    local replicatedLevel = getTowerUpgradeLevel(tower)
+    local previousLevel = tonumber(self.KnownTowerUpgradeLevels[tower]) or 0
+    local cashAfter
+    pcall(function()
+        cashAfter = getCashValue().Value
     end)
 
-    task.delay(5, function()
-        if connection then
-            connection:Disconnect()
-        end
-    end)
+    local accepted = remoteResponseWasAccepted(response)
+        or (tonumber(cashAfter) and tonumber(observation.CashBefore) and cashAfter < observation.CashBefore)
+        or (replicatedLevel and replicatedLevel > previousLevel)
+
+    if accepted then
+        self.KnownTowerUpgradeLevels[tower] = replicatedLevel or (previousLevel + 1)
+        print(
+            "[LyraMacro] Chain COA tracked commander upgrade "
+                .. tostring(self.KnownTowerUpgradeLevels[tower])
+                .. "."
+        )
+    end
 end
 
 function LyraMacro:_getRecordedTowerIndex(tower)
@@ -3281,8 +3399,13 @@ function LyraMacro:_getRecordedTowerIndex(tower)
     return towerIndex
 end
 
-function LyraMacro:_recordRemoteInvoke(args)
+function LyraMacro:_recordRemoteInvoke(args, remoteResults)
     if not self.IsRecording then
+        return
+    end
+
+    if remoteResults and remoteResults[1] == false then
+        print("[LyraMacro] Ignored a rejected remote action while recording.")
         return
     end
 
@@ -3383,6 +3506,7 @@ function LyraMacro:_recordRemoteInvoke(args)
         if towerIndex then
             local recordedLevel = (tonumber(self.RecordedTowerUpgradeLevels[upgradeInfo.Troop]) or 0) + 1
             self.RecordedTowerUpgradeLevels[upgradeInfo.Troop] = recordedLevel
+            self.KnownTowerUpgradeLevels[upgradeInfo.Troop] = recordedLevel
             self:_appendRecordedStep({
                 action = "upgrade",
                 tower = towerIndex,
@@ -3420,6 +3544,7 @@ function LyraMacro:_installRecorder()
         end
 
         local args = { ... }
+        local chainObservation = self:_prepareChainCOAObservation(args)
         local remoteResults = table.pack(oldNamecall(remote, ...))
         local isElevatorEnter = normalizeLookupKey(args[1]) == "elevators"
             and normalizeLookupKey(args[2]) == "enter"
@@ -3429,9 +3554,9 @@ function LyraMacro:_installRecorder()
             self:_observeElevatorEnter(args)
         end
 
-        self:_observeChainCOAPlacement(args)
+        self:_completeChainCOAObservation(chainObservation, remoteResults)
         local recorded, recordError = pcall(function()
-            self:_recordRemoteInvoke(args)
+            self:_recordRemoteInvoke(args, remoteResults)
         end)
 
         if not recorded then
@@ -3930,7 +4055,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA waits for 3 owned, level 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 detected, level 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
@@ -4094,6 +4219,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
             self.NextTowerIndex += 1
             self.SpawnedTowers[self.NextTowerIndex] = placedTower
             self.SpawnedTowerUpgradeLevels[self.NextTowerIndex] = getTowerUpgradeLevel(placedTower) or 0
+            self.KnownTowerUpgradeLevels[placedTower] = self.SpawnedTowerUpgradeLevels[self.NextTowerIndex]
             self.KnownTowerTroops[placedTower] = troopType
             print("[LyraMacro] Registered tower #" .. self.NextTowerIndex .. " (" .. tostring(troopType) .. " / " .. skin .. ").")
             return placedTower
@@ -4127,6 +4253,7 @@ function LyraMacro:Upgrade(towerIndex, expectedLevel)
                 tonumber(self.SpawnedTowerUpgradeLevels[towerIndex]) or 0,
                 confirmedLevel
             )
+            self.KnownTowerUpgradeLevels[targetTower] = self.SpawnedTowerUpgradeLevels[towerIndex]
         end
 
         return confirmedLevel
@@ -4276,6 +4403,7 @@ function LyraMacro:Sell(towerIndex)
     -- Keep IDs stable: selling #1 never changes the ID of tower #2.
     self.SpawnedTowers[towerIndex] = nil
     self.SpawnedTowerUpgradeLevels[towerIndex] = nil
+    self.KnownTowerUpgradeLevels[targetTower] = nil
     print("[LyraMacro] Sold tower #" .. towerIndex .. ".")
 end
 
