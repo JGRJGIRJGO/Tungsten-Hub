@@ -111,6 +111,7 @@ local CHAIN_COA_REQUIRED_TOWERS = 3
 local CHAIN_COA_MIN_UPGRADE = 2
 local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
+local ABILITY_DELAY_FROM_TOWER_PLACEMENT = "tower_placement"
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
@@ -173,6 +174,7 @@ local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
     SpawnedTowers = {},
+    SpawnedTowerPlacedAt = {},
     SpawnedTowerUpgradeLevels = {},
     KnownTowerTroops = {},
     KnownTowerUpgradeLevels = {},
@@ -190,6 +192,7 @@ local LyraMacro = {
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
     RecordedTowerUpgradeLevels = {},
+    RecordedTowerPlacedAt = {},
     PendingRecordedPlacements = {},
     RecordingSeenTowers = {},
     RecordingConnections = {},
@@ -335,6 +338,10 @@ local function formatRecordedStep(step)
 
         if abilityDelay then
             table.insert(fields, formatField("delay", abilityDelay))
+
+            if step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
+                table.insert(fields, formatField("delay_from", ABILITY_DELAY_FROM_TOWER_PLACEMENT))
+            end
         end
     elseif step.action == "chaincoa" then
         table.insert(fields, formatField("enabled", step.enabled ~= false))
@@ -362,7 +369,8 @@ local function describeStrategyStep(step)
         return "SKIP WAVE"
     elseif step.action == "ability" then
         local abilityDelay = normalizeAbilityDelay(step.delay)
-        local delaySuffix = abilityDelay and " (+" .. formatNumber(abilityDelay) .. "s)" or ""
+        local delaySource = step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT and " from placement" or ""
+        local delaySuffix = abilityDelay and " (+" .. formatNumber(abilityDelay) .. "s" .. delaySource .. ")" or ""
         return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower) .. delaySuffix
     elseif step.action == "chaincoa" then
         return (step.enabled == false and "DISABLE" or "ENABLE") .. " CHAIN COA"
@@ -2495,6 +2503,7 @@ end
 -- Clears only this strategy's stable tower IDs for a fresh solo match.
 function LyraMacro:RemoveIndex()
     table.clear(self.SpawnedTowers)
+    table.clear(self.SpawnedTowerPlacedAt)
     table.clear(self.SpawnedTowerUpgradeLevels)
     table.clear(self.KnownTowerTroops)
     table.clear(self.KnownTowerUpgradeLevels)
@@ -4549,15 +4558,21 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
         if towerIndex then
             local abilityObservedAt = tonumber(observedAt) or os.clock()
             local previousAbilityAt = tonumber(self.RecordingLastAbilityAt)
-            local abilityDelay = previousAbilityAt
-                    and roundNumber(math.max(0, abilityObservedAt - previousAbilityAt))
+            local delayAnchor = previousAbilityAt or tonumber(self.RecordedTowerPlacedAt[towerIndex])
+            local abilityDelay = delayAnchor
+                    and roundNumber(math.max(0, abilityObservedAt - delayAnchor))
                 or 0
+            local abilityDelayFrom = not previousAbilityAt
+                    and delayAnchor
+                    and ABILITY_DELAY_FROM_TOWER_PLACEMENT
+                or nil
 
             self:_appendRecordedStep({
                 action = "ability",
                 tower = towerIndex,
                 ability = abilityName,
                 delay = abilityDelay,
+                delay_from = abilityDelayFrom,
             })
             self.RecordingLastAbilityAt = abilityObservedAt
         end
@@ -4603,6 +4618,9 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
 
         self.RecordingSeenTowers[placedTower] = true
 
+        local towerIndex = self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
+        self.RecordedTowerPlacedAt[towerIndex] = tonumber(observedAt) or os.clock()
+
         self:_appendRecordedStep({
             action = "place",
             troop = troopType,
@@ -4612,7 +4630,6 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
             z = roundNumber(position.Z),
             rotation = placementInfo.Rotation,
         })
-        self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
@@ -4667,38 +4684,56 @@ function LyraMacro:_processRemoteObservation(args, remoteResults, observedAt, re
     end
 end
 
-function LyraMacro:_queueRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
-    table.insert(self._remoteObservationQueue, {
+function LyraMacro:_reserveRemoteObservation(args, observedAt, recordingSessionToken)
+    local observation = {
         Args = args,
-        Results = remoteResults,
         ObservedAt = observedAt,
         RecordingSessionToken = recordingSessionToken,
-    })
+        Ready = false,
+    }
+    table.insert(self._remoteObservationQueue, observation)
+    return observation
+end
 
+function LyraMacro:_drainRemoteObservations()
     if self._remoteObservationWorkerRunning then
         return
     end
 
     self._remoteObservationWorkerRunning = true
     task.defer(function()
-        while #self._remoteObservationQueue > 0 do
+        while self._remoteObservationQueue[1] and self._remoteObservationQueue[1].Ready do
             local observation = table.remove(self._remoteObservationQueue, 1)
-            local processed, processError = pcall(function()
-                self:_processRemoteObservation(
-                    observation.Args,
-                    observation.Results,
-                    observation.ObservedAt,
-                    observation.RecordingSessionToken
-                )
-            end)
 
-            if not processed then
-                warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
+            if not observation.Skip then
+                local processed, processError = pcall(function()
+                    self:_processRemoteObservation(
+                        observation.Args,
+                        observation.Results,
+                        observation.ObservedAt,
+                        observation.RecordingSessionToken
+                    )
+                end)
+
+                if not processed then
+                    warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
+                end
             end
         end
 
         self._remoteObservationWorkerRunning = false
+
+        if self._remoteObservationQueue[1] and self._remoteObservationQueue[1].Ready then
+            self:_drainRemoteObservations()
+        end
     end)
+end
+
+function LyraMacro:_completeRemoteObservation(observation, remoteResults, skip)
+    observation.Results = remoteResults
+    observation.Skip = skip == true
+    observation.Ready = true
+    self:_drainRemoteObservations()
 end
 
 function LyraMacro:_installRecorder()
@@ -4723,8 +4758,18 @@ function LyraMacro:_installRecorder()
         local args = table.pack(...)
         local recordingSessionToken = self.IsRecording and self._recordingSessionToken or nil
         local observedAt = recordingSessionToken and os.clock() or nil
-        local remoteResults = table.pack(oldNamecall(remote, ...))
-        self:_queueRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
+        -- Reserve the queue position before InvokeServer yields so concurrent
+        -- responses cannot reorder a placement and its first ability.
+        local observation = self:_reserveRemoteObservation(args, observedAt, recordingSessionToken)
+        local remoteCall = table.pack(pcall(oldNamecall, remote, ...))
+
+        if not remoteCall[1] then
+            self:_completeRemoteObservation(observation, nil, true)
+            error(remoteCall[2], 0)
+        end
+
+        local remoteResults = table.pack(table.unpack(remoteCall, 2, remoteCall.n))
+        self:_completeRemoteObservation(observation, remoteResults, false)
 
         return table.unpack(remoteResults, 1, remoteResults.n)
     end
@@ -4880,6 +4925,7 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedStrategy)
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordedTowerUpgradeLevels)
+    table.clear(self.RecordedTowerPlacedAt)
     table.clear(self.PendingRecordedPlacements)
     self.RecordingSeenTowers = snapshotTowers(getTowersFolder())
     table.clear(self.RecordingConnections)
@@ -4933,6 +4979,7 @@ function LyraMacro:StopRecording()
     table.clear(self.RecordingConnections)
     table.clear(self.PendingRecordedPlacements)
     table.clear(self.RecordingSeenTowers)
+    table.clear(self.RecordedTowerPlacedAt)
 
     if self.SelectedMap == "" then
         self:DetectMap({ Silent = true })
@@ -5477,6 +5524,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
         local placementTracker = createPlacementTracker(towersFolder, existingTowers)
         local cash = getCashValue()
         local cashBeforeRequest = cash.Value
+        local placementRequestedAt = os.clock()
         local invoked, responseOrError = pcall(function()
             return RemoteFunction:InvokeServer(
                 "Troops",
@@ -5534,6 +5582,9 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
         if placedTower then
             self.NextTowerIndex += 1
             self.SpawnedTowers[self.NextTowerIndex] = placedTower
+            -- This attempt created the tower; rejected cash-wait retries never
+            -- become the placement anchor for its first timed ability.
+            self.SpawnedTowerPlacedAt[self.NextTowerIndex] = placementRequestedAt
             self.SpawnedTowerUpgradeLevels[self.NextTowerIndex] = getTowerUpgradeLevel(placedTower) or 0
             self.KnownTowerUpgradeLevels[placedTower] = self.SpawnedTowerUpgradeLevels[self.NextTowerIndex]
             self.KnownTowerTroops[placedTower] = troopType
@@ -5747,6 +5798,7 @@ function LyraMacro:Sell(towerIndex)
 
     -- Keep IDs stable: selling #1 never changes the ID of tower #2.
     self.SpawnedTowers[towerIndex] = nil
+    self.SpawnedTowerPlacedAt[towerIndex] = nil
     self.SpawnedTowerUpgradeLevels[towerIndex] = nil
     self.KnownTowerUpgradeLevels[targetTower] = nil
     print("[LyraMacro] Sold tower #" .. towerIndex .. ".")
@@ -6106,10 +6158,30 @@ function LyraMacro:Run(strategy)
             elseif action == "sell" then
                 self:Sell(step.tower)
             elseif action == "ability" then
+                local targetTower = self.SpawnedTowers[step.tower]
+                assert(
+                    targetTower and targetTower.Parent,
+                    "[LyraMacro] Cannot schedule an ability for tower #"
+                        .. tostring(step.tower)
+                        .. "; it is missing or was sold."
+                )
+
                 local abilityDelay = normalizeAbilityDelay(step.delay)
 
                 if abilityDelay then
-                    local remainingDelay = lastAbilityDispatchedAt + abilityDelay - os.clock()
+                    local delayAnchor = lastAbilityDispatchedAt
+
+                    if step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
+                        delayAnchor = tonumber(self.SpawnedTowerPlacedAt[step.tower])
+                        assert(
+                            delayAnchor,
+                            "[LyraMacro] Timed ability for tower #"
+                                .. tostring(step.tower)
+                                .. " is missing its replay placement timestamp."
+                        )
+                    end
+
+                    local remainingDelay = delayAnchor + abilityDelay - os.clock()
 
                     if remainingDelay > 0 then
                         print(
