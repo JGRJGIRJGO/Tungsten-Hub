@@ -17,7 +17,10 @@ local DEFAULT_STRATEGY_FOLDER = "LyraStrategies"
 local MAP_SCAN_LIMIT = 2500
 local LOBBY_PLACE_ID = 113331026373939
 local MATCH_PLACE_ID = 133260551256133
-local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/113331026373939/TDS-Reanimated?privateServerLinkCode="
+-- A user-owned VIP linkCode is a launcher parameter, not a reserved-server
+-- access code. Never pass it to TeleportToPrivateServer/ReservedServerAccessCode.
+local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/start?placeId=113331026373939&linkCode="
+local PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX = "roblox://placeId=113331026373939&linkCode="
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 
 local MAP_NAME_KEYS = {
@@ -175,6 +178,7 @@ local LyraMacro = {
     PrivateServerStatusProvider = nil,
     PrivateServerReturnProvider = nil,
     PrivateServerReturnUrl = nil,
+    PrivateServerReturnDeepLink = nil,
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
@@ -2227,6 +2231,7 @@ local function normalizePrivateServerLinkCode(value)
     local linkCode = trimString(value)
 
     local codeFromUrl = linkCode:match("[?&]privateServerLinkCode=([^&#]+)")
+        or linkCode:match("[?&]linkCode=([^&#]+)")
 
     if codeFromUrl then
         linkCode = codeFromUrl
@@ -2379,6 +2384,154 @@ local function getTeleportQueueFunction()
     return nil
 end
 
+local EXECUTOR_URL_LAUNCHER_NAMES = {
+    "open_url",
+    "openurl",
+    "openUrl",
+    "open_uri",
+    "openuri",
+    "openUri",
+    "open_browser",
+    "openbrowser",
+    "openBrowser",
+}
+
+local function getExecutorUrlLaunchers()
+    local launchers = {}
+    local seenFunctions = {}
+    local seenContainers = {}
+
+    local function addContainer(label, container, methodFallback)
+        if type(container) ~= "table" or seenContainers[container] then
+            return
+        end
+
+        seenContainers[container] = true
+
+        for _, functionName in ipairs(EXECUTOR_URL_LAUNCHER_NAMES) do
+            local read, candidate = pcall(function()
+                return container[functionName]
+            end)
+
+            if read and type(candidate) == "function" and not seenFunctions[candidate] then
+                seenFunctions[candidate] = true
+                table.insert(launchers, {
+                    Callback = candidate,
+                    Name = label .. "." .. functionName,
+                    Owner = methodFallback and container or nil,
+                })
+            end
+        end
+    end
+
+    local sharedEnvironment = getSharedEnvironment()
+    local currentEnvironment
+
+    if type(getfenv) == "function" then
+        local readEnvironment, environment = pcall(getfenv, 0)
+
+        if not readEnvironment or type(environment) ~= "table" then
+            readEnvironment, environment = pcall(getfenv)
+        end
+
+        if readEnvironment and type(environment) == "table" then
+            currentEnvironment = environment
+        end
+    end
+
+    addContainer("getgenv()", sharedEnvironment)
+    addContainer("getfenv(0)", currentEnvironment)
+    addContainer("_G", _G)
+
+    for _, namespaceName in ipairs({ "syn", "executor", "fluxus" }) do
+        local namespace
+
+        if type(sharedEnvironment) == "table" then
+            namespace = sharedEnvironment[namespaceName]
+        end
+        if type(namespace) ~= "table" and type(currentEnvironment) == "table" then
+            namespace = currentEnvironment[namespaceName]
+        end
+        if type(namespace) ~= "table" and type(_G) == "table" then
+            namespace = _G[namespaceName]
+        end
+
+        addContainer(namespaceName, namespace, true)
+    end
+
+    return launchers
+end
+
+local function invokeExecutorUrlLauncher(launcher, url)
+    local invoked, result = pcall(launcher.Callback, url)
+
+    if invoked and result ~= false then
+        return true, result
+    end
+
+    local firstError = result
+
+    if launcher.Owner then
+        local methodInvoked, methodResult = pcall(launcher.Callback, launcher.Owner, url)
+
+        if methodInvoked and methodResult ~= false then
+            return true, methodResult
+        end
+
+        return false,
+            tostring(firstError)
+                .. "; method-style call failed: "
+                .. tostring(methodResult)
+    end
+
+    return false, firstError
+end
+
+local function launchPrivateServerUrl(deepLink, webUrl)
+    local launchers = getExecutorUrlLaunchers()
+    local errors = {}
+
+    if #launchers == 0 then
+        return false, "executor does not expose an openurl/open_url-style URL launcher"
+    end
+
+    for _, launcher in ipairs(launchers) do
+        for _, target in ipairs({
+            { Kind = "Roblox deep link", Url = deepLink },
+            { Kind = "Roblox web link", Url = webUrl },
+        }) do
+            local launched, result = invokeExecutorUrlLauncher(launcher, target.Url)
+
+            if launched then
+                return true, launcher.Name .. " using " .. target.Kind
+            end
+
+            table.insert(
+                errors,
+                launcher.Name
+                    .. " rejected "
+                    .. target.Kind
+                    .. ": "
+                    .. tostring(result)
+            )
+        end
+    end
+
+    return false, table.concat(errors, "; ")
+end
+
+local function copyPrivateServerUrl(url)
+    local clipboard = type(setclipboard) == "function" and setclipboard
+        or (type(toclipboard) == "function" and toclipboard or nil)
+
+    if not clipboard then
+        return false
+    end
+
+    local copied = pcall(clipboard, url)
+    return copied
+end
+
 function LyraMacro:GetPrivateServerReturnUrl()
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
 
@@ -2387,6 +2540,16 @@ function LyraMacro:GetPrivateServerReturnUrl()
     end
 
     return PRIVATE_SERVER_RETURN_URL_PREFIX .. linkCode
+end
+
+function LyraMacro:GetPrivateServerReturnDeepLink()
+    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+
+    if not linkCode then
+        return nil
+    end
+
+    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX .. linkCode
 end
 
 function LyraMacro:_clearLobbyReturnConnections()
@@ -2520,6 +2683,7 @@ function LyraMacro:ReturnToPrivateServer(results)
 
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
     local url = linkCode and self:GetPrivateServerReturnUrl() or nil
+    local deepLink = linkCode and self:GetPrivateServerReturnDeepLink() or nil
     local destinationName = linkCode and "configured private lobby" or "public lobby"
     local usesProvider = linkCode and type(self.PrivateServerReturnProvider) == "function"
 
@@ -2528,10 +2692,12 @@ function LyraMacro:ReturnToPrivateServer(results)
     local returnToken = self._privateServerReturnToken
     self._privateServerReturnStarted = true
     self.PrivateServerReturnUrl = url
+    self.PrivateServerReturnDeepLink = deepLink
 
     local attempts = 0
     local completed = false
     local retryScheduled = false
+    local privateLinkDispatched = false
     local attemptTeleport
     local scheduleRetry
 
@@ -2613,6 +2779,7 @@ function LyraMacro:ReturnToPrivateServer(results)
 
         attempts += 1
         local attemptNumber = attempts
+        local externalLaunchStarted = false
         print(
             "[LyraMacro] Returning to "
                 .. destinationName
@@ -2628,20 +2795,76 @@ function LyraMacro:ReturnToPrivateServer(results)
                 return self.PrivateServerReturnProvider(url, linkCode, LOBBY_PLACE_ID)
             end
 
+            local privateLaunchError
             local returnButton = findResultsLobbyButton(results)
+            local buttonAttempted = false
 
-            if returnButton then
+            local function tryReturnButton()
+                buttonAttempted = true
+
                 local activated, activationMethod = activateResultsLobbyButton(returnButton)
 
                 if not activated then
-                    error(activationMethod, 0)
+                    privateLaunchError = privateLaunchError
+                        and (privateLaunchError .. "; " .. tostring(activationMethod))
+                        or activationMethod
+                    return false
                 end
 
-                return activationMethod
+                if linkCode then
+                    print(
+                        "[LyraMacro] Using the game's private-context Return to Lobby route; the configured private link remains available as a fallback."
+                    )
+                end
+
+                return true, activationMethod
+            end
+
+            -- Let the game preserve its own private-lobby context first. If that
+            -- produces no teleport state, the next attempt launches the exact link.
+            if returnButton and (not linkCode or attemptNumber == 1) then
+                local activated, activationMethod = tryReturnButton()
+
+                if activated then
+                    return activationMethod
+                end
+            end
+
+            if linkCode and not privateLinkDispatched then
+                local launched, launchSource = launchPrivateServerUrl(deepLink, url)
+
+                if launched then
+                    privateLinkDispatched = true
+                    externalLaunchStarted = true
+                    return launchSource
+                end
+
+                privateLaunchError = privateLaunchError
+                    and (privateLaunchError .. "; " .. tostring(launchSource))
+                    or launchSource
+            elseif linkCode then
+                privateLaunchError = "the private-lobby link was already dispatched without an observed teleport"
+            end
+
+            if returnButton and not buttonAttempted then
+                local activated, activationMethod = tryReturnButton()
+
+                if activated then
+                    return activationMethod
+                end
             end
 
             if linkCode then
-                error("the game Return to Lobby button is required for a server-side private-lobby teleport", 0)
+                local copied = copyPrivateServerUrl(url)
+                local fallbackMessage = copied
+                    and " The private-lobby URL was copied to the clipboard."
+                    or ""
+                error(
+                    "could not launch the configured private lobby: "
+                        .. tostring(privateLaunchError or "no usable Return to Lobby button or URL launcher was found")
+                        .. fallbackMessage,
+                    0
+                )
             end
 
             return TeleportService:Teleport(LOBBY_PLACE_ID, LocalPlayer)
@@ -2654,6 +2877,28 @@ function LyraMacro:ReturnToPrivateServer(results)
 
         if usesProvider then
             finishSuccess("configured return provider")
+            return
+        end
+
+        if externalLaunchStarted then
+            print(
+                "[LyraMacro] Private-lobby link dispatched via "
+                    .. tostring(result)
+                    .. "; waiting for the current client to enter a teleport state."
+            )
+            task.delay(LOBBY_RETURN_STATE_TIMEOUT, function()
+                if isCurrentReturn() and attempts == attemptNumber and not retryScheduled then
+                    local copied = copyPrivateServerUrl(url)
+                    finishFailure(
+                        "no teleport state was observed after the private-lobby link was dispatched"
+                            .. (
+                                copied
+                                    and "; the private-lobby URL was copied to the clipboard"
+                                or ""
+                            )
+                    )
+                end
+            end)
             return
         end
 
