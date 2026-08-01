@@ -183,6 +183,7 @@ local LyraMacro = {
     SelectedLoadout = {},
     SelectedMode = "Normal",
     SelectedMap = "",
+    ManualMapOverrideEnabled = true,
     SelectedPrivateServerLinkCode = nil,
     PrivateServerStatusProvider = nil,
     PrivateServerReturnProvider = nil,
@@ -4106,6 +4107,22 @@ function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
     return false, "Timed out waiting for the destination map to load."
 end
 
+function LyraMacro:SetManualMapOverrideEnabled(enabled)
+    self.ManualMapOverrideEnabled = enabled ~= false
+
+    if not self.ManualMapOverrideEnabled and self.LastDetectedMapSource == "manual override" then
+        self.SelectedMap = ""
+        self.LastDetectedMapSource = nil
+    end
+
+    print(
+        "[LyraMacro] Manual map override "
+            .. (self.ManualMapOverrideEnabled and "enabled" or "disabled")
+            .. "."
+    )
+    return self.ManualMapOverrideEnabled
+end
+
 function LyraMacro:_setDetectedMap(mapName, source, force)
     local normalizedMapName = normalizeMapCandidate(mapName)
 
@@ -4113,7 +4130,10 @@ function LyraMacro:_setDetectedMap(mapName, source, force)
         return nil
     end
 
-    if self.SelectedMap ~= "" and self.SelectedMap ~= normalizedMapName and self.LastDetectedMapSource == "manual" and not force then
+    local hasManualMap = self.LastDetectedMapSource == "manual"
+        or self.LastDetectedMapSource == "manual override"
+
+    if self.SelectedMap ~= "" and self.SelectedMap ~= normalizedMapName and hasManualMap and not force then
         return self.SelectedMap, self.LastDetectedMapSource
     end
 
@@ -4131,16 +4151,16 @@ end
 function LyraMacro:DetectMap(options)
     options = options or {}
 
-    if self.SelectedMap ~= "" and not options.Force then
-        return self.SelectedMap, self.LastDetectedMapSource or "configured"
-    end
-
-    if type(getgenv) == "function" then
+    if self.ManualMapOverrideEnabled ~= false and type(getgenv) == "function" then
         local override = normalizeMapCandidate(getgenv().LyraMacroMapName)
 
         if override then
             return self:_setDetectedMap(override, "manual override", true)
         end
+    end
+
+    if self.SelectedMap ~= "" and not options.Force then
+        return self.SelectedMap, self.LastDetectedMapSource or "configured"
     end
 
     local roots = {
@@ -5342,6 +5362,16 @@ end
 function LyraMacro:CreateRecorderWindow(config)
     config = config or {}
 
+    local configuredManualMapOverride = config.ManualMapOverrideEnabled
+
+    if configuredManualMapOverride == nil then
+        configuredManualMapOverride = config.ManualMapOverride
+    end
+
+    if configuredManualMapOverride ~= nil then
+        self:SetManualMapOverrideEnabled(configuredManualMapOverride ~= false)
+    end
+
     if config.PrivateServerLinkCode ~= nil then
         self:SetPrivateServerLinkCode(config.PrivateServerLinkCode)
     end
@@ -5382,6 +5412,31 @@ function LyraMacro:CreateRecorderWindow(config)
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
         strategyTab:CreateLabel(serverStatusText)
         print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
+        strategyTab:CreateToggle("Manual map override", self.ManualMapOverrideEnabled ~= false, function(enabled)
+            local overrideChanged = (self.ManualMapOverrideEnabled ~= false) ~= enabled
+            self:SetManualMapOverrideEnabled(enabled)
+
+            if not overrideChanged then
+                return
+            end
+
+            local mapName, mapSource = self:DetectMap({ Silent = true })
+
+            if enabled and mapSource == "manual override" then
+                descriptionLabel.UpdateText("Manual map override: " .. tostring(mapName) .. ".")
+                window:Notify("Map Override Enabled", tostring(mapName), 3)
+            elseif enabled then
+                descriptionLabel.UpdateText(
+                    "Manual map override is enabled by default. Set getgenv().LyraMacroMapName to use it; automatic detection remains the fallback."
+                )
+            else
+                descriptionLabel.UpdateText(
+                    mapName
+                            and ("Manual map override disabled. Detected map: " .. tostring(mapName) .. " (" .. tostring(mapSource) .. ").")
+                        or "Manual map override disabled."
+                )
+            end
+        end)
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
                 self:SetAutoRecordOnTeleport(false)
