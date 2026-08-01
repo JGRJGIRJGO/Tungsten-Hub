@@ -138,6 +138,13 @@ local PRIVATE_SERVER_MARKER_NAMES = {
     "VIPServer",
 }
 
+local SERVER_TYPE_DISPLAY_NAMES = {
+    private = "Private/VIP",
+    public = "Public",
+    reserved = "Reserved",
+    unknown = "Unknown",
+}
+
 local TRACKED_ABILITIES = {
     callofarms = "Call Of Arms",
     mafiacall = "Mafia Call",
@@ -2287,45 +2294,153 @@ local function isReplicatedPrivateServerMarker(value)
     return false
 end
 
-function LyraMacro:IsPrivateServer()
+local function normalizeProvidedServerType(value)
+    if value == true then
+        return "private"
+    end
+
+    if value == false then
+        return "public"
+    end
+
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local normalized = normalizeLookupKey(value)
+
+    if normalized == "private" or normalized == "privateserver" or normalized == "vip" or normalized == "vipserver" then
+        return "private"
+    end
+
+    if normalized == "reserved" or normalized == "reservedserver" then
+        return "reserved"
+    end
+
+    if normalized == "public" or normalized == "publicserver" or normalized == "standard" or normalized == "standardserver" then
+        return "public"
+    end
+
+    return nil
+end
+
+-- Returns "private", "reserved", "public", or "unknown", followed by the
+-- detection source and (for native VIP servers) the owner's user ID.
+function LyraMacro:GetServerType()
     if type(self.PrivateServerStatusProvider) == "function" then
-        local checked, isPrivate = pcall(self.PrivateServerStatusProvider)
+        local checked, providedStatus = pcall(self.PrivateServerStatusProvider)
 
         if checked then
-            return isPrivate == true
+            local providedServerType = normalizeProvidedServerType(providedStatus)
+
+            if providedServerType then
+                return providedServerType, "custom provider"
+            end
+        else
+            warn("[LyraMacro] Private server status provider failed: " .. tostring(providedStatus))
+        end
+    end
+
+    local readDataModel, privateServerId, privateServerOwnerId = pcall(function()
+        return game.PrivateServerId, game.PrivateServerOwnerId
+    end)
+
+    -- A non-empty PrivateServerId can describe either a user-owned VIP server
+    -- or a reserved server. Only the VIP server exposes a non-zero owner ID.
+    if readDataModel and type(privateServerId) == "string" then
+        if privateServerId == "" then
+            return "public", "DataModel.PrivateServerId"
         end
 
-        warn("[LyraMacro] Private server status provider failed: " .. tostring(isPrivate))
-        return false
+        local ownerUserId = tonumber(privateServerOwnerId) or 0
+
+        if ownerUserId > 0 then
+            return "private", "DataModel.PrivateServerOwnerId", ownerUserId
+        end
+
+        return "reserved", "DataModel.PrivateServerId"
     end
 
     for _, root in ipairs({ LocalPlayer, ReplicatedStorage, workspace }) do
         for _, markerName in ipairs(PRIVATE_SERVER_MARKER_NAMES) do
             if isReplicatedPrivateServerMarker(readAttribute(root, markerName)) then
-                return true
+                return "private", "replicated marker " .. markerName
             end
 
             local marker = safeFindFirstChild(root, markerName)
 
             if marker and isReplicatedPrivateServerMarker(readInstanceValue(marker)) then
-                return true
+                return "private", "replicated marker " .. markerName
             end
         end
     end
 
-    return false
+    return "unknown", "DataModel private-server properties unavailable"
+end
+
+function LyraMacro:GetServerTypeDisplayName()
+    local serverType, source, ownerUserId = self:GetServerType()
+    return SERVER_TYPE_DISPLAY_NAMES[serverType] or "Unknown", source, ownerUserId
+end
+
+function LyraMacro:GetServerStatusText()
+    local serverType, source, ownerUserId = self:GetServerType()
+    local statusText = "Server: " .. (SERVER_TYPE_DISPLAY_NAMES[serverType] or "Unknown")
+
+    if serverType == "private" and ownerUserId then
+        if LocalPlayer and tonumber(LocalPlayer.UserId) == ownerUserId then
+            statusText ..= " (owned by you)"
+        else
+            statusText ..= " (owner user ID " .. tostring(ownerUserId) .. ")"
+        end
+    elseif serverType == "reserved" then
+        statusText ..= " (not a user-owned VIP lobby)"
+    elseif serverType == "unknown" then
+        statusText ..= " (detection unavailable)"
+    end
+
+    return statusText .. ".", source
+end
+
+function LyraMacro:IsPrivateServer()
+    local serverType = self:GetServerType()
+    return serverType == "private" or serverType == "reserved"
+end
+
+function LyraMacro:IsUserOwnedPrivateServer()
+    local serverType = self:GetServerType()
+    return serverType == "private"
+end
+
+function LyraMacro:IsReservedServer()
+    local serverType = self:GetServerType()
+    return serverType == "reserved"
 end
 
 function LyraMacro:ShouldUsePrivateServerWorkflow()
-    if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
-        return true, "configured privateServerLinkCode"
+    local serverType, source = self:GetServerType()
+    local hasLinkCode = type(self.SelectedPrivateServerLinkCode) == "string"
+        and self.SelectedPrivateServerLinkCode ~= ""
+
+    if serverType == "private" then
+        return true, "detected Private/VIP server via " .. tostring(source)
     end
 
-    if self:IsPrivateServer() then
-        return true, "replicated private-server status"
+    if serverType == "reserved" then
+        return false,
+            "current server is reserved, not a user-owned Private/VIP lobby"
+                .. (hasLinkCode and "; the configured link code is kept only for returning to that lobby" or "")
     end
 
-    return false, "private-server status is unavailable and no privateServerLinkCode is configured"
+    if serverType == "public" then
+        return false,
+            "current server is public"
+                .. (hasLinkCode and "; the configured link code does not make this server private" or "")
+    end
+
+    return false,
+        "server type could not be detected"
+            .. (hasLinkCode and "; the configured link code is kept only for lobby return" or "")
 end
 
 function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
@@ -2684,7 +2799,7 @@ function LyraMacro:ReturnToPrivateServer(results)
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
     local url = linkCode and self:GetPrivateServerReturnUrl() or nil
     local deepLink = linkCode and self:GetPrivateServerReturnDeepLink() or nil
-    local destinationName = linkCode and "configured private lobby" or "public lobby"
+    local destinationName = linkCode and "configured private lobby" or "lobby"
     local usesProvider = linkCode and type(self.PrivateServerReturnProvider) == "function"
 
     self:_clearLobbyReturnConnections()
@@ -4706,7 +4821,9 @@ function LyraMacro:_watchForAutoStrategyResults()
     if normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode) then
         print("[LyraMacro] Automatic private-lobby return armed for match results.")
     else
-        print("[LyraMacro] Automatic public-lobby return armed for match results.")
+        print(
+            "[LyraMacro] Automatic Return to Lobby flow armed; public TeleportService is used only if the game's route is unavailable."
+        )
     end
     return true
 end
@@ -5042,7 +5159,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
 
     local frame = Instance.new("Frame")
     frame.Name = "RecorderFrame"
-    frame.Size = UDim2.new(0, 280, 0, 120)
+    frame.Size = UDim2.new(0, 280, 0, 140)
     frame.Position = UDim2.new(0, 18, 0, 120)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
     frame.BorderSizePixel = 0
@@ -5070,12 +5187,15 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = frame
 
+    local serverStatusText, serverStatusSource = self:GetServerStatusText()
     local status = Instance.new("TextLabel")
     status.Name = "Status"
-    status.Size = UDim2.new(1, -20, 0, 34)
+    status.Size = UDim2.new(1, -20, 0, 54)
     status.Position = UDim2.new(0, 10, 0, 36)
     status.BackgroundTransparency = 1
-    status.Text = reason and ("Fallback UI: " .. tostring(reason)) or "Ready to record."
+    status.Text = reason
+            and ("Fallback UI: " .. tostring(reason) .. "\n" .. serverStatusText)
+        or (serverStatusText .. " Ready to record.")
     status.TextColor3 = Color3.fromRGB(170, 170, 180)
     status.TextSize = 11
     status.Font = Enum.Font.Gotham
@@ -5125,6 +5245,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
     end)
 
     self.RecorderWindow = screenGui
+    print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
     warn("[LyraMacro] Lyra UI failed to load; opened fallback recorder UI instead. " .. tostring(reason))
 
     return screenGui
@@ -5169,7 +5290,10 @@ function LyraMacro:CreateRecorderWindow(config)
             Name = config.TabName or "Strategy",
             Icon = config.TabIcon or "list-checks",
         })
+        local serverStatusText, serverStatusSource = self:GetServerStatusText()
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips.")
+        strategyTab:CreateLabel(serverStatusText)
+        print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
                 self:SetAutoRecordOnTeleport(false)
