@@ -194,6 +194,7 @@ local LyraMacro = {
     RecordingSeenTowers = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
+    RecordingLastAbilityAt = nil,
     LastStrategyExport = nil,
     LastDetectedMapSource = nil,
     SelectedMapFingerprint = "",
@@ -230,6 +231,7 @@ local LyraMacro = {
     _lastPrivateServerMessageId = nil,
     StrategyLogger = nil,
     _recordHookInstalled = false,
+    _recordingSessionToken = 0,
     _originalNamecall = nil,
     _remoteObservationQueue = {},
     _remoteObservationWorkerRunning = false,
@@ -250,6 +252,16 @@ local function roundNumber(value)
     end
 
     return math.ceil(value * 1000 - 0.5) / 1000
+end
+
+local function normalizeAbilityDelay(value)
+    local delay = tonumber(value)
+
+    if not delay or delay ~= delay or delay == math.huge or delay == -math.huge then
+        return nil
+    end
+
+    return math.max(0, delay)
 end
 
 local function formatNumber(value)
@@ -318,6 +330,12 @@ local function formatRecordedStep(step)
     elseif step.action == "ability" then
         table.insert(fields, formatField("tower", step.tower))
         table.insert(fields, formatField("ability", step.ability))
+
+        local abilityDelay = normalizeAbilityDelay(step.delay)
+
+        if abilityDelay then
+            table.insert(fields, formatField("delay", abilityDelay))
+        end
     elseif step.action == "chaincoa" then
         table.insert(fields, formatField("enabled", step.enabled ~= false))
         table.insert(fields, formatField("active_duration", step.active_duration))
@@ -343,7 +361,9 @@ local function describeStrategyStep(step)
     elseif step.action == "skip" then
         return "SKIP WAVE"
     elseif step.action == "ability" then
-        return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower)
+        local abilityDelay = normalizeAbilityDelay(step.delay)
+        local delaySuffix = abilityDelay and " (+" .. formatNumber(abilityDelay) .. "s)" or ""
+        return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower) .. delaySuffix
     elseif step.action == "chaincoa" then
         return (step.enabled == false and "DISABLE" or "ENABLE") .. " CHAIN COA"
     end
@@ -4458,8 +4478,8 @@ function LyraMacro:_getRecordedTowerIndex(tower)
     return towerIndex
 end
 
-function LyraMacro:_recordRemoteInvoke(args, remoteResults)
-    if not self.IsRecording then
+function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordingSessionToken)
+    if not self.IsRecording or recordingSessionToken ~= self._recordingSessionToken then
         return
     end
 
@@ -4527,11 +4547,19 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
         local towerIndex = self:_getRecordedTowerIndex(abilityInfo.Troop)
 
         if towerIndex then
+            local abilityObservedAt = tonumber(observedAt) or os.clock()
+            local previousAbilityAt = tonumber(self.RecordingLastAbilityAt)
+            local abilityDelay = previousAbilityAt
+                    and roundNumber(math.max(0, abilityObservedAt - previousAbilityAt))
+                or 0
+
             self:_appendRecordedStep({
                 action = "ability",
                 tower = towerIndex,
                 ability = abilityName,
+                delay = abilityDelay,
             })
+            self.RecordingLastAbilityAt = abilityObservedAt
         end
 
         return
@@ -4612,7 +4640,7 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
     end
 end
 
-function LyraMacro:_processRemoteObservation(args, remoteResults)
+function LyraMacro:_processRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
     local categoryKey = normalizeLookupKey(args[1])
     local actionKey = normalizeLookupKey(args[2])
     local chainObservation = self:_prepareChainCOAObservation(args)
@@ -4631,7 +4659,7 @@ function LyraMacro:_processRemoteObservation(args, remoteResults)
     end
 
     local recorded, recordError = pcall(function()
-        self:_recordRemoteInvoke(args, remoteResults)
+        self:_recordRemoteInvoke(args, remoteResults, observedAt, recordingSessionToken)
     end)
 
     if not recorded then
@@ -4639,10 +4667,12 @@ function LyraMacro:_processRemoteObservation(args, remoteResults)
     end
 end
 
-function LyraMacro:_queueRemoteObservation(args, remoteResults)
+function LyraMacro:_queueRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
     table.insert(self._remoteObservationQueue, {
         Args = args,
         Results = remoteResults,
+        ObservedAt = observedAt,
+        RecordingSessionToken = recordingSessionToken,
     })
 
     if self._remoteObservationWorkerRunning then
@@ -4654,7 +4684,12 @@ function LyraMacro:_queueRemoteObservation(args, remoteResults)
         while #self._remoteObservationQueue > 0 do
             local observation = table.remove(self._remoteObservationQueue, 1)
             local processed, processError = pcall(function()
-                self:_processRemoteObservation(observation.Args, observation.Results)
+                self:_processRemoteObservation(
+                    observation.Args,
+                    observation.Results,
+                    observation.ObservedAt,
+                    observation.RecordingSessionToken
+                )
             end)
 
             if not processed then
@@ -4686,8 +4721,10 @@ function LyraMacro:_installRecorder()
         -- Do not run Instance namecalls before forwarding this call. Some executors
         -- leak nested namecall state and can otherwise dispatch the wrong method.
         local args = table.pack(...)
+        local recordingSessionToken = self.IsRecording and self._recordingSessionToken or nil
+        local observedAt = recordingSessionToken and os.clock() or nil
         local remoteResults = table.pack(oldNamecall(remote, ...))
-        self:_queueRemoteObservation(args, remoteResults)
+        self:_queueRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
 
         return table.unpack(remoteResults, 1, remoteResults.n)
     end
@@ -4847,6 +4884,7 @@ function LyraMacro:StartRecording()
     self.RecordingSeenTowers = snapshotTowers(getTowersFolder())
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
+    self.RecordingLastAbilityAt = nil
     self.SelectedMapFingerprint = ""
     self.SelectedMapFingerprintSource = nil
     self.SelectedMapFingerprintPartCount = 0
@@ -4856,6 +4894,7 @@ function LyraMacro:StartRecording()
         self.LastDetectedMapSource = nil
     end
 
+    self._recordingSessionToken += 1
     self.IsRecording = true
 
     if self.ChainCOAEnabled then
@@ -4883,6 +4922,8 @@ function LyraMacro:StopRecording()
     end
 
     self.IsRecording = false
+    self._recordingSessionToken += 1
+    self.RecordingLastAbilityAt = nil
     self._resultsWatchToken += 1
 
     for _, connection in ipairs(self.RecordingConnections) do
@@ -5241,7 +5282,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
         isRecording = true
         button.Text = "Stop Recording"
         button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-        status.Text = "Recording mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips."
+        status.Text = "Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips."
     end)
 
     self.RecorderWindow = screenGui
@@ -5291,7 +5332,7 @@ function LyraMacro:CreateRecorderWindow(config)
             Icon = config.TabIcon or "list-checks",
         })
         local serverStatusText, serverStatusSource = self:GetServerStatusText()
-        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips.")
+        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
         strategyTab:CreateLabel(serverStatusText)
         print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
@@ -5398,7 +5439,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             isRecording = true
             recordButton.UpdateButtonText("Stop Recording")
-            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips.")
+            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
             window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
         end)
 
@@ -6044,6 +6085,7 @@ function LyraMacro:Run(strategy)
     self:_watchForAutoStrategyResults()
     self:CreateStrategyLogger()
     self:LogStrategyAction("STRATEGY STARTED - " .. tostring(actionCount) .. " ACTIONS")
+    local lastAbilityDispatchedAt = os.clock()
 
     for stepNumber = 1, actionCount do
         local step = strategy[stepNumber]
@@ -6064,6 +6106,24 @@ function LyraMacro:Run(strategy)
             elseif action == "sell" then
                 self:Sell(step.tower)
             elseif action == "ability" then
+                local abilityDelay = normalizeAbilityDelay(step.delay)
+
+                if abilityDelay then
+                    local remainingDelay = lastAbilityDispatchedAt + abilityDelay - os.clock()
+
+                    if remainingDelay > 0 then
+                        print(
+                            "[LyraMacro] Waiting "
+                                .. formatNumber(remainingDelay)
+                                .. " seconds for the recorded ability timing."
+                        )
+                        task.wait(remainingDelay)
+                    end
+                end
+
+                -- Anchor start-to-start timing before InvokeServer so remote
+                -- latency does not stretch the next recorded ability interval.
+                lastAbilityDispatchedAt = os.clock()
                 self:ActivateAbility(step.tower, step.ability)
             elseif action == "chaincoa" then
                 local chained, chainMessage = self:SetChainCOA(step.enabled ~= false, {
