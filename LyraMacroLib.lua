@@ -102,10 +102,11 @@ local DYNAMIC_CONTAINER_NAMES = {
 }
 
 local MAP_FINGERPRINT_PART_LIMIT = 500
-local CHAIN_COA_INTERVAL = 10.2
+local CHAIN_COA_ACTIVE_DURATION = 6
+local CHAIN_COA_HANDOFF_DELAY = 2
 local CHAIN_COA_REQUIRED_TOWERS = 3
-local CHAIN_COA_MIN_UPGRADE = 3
-local CHAIN_COA_RETRY_DELAY = 0.75
+local CHAIN_COA_MIN_UPGRADE = 2
+local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
@@ -195,9 +196,12 @@ local LyraMacro = {
     PendingElevatorReplay = nil,
     PendingLegacyReplayFingerprint = nil,
     ChainCOAEnabled = false,
-    ChainCOAInterval = CHAIN_COA_INTERVAL,
+    ChainCOAActiveDuration = CHAIN_COA_ACTIVE_DURATION,
+    ChainCOAHandoffDelay = CHAIN_COA_HANDOFF_DELAY,
+    ChainCOARetryDelay = CHAIN_COA_RETRY_DELAY,
     ChainCOANextIndex = 0,
     ChainCOASeenTowers = {},
+    _chainCOAInternalAbilityRequests = setmetatable({}, { __mode = "k" }),
     _chainCOAToken = 0,
     _chainCOAConnections = {},
     _resultsWatchToken = 0,
@@ -303,6 +307,11 @@ local function formatRecordedStep(step)
     elseif step.action == "ability" then
         table.insert(fields, formatField("tower", step.tower))
         table.insert(fields, formatField("ability", step.ability))
+    elseif step.action == "chaincoa" then
+        table.insert(fields, formatField("enabled", step.enabled ~= false))
+        table.insert(fields, formatField("active_duration", step.active_duration))
+        table.insert(fields, formatField("handoff_delay", step.handoff_delay))
+        table.insert(fields, formatField("retry_delay", step.retry_delay))
     elseif step.action == "skip" and step.label then
         table.insert(fields, formatField("label", step.label))
     end
@@ -324,6 +333,8 @@ local function describeStrategyStep(step)
         return "SKIP WAVE"
     elseif step.action == "ability" then
         return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower)
+    elseif step.action == "chaincoa" then
+        return (step.enabled == false and "DISABLE" or "ENABLE") .. " CHAIN COA"
     end
 
     return string.upper(tostring(step.action or "UNKNOWN"))
@@ -1549,8 +1560,50 @@ local function remoteResponseWasAccepted(response)
         and (response.Success == true or response.Successful == true or response.Ok == true)
 end
 
+local function remoteTextWasRejected(value)
+    if type(value) ~= "string" then
+        return false
+    end
+
+    local lookupKey = normalizeLookupKey(value)
+
+    for _, rejectionWord in ipairs({
+        "cannot",
+        "cant",
+        "failed",
+        "failure",
+        "notready",
+        "rejected",
+        "stunned",
+        "unavailable",
+    }) do
+        if lookupKey:find(rejectionWord, 1, true) ~= nil then
+            return true
+        end
+    end
+
+    if lookupKey:find("cooldown", 1, true) ~= nil
+        and lookupKey:find("cooldownstarted", 1, true) == nil then
+        return true
+    end
+
+    if lookupKey:find("error", 1, true) ~= nil
+        and lookupKey:find("noerror", 1, true) == nil
+        and lookupKey:find("errorfree", 1, true) == nil
+        and lookupKey:find("withouterror", 1, true) == nil then
+        return true
+    end
+
+    local spacedText = " " .. string.lower(value):gsub("[^%w]+", " ") .. " "
+    return spacedText:find(" locked ", 1, true) ~= nil
+end
+
 local function remoteResponseWasRejected(response)
     if response == false then
+        return true
+    end
+
+    if remoteTextWasRejected(response) then
         return true
     end
 
@@ -1564,8 +1617,33 @@ local function remoteResponseWasRejected(response)
             return true
         end
 
-        local statusKey = normalizeLookupKey(response.Status)
-        return statusKey == "error" or statusKey == "failed" or statusKey == "rejected"
+        for _, messageKey in ipairs({ "Message", "Reason", "Result", "Status" }) do
+            if remoteTextWasRejected(response[messageKey]) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function remoteResultsWereRejected(remoteResults)
+    if type(remoteResults) ~= "table" then
+        return remoteResponseWasRejected(remoteResults)
+    end
+
+    local resultCount = tonumber(remoteResults.n) or #remoteResults
+
+    -- A leading true/Instance/explicit success table is authoritative. Some
+    -- remotes return informational strings (for example cooldown metadata) after it.
+    if resultCount > 0 and remoteResponseWasAccepted(remoteResults[1]) then
+        return false
+    end
+
+    for index = 1, resultCount do
+        if remoteResponseWasRejected(remoteResults[index]) then
+            return true
+        end
     end
 
     return false
@@ -1607,6 +1685,25 @@ local function summarizeRemoteResponse(response)
     return "{" .. table.concat(entries, ", ") .. "}"
 end
 
+local function summarizeRemoteResults(remoteResults)
+    if type(remoteResults) ~= "table" then
+        return summarizeRemoteResponse(remoteResults)
+    end
+
+    local summaries = {}
+    local resultCount = tonumber(remoteResults.n) or #remoteResults
+
+    if resultCount == 0 then
+        return "no return values"
+    end
+
+    for index = 1, resultCount do
+        table.insert(summaries, summarizeRemoteResponse(remoteResults[index]))
+    end
+
+    return table.concat(summaries, ", ")
+end
+
 local function isCallOfArmsTowerStunned(tower)
     local replicator = getTowerReplicator(tower)
     local stuns = replicator and safeFindFirstChild(replicator, "Stuns")
@@ -1626,7 +1723,11 @@ end
 local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
     local upgrade = getTowerUpgradeLevel(tower) or tonumber(knownUpgradeLevel)
 
-    if upgrade and upgrade < CHAIN_COA_MIN_UPGRADE then
+    if upgrade == nil then
+        return false, "unknown upgrade"
+    end
+
+    if upgrade < CHAIN_COA_MIN_UPGRADE then
         return false, "needs upgrade"
     end
 
@@ -1637,16 +1738,22 @@ local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
     return true
 end
 
-function LyraMacro:ActivateAbilityForTower(tower, abilityName)
+function LyraMacro:ActivateAbilityForTower(tower, abilityName, options)
     assert(tower and tower.Parent, "[LyraMacro] Cannot activate an ability for a missing tower.")
 
     local canonicalAbilityName = TRACKED_ABILITIES[normalizeLookupKey(abilityName)] or tostring(abilityName or "")
     assert(canonicalAbilityName ~= "", "[LyraMacro] Ability name is required.")
 
-    return RemoteFunction:InvokeServer("Troops", "Abilities", "Activate", {
+    local abilityInfo = {
         Name = canonicalAbilityName,
         Troop = tower,
-    })
+    }
+
+    if type(options) == "table" and options.InternalChainCOA == true then
+        self._chainCOAInternalAbilityRequests[abilityInfo] = true
+    end
+
+    return RemoteFunction:InvokeServer("Troops", "Abilities", "Activate", abilityInfo)
 end
 
 function LyraMacro:ActivateAbility(towerIndex, abilityName)
@@ -1701,11 +1808,39 @@ function LyraMacro:_clearChainCOAConnections()
     self._chainCOAConnections = {}
 end
 
-function LyraMacro:SetChainCOA(enabled)
+function LyraMacro:SetChainCOA(enabled, options)
     enabled = enabled == true
+    options = type(options) == "table" and options or {}
 
     if enabled and game.PlaceId ~= MATCH_PLACE_ID then
         return false, "Chain COA can only run in match place " .. tostring(MATCH_PLACE_ID) .. "."
+    end
+
+    local wasEnabled = self.ChainCOAEnabled
+    local configuredActiveDuration = tonumber(options.ActiveDuration)
+    local configuredHandoffDelay = tonumber(options.HandoffDelay)
+    local configuredRetryDelay = tonumber(options.RetryDelay)
+
+    if configuredActiveDuration then
+        self.ChainCOAActiveDuration = math.max(0, configuredActiveDuration)
+    end
+    if configuredHandoffDelay then
+        self.ChainCOAHandoffDelay = math.max(0, configuredHandoffDelay)
+    end
+    if configuredRetryDelay then
+        self.ChainCOARetryDelay = math.max(0, configuredRetryDelay)
+    end
+
+    local function recordSettingIfNeeded()
+        if self.IsRecording and options.Record ~= false and wasEnabled ~= enabled then
+            self:_appendRecordedStep({
+                action = "chaincoa",
+                enabled = enabled,
+                active_duration = self.ChainCOAActiveDuration,
+                handoff_delay = self.ChainCOAHandoffDelay,
+                retry_delay = self.ChainCOARetryDelay,
+            })
+        end
     end
 
     self.ChainCOAEnabled = enabled
@@ -1714,6 +1849,7 @@ function LyraMacro:SetChainCOA(enabled)
 
     if not enabled then
         table.clear(self.ChainCOASeenTowers)
+        recordSettingIfNeeded()
         print("[LyraMacro] Chain COA disabled.")
         return true, "Chain COA disabled."
     end
@@ -1745,13 +1881,23 @@ function LyraMacro:SetChainCOA(enabled)
     end))
     table.insert(self._chainCOAConnections, towersFolder.ChildRemoved:Connect(markRosterChanged))
 
-    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected, upgrade-ready Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    recordSettingIfNeeded()
+    print(
+        "[LyraMacro] Chain COA armed. Waiting for "
+            .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+            .. " detected, upgrade-ready Commander/Lifeguard towers. Each accepted activation stays active for "
+            .. tostring(self.ChainCOAActiveDuration)
+            .. " seconds, followed by a "
+            .. tostring(self.ChainCOAHandoffDelay)
+            .. " second handoff."
+    )
 
     task.spawn(function()
         local towerOrder = {}
         local nextTowerOrder = 0
-        local lastActivatedTower
-        local nextActivationAt
+        local lastSuccessfulTower
+        local pendingTower
+        local nextAttemptAt
         local activationInFlight = false
         local rotationActive = false
         local lastStatus = ""
@@ -1769,6 +1915,7 @@ function LyraMacro:SetChainCOA(enabled)
             local states = {
                 NeedsUpgrade = 0,
                 Stunned = 0,
+                UnknownUpgrade = 0,
             }
 
             for _, tower in ipairs(allTowers) do
@@ -1786,6 +1933,8 @@ function LyraMacro:SetChainCOA(enabled)
                     states.NeedsUpgrade += 1
                 elseif reason == "stunned" then
                     states.Stunned += 1
+                elseif reason == "unknown upgrade" then
+                    states.UnknownUpgrade += 1
                 end
             end
 
@@ -1797,40 +1946,40 @@ function LyraMacro:SetChainCOA(enabled)
         end
 
         local function getNextTower(readyTowers)
-            local previousIndex
-
-            if lastActivatedTower then
-                for index, tower in ipairs(readyTowers) do
-                    if tower == lastActivatedTower then
-                        previousIndex = index
-                        break
+            if pendingTower then
+                for _, tower in ipairs(readyTowers) do
+                    if tower == pendingTower then
+                        return pendingTower
                     end
+                end
+
+                pendingTower = nil
+            end
+
+            local lastOrder = lastSuccessfulTower and towerOrder[lastSuccessfulTower] or 0
+
+            for _, tower in ipairs(readyTowers) do
+                if towerOrder[tower] > lastOrder then
+                    return tower
                 end
             end
 
-            local nextIndex
-
-            if previousIndex then
-                nextIndex = previousIndex % #readyTowers + 1
-            else
-                nextIndex = self.ChainCOANextIndex % #readyTowers + 1
-            end
-
-            self.ChainCOANextIndex = nextIndex
-            return readyTowers[nextIndex]
+            return readyTowers[1]
         end
 
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers, readyTowers, states = getReadyRoster()
 
             if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
-                reportStatus("Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected Commander/Lifeguard towers.")
-                rotationActive = false
-                lastActivatedTower = nil
-                self.ChainCOANextIndex = 0
-                nextActivationAt = nil
+                reportStatus(
+                    "Chain COA has "
+                        .. tostring(#callOfArmsTowers)
+                        .. "/"
+                        .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+                        .. " detected Commander/Lifeguard towers."
+                )
                 task.wait(CHAIN_COA_POLL_INTERVAL)
-            elseif #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
+            elseif not rotationActive and #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
                 local waiting = {}
 
                 if states.NeedsUpgrade > 0 then
@@ -1839,25 +1988,35 @@ function LyraMacro:SetChainCOA(enabled)
                 if states.Stunned > 0 then
                     table.insert(waiting, tostring(states.Stunned) .. " stunned")
                 end
+                if states.UnknownUpgrade > 0 then
+                    table.insert(waiting, tostring(states.UnknownUpgrade) .. " missing upgrade state")
+                end
 
-                reportStatus("Chain COA is waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " ready commanders (" .. tostring(#readyTowers) .. " ready; " .. table.concat(waiting, ", ") .. ").")
-                rotationActive = false
-                lastActivatedTower = nil
-                self.ChainCOANextIndex = 0
-                nextActivationAt = nil
+                reportStatus(
+                    "Chain COA is waiting for "
+                        .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+                        .. " ready commanders ("
+                        .. tostring(#readyTowers)
+                        .. " ready; "
+                        .. table.concat(waiting, ", ")
+                        .. ")."
+                )
+                task.wait(CHAIN_COA_POLL_INTERVAL)
+            elseif #readyTowers == 0 then
+                reportStatus("Chain COA is preserving its rotation until a commander becomes ready again.")
                 task.wait(CHAIN_COA_POLL_INTERVAL)
             else
                 if not rotationActive then
                     rotationActive = true
-                    nextActivationAt = os.clock()
+                    nextAttemptAt = os.clock()
                     reportStatus("Chain COA detected " .. tostring(#readyTowers) .. " ready commanders; starting stable rotation.")
                 elseif rosterChanged then
-                    print("[LyraMacro] Chain COA roster changed; preserving the next activation slot.")
+                    print("[LyraMacro] Chain COA roster changed; preserving the rotation and timer.")
                 end
 
                 rosterChanged = false
                 local now = os.clock()
-                local waitTime = (nextActivationAt or now) - now
+                local waitTime = (nextAttemptAt or now) - now
 
                 if waitTime > 0 then
                     task.wait(math.min(waitTime, CHAIN_COA_POLL_INTERVAL))
@@ -1865,40 +2024,68 @@ function LyraMacro:SetChainCOA(enabled)
                     task.wait(0.05)
                 else
                     local targetTower = getNextTower(readyTowers)
-                    local scheduledAt = os.clock()
 
-                    lastActivatedTower = targetTower
-                    nextActivationAt = scheduledAt + self.ChainCOAInterval
-                    activationInFlight = true
+                    if not targetTower then
+                        task.wait(CHAIN_COA_POLL_INTERVAL)
+                    else
+                        pendingTower = targetTower
+                        activationInFlight = true
 
-                    task.spawn(function()
-                        local activated, responseOrError = pcall(function()
-                            assert(
-                                self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
-                                "The selected commander is no longer available."
-                            )
+                        task.spawn(function()
+                            local attempt = table.pack(pcall(function()
+                                assert(
+                                    self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
+                                    "The selected commander is no longer available."
+                                )
 
-                            return self:ActivateAbilityForTower(targetTower, "Call Of Arms")
-                        end)
+                                return self:ActivateAbilityForTower(targetTower, "Call Of Arms", {
+                                    InternalChainCOA = true,
+                                })
+                            end))
+                            local invoked = attempt[1] == true
+                            local attemptCount = attempt.n or #attempt
+                            local remoteResults = {
+                                n = math.max(0, attemptCount - 1),
+                            }
 
-                        activationInFlight = false
-
-                        if not activated or remoteResponseWasRejected(responseOrError) then
-                            if self.ChainCOAEnabled and self._chainCOAToken == chainToken then
-                                nextActivationAt = math.min(nextActivationAt or math.huge, os.clock() + CHAIN_COA_RETRY_DELAY)
+                            for index = 2, attemptCount do
+                                remoteResults[index - 1] = attempt[index]
                             end
 
-                            warn("[LyraMacro] Chain COA skipped a rejected commander activation: " .. tostring(responseOrError))
-                        else
-                            print(
-                                "[LyraMacro] Chain COA activated commander slot "
-                                    .. tostring(towerOrder[targetTower] or "?")
-                                    .. "; next activation in "
-                                    .. tostring(self.ChainCOAInterval)
-                                    .. " seconds."
-                            )
-                        end
-                    end)
+                            activationInFlight = false
+
+                            if not self.ChainCOAEnabled or self._chainCOAToken ~= chainToken then
+                                return
+                            end
+
+                            if not invoked or remoteResultsWereRejected(remoteResults) then
+                                pendingTower = targetTower.Parent and targetTower or nil
+                                nextAttemptAt = os.clock() + self.ChainCOARetryDelay
+                                warn(
+                                    "[LyraMacro] Chain COA activation was rejected; retrying in "
+                                        .. tostring(self.ChainCOARetryDelay)
+                                        .. " seconds without advancing the rotation. Response: "
+                                        .. summarizeRemoteResults(remoteResults)
+                                )
+                            else
+                                lastSuccessfulTower = targetTower
+                                pendingTower = nil
+                                self.ChainCOANextIndex = towerOrder[targetTower] or self.ChainCOANextIndex
+                                nextAttemptAt = os.clock()
+                                    + self.ChainCOAActiveDuration
+                                    + self.ChainCOAHandoffDelay
+                                print(
+                                    "[LyraMacro] Chain COA accepted commander slot "
+                                        .. tostring(towerOrder[targetTower] or "?")
+                                        .. "; active for "
+                                        .. tostring(self.ChainCOAActiveDuration)
+                                        .. " seconds, then waiting "
+                                        .. tostring(self.ChainCOAHandoffDelay)
+                                        .. " seconds before the next commander."
+                                )
+                            end
+                        end)
+                    end
                 end
             end
         end
@@ -3815,7 +4002,7 @@ function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
 
     local response = remoteResults and remoteResults[1]
 
-    if remoteResponseWasRejected(response) then
+    if remoteResultsWereRejected(remoteResults) then
         return
     end
 
@@ -3916,15 +4103,25 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
         return
     end
 
-    if remoteResults and remoteResponseWasRejected(remoteResults[1]) then
-        print("[LyraMacro] Ignored a rejected remote action while recording.")
-        return
-    end
-
     local category = args[1]
     local action = args[2]
     local categoryKey = normalizeLookupKey(category)
     local actionKey = normalizeLookupKey(action)
+
+    if categoryKey == "troops" and actionKey == "abilities" and normalizeLookupKey(args[3]) == "activate" then
+        local abilityInfo = args[4]
+
+        if type(abilityInfo) == "table" and self._chainCOAInternalAbilityRequests[abilityInfo] then
+            self._chainCOAInternalAbilityRequests[abilityInfo] = nil
+            return
+        end
+    end
+
+    if remoteResultsWereRejected(remoteResults) then
+        print("[LyraMacro] Ignored a rejected remote action while recording.")
+        return
+    end
+
     local remoteMapName, remoteMapSource = detectMapFromRemoteArgs(args)
 
     if remoteMapName then
@@ -4166,7 +4363,7 @@ function LyraMacro:_watchForMatchResults(watchToken)
             end
 
             if self.ChainCOAEnabled then
-                self:SetChainCOA(false)
+                self:SetChainCOA(false, { Record = false })
             end
 
             print("[LyraMacro] Results are visible. Stopping and exporting the recorded strategy.")
@@ -4234,7 +4431,7 @@ function LyraMacro:_watchForAutoStrategyResults()
             end
 
             if self.ChainCOAEnabled then
-                self:SetChainCOA(false)
+                self:SetChainCOA(false, { Record = false })
             end
 
             self:_releaseReplayOwnership()
@@ -4298,6 +4495,17 @@ function LyraMacro:StartRecording()
     end
 
     self.IsRecording = true
+
+    if self.ChainCOAEnabled then
+        self:_appendRecordedStep({
+            action = "chaincoa",
+            enabled = true,
+            active_duration = self.ChainCOAActiveDuration,
+            handoff_delay = self.ChainCOAHandoffDelay,
+            retry_delay = self.ChainCOARetryDelay,
+        })
+    end
+
     self._resultsWatchToken += 1
     self:DetectMap({ Silent = true })
     self:DetectMapFingerprint({ Silent = true, Force = true })
@@ -4332,6 +4540,7 @@ function LyraMacro:StopRecording()
     local recordedStrategy = self:GetRecordedStrategy()
     local actionCounts = {
         ability = 0,
+        chaincoa = 0,
         mode = 0,
         place = 0,
         sell = 0,
@@ -4364,6 +4573,8 @@ function LyraMacro:StopRecording()
             .. " sells, "
             .. tostring(actionCounts.ability)
             .. " abilities, "
+            .. tostring(actionCounts.chaincoa)
+            .. " Chain COA settings, "
             .. tostring(actionCounts.skip)
             .. " skips, "
             .. tostring(actionCounts.mode)
@@ -4665,7 +4876,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
         isRecording = true
         button.Text = "Stop Recording"
         button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-        status.Text = "Recording mode votes, placements, upgrades, sells, and wave skips."
+        status.Text = "Recording mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips."
     end)
 
     self.RecorderWindow = screenGui
@@ -4713,7 +4924,7 @@ function LyraMacro:CreateRecorderWindow(config)
             Name = config.TabName or "Strategy",
             Icon = config.TabIcon or "list-checks",
         })
-        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
+        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips.")
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
                 self:SetAutoRecordOnTeleport(false)
@@ -4748,7 +4959,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA waits for 3 detected, level 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 detected level 2 Commanders/Lifeguards, checks each remote response, holds for 6 seconds, then uses a 2 second handoff.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
@@ -4818,7 +5029,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             isRecording = true
             recordButton.UpdateButtonText("Stop Recording")
-            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, sells, and wave skips.")
+            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, abilities, Chain COA, sells, and wave skips.")
             window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
         end)
 
@@ -5485,6 +5696,17 @@ function LyraMacro:Run(strategy)
                 self:Sell(step.tower)
             elseif action == "ability" then
                 self:ActivateAbility(step.tower, step.ability)
+            elseif action == "chaincoa" then
+                local chained, chainMessage = self:SetChainCOA(step.enabled ~= false, {
+                    ActiveDuration = step.active_duration,
+                    HandoffDelay = step.handoff_delay,
+                    RetryDelay = step.retry_delay,
+                    Record = false,
+                })
+
+                if not chained then
+                    error(chainMessage or "Chain COA could not be configured.")
+                end
             else
                 error("[LyraMacro] Unknown action: " .. action)
             end
