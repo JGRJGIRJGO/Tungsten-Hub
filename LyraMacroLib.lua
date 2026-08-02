@@ -8,6 +8,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -116,6 +117,19 @@ local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
 local PRIVATE_SERVER_CHAT_STATUS_TIMEOUT = 1
+local PRIVATE_SERVER_MARKER_SCAN_INTERVAL = 0.75
+local PRIVATE_SERVER_MARKER_SCAN_LIMIT = 96
+local PRIVATE_SERVER_MARKER_SCAN_DEPTH = 3
+local PRIVATE_SERVER_PUBLIC_SCAN_MAX_PAGES = 20
+local PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY = 10
+local PRIVATE_SERVER_PUBLIC_SCAN_MAX_RETRY_DELAY = 120
+local PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT = 12
+local PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS = 2
+local PRIVATE_SERVER_PUBLIC_CONFIRMATION_DELAY = 2
+local PRIVATE_SERVER_PUBLIC_MARKER_FALLBACK_DELAY = 3.5
+local PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT = PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT * 2
+    + PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY
+    + 1
 local PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN = 3
 local PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN = 30
 local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
@@ -132,14 +146,29 @@ local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
 local REPLAY_RETRY_INTERVAL = 0.75
 local REPLAY_PLACEMENT_MATCH_RADIUS = 8
 local DEFAULT_MAX_TOWER_UPGRADE = 5
-local PRIVATE_SERVER_MARKER_NAMES = {
-    "IsPrivateServer",
-    "PrivateServer",
-    "PrivateServerEnabled",
-    "VIPServer",
+local PRIVATE_SERVER_MARKER_KEYS = {
+    isprivateserver = true,
+    privateserver = true,
+    isvipserver = true,
+    vipserver = true,
+}
+
+local PRIVATE_SERVER_TYPE_MARKER_KEYS = {
+    lobbytype = true,
+    serverkind = true,
+    servertype = true,
+}
+
+local PRIVATE_SERVER_STATE_CONTAINER_KEYS = {
+    currentserver = true,
+    replicatedstate = true,
+    runtimestate = true,
+    serverstate = true,
+    sessionstate = true,
 }
 
 local SERVER_TYPE_DISPLAY_NAMES = {
+    nonpublic = "Non-public (Private/Reserved)",
     private = "Private/VIP",
     public = "Public",
     reserved = "Reserved",
@@ -226,6 +255,11 @@ local LyraMacro = {
     _privateServerReturnStarted = false,
     _privateServerReturnToken = 0,
     _privateServerReturnConnections = {},
+    _privateServerMarkerLastScanAt = -math.huge,
+    _privateServerMarkerContextKey = nil,
+    _privateServerMarkerType = nil,
+    _privateServerMarkerSource = nil,
+    _serverDirectoryContext = nil,
     _chatFloodcheckCount = 0,
     _chatFloodcheckedUntil = 0,
     _chatMessageResults = {},
@@ -2317,7 +2351,10 @@ local function isReplicatedPrivateServerMarker(value)
 
     if type(value) == "string" then
         local normalized = normalizeLookupKey(value)
-        return normalized == "true" or normalized == "private" or normalized == "vip"
+        return normalized == "private"
+            or normalized == "privateserver"
+            or normalized == "vip"
+            or normalized == "vipserver"
     end
 
     return false
@@ -2346,6 +2383,10 @@ local function normalizeProvidedServerType(value)
         return "reserved"
     end
 
+    if normalized == "nonpublic" or normalized == "nonpublicserver" then
+        return "nonpublic"
+    end
+
     if normalized == "public" or normalized == "publicserver" or normalized == "standard" or normalized == "standardserver" then
         return "public"
     end
@@ -2353,8 +2394,341 @@ local function normalizeProvidedServerType(value)
     return nil
 end
 
--- Returns "private", "reserved", "public", or "unknown", followed by the
--- detection source and (for native VIP servers) the owner's user ID.
+local function readDataModelProperty(propertyName)
+    local readable, value = pcall(function()
+        return game[propertyName]
+    end)
+
+    return readable, value
+end
+
+local function getCurrentServerIdentity()
+    local placeId = tonumber(game.PlaceId) or 0
+    local jobId = type(game.JobId) == "string" and game.JobId or ""
+    return placeId, jobId, tostring(placeId) .. ":" .. jobId
+end
+
+local function safeGetAttributes(instance)
+    local readable, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if readable and type(attributes) == "table" then
+        return attributes
+    end
+
+    return {}
+end
+
+local function getInstancePath(instance)
+    local readable, fullName = pcall(function()
+        return instance:GetFullName()
+    end)
+
+    if readable and type(fullName) == "string" and fullName ~= "" then
+        return fullName
+    end
+
+    return getInstanceName(instance) or "unknown instance"
+end
+
+local function inspectReplicatedServerMarker(instance)
+    local instancePath = getInstancePath(instance)
+
+    for attributeName, attributeValue in pairs(safeGetAttributes(instance)) do
+        local attributeKey = normalizeLookupKey(attributeName)
+
+        if PRIVATE_SERVER_MARKER_KEYS[attributeKey] and isReplicatedPrivateServerMarker(attributeValue) then
+            return "private", "replicated marker " .. instancePath .. "." .. tostring(attributeName)
+        end
+
+        if PRIVATE_SERVER_TYPE_MARKER_KEYS[attributeKey] and type(attributeValue) == "string" then
+            local markedServerType = normalizeProvidedServerType(attributeValue)
+
+            if markedServerType == "private" or markedServerType == "reserved" or markedServerType == "nonpublic" then
+                return markedServerType, "replicated server type " .. instancePath .. "." .. tostring(attributeName)
+            end
+        end
+    end
+
+    local instanceKey = normalizeLookupKey(getInstanceName(instance))
+    local instanceValue = readInstanceValue(instance)
+
+    if PRIVATE_SERVER_MARKER_KEYS[instanceKey] and isReplicatedPrivateServerMarker(instanceValue) then
+        return "private", "replicated marker " .. instancePath
+    end
+
+    if PRIVATE_SERVER_TYPE_MARKER_KEYS[instanceKey] and type(instanceValue) == "string" then
+        local markedServerType = normalizeProvidedServerType(instanceValue)
+
+        if markedServerType == "private" or markedServerType == "reserved" or markedServerType == "nonpublic" then
+            return markedServerType, "replicated server type " .. instancePath
+        end
+    end
+
+    return nil
+end
+
+local function scanReplicatedServerMarkers()
+    local queue = {}
+    local visited = {}
+    local scannedCount = 0
+
+    local function enqueue(instance, depth)
+        if not instance or visited[instance] or scannedCount >= PRIVATE_SERVER_MARKER_SCAN_LIMIT then
+            return
+        end
+
+        visited[instance] = true
+        scannedCount += 1
+        table.insert(queue, {
+            Instance = instance,
+            Depth = depth,
+        })
+    end
+
+    enqueue(LocalPlayer, 0)
+    enqueue(ReplicatedStorage, 0)
+    enqueue(workspace, 0)
+    enqueue(game, 0)
+
+    local queueIndex = 1
+
+    while queueIndex <= #queue do
+        local entry = queue[queueIndex]
+        queueIndex += 1
+
+        local markedServerType, markerSource = inspectReplicatedServerMarker(entry.Instance)
+
+        if markedServerType then
+            return markedServerType, markerSource
+        end
+
+        if entry.Depth < PRIVATE_SERVER_MARKER_SCAN_DEPTH then
+            for _, child in ipairs(safeGetChildren(entry.Instance)) do
+                local childKey = normalizeLookupKey(getInstanceName(child))
+
+                if
+                    PRIVATE_SERVER_MARKER_KEYS[childKey]
+                    or PRIVATE_SERVER_TYPE_MARKER_KEYS[childKey]
+                    or PRIVATE_SERVER_STATE_CONTAINER_KEYS[childKey]
+                then
+                    enqueue(child, entry.Depth + 1)
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getReplicatedServerMarker(self, contextKey)
+    if self._privateServerMarkerContextKey ~= contextKey then
+        self._privateServerMarkerContextKey = contextKey
+        self._privateServerMarkerType = nil
+        self._privateServerMarkerSource = nil
+        self._privateServerMarkerLastScanAt = -math.huge
+    end
+
+    if self._privateServerMarkerType and self._privateServerMarkerSource then
+        return self._privateServerMarkerType, self._privateServerMarkerSource
+    end
+
+    if os.clock() - self._privateServerMarkerLastScanAt < PRIVATE_SERVER_MARKER_SCAN_INTERVAL then
+        return nil
+    end
+
+    self._privateServerMarkerLastScanAt = os.clock()
+    local markedServerType, markerSource = scanReplicatedServerMarkers()
+
+    if markedServerType then
+        self._privateServerMarkerType = markedServerType
+        self._privateServerMarkerSource = markerSource
+    end
+
+    return markedServerType, markerSource
+end
+
+local function markServerDirectoryFailure(context, failure)
+    context.Pending = false
+    context.PendingSince = nil
+    context.Type = nil
+    context.Source = nil
+    context.Error = tostring(failure)
+    context.FailureCount = (tonumber(context.FailureCount) or 0) + 1
+
+    local retryDelay = math.min(
+        PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY * (2 ^ math.min(context.FailureCount - 1, 4)),
+        PRIVATE_SERVER_PUBLIC_SCAN_MAX_RETRY_DELAY
+    )
+    context.RetryAfter = os.clock() + retryDelay
+end
+
+function LyraMacro:RefreshServerContext()
+    local placeId, jobId, contextKey = getCurrentServerIdentity()
+    local context = self._serverDirectoryContext
+
+    if not context or context.Key ~= contextKey then
+        context = {
+            Key = contextKey,
+            PlaceId = placeId,
+            JobId = jobId,
+            Pending = false,
+            Generation = 0,
+            FailureCount = 0,
+            RetryAfter = -math.huge,
+        }
+        self._serverDirectoryContext = context
+    end
+
+    if context.Type == "public" or context.Type == "nonpublic" then
+        return context
+    end
+
+    if context.Pending then
+        if os.clock() - (tonumber(context.PendingSince) or os.clock()) < PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT then
+            return context
+        end
+
+        -- The executor's HttpGet cannot always be cancelled. Invalidate this
+        -- generation so a late completion cannot overwrite a newer result.
+        context.Generation += 1
+        markServerDirectoryFailure(context, "public-server lookup timed out")
+        return context
+    end
+
+    if os.clock() < (tonumber(context.RetryAfter) or -math.huge) then
+        return context
+    end
+
+    context.Error = nil
+
+    if placeId <= 0 then
+        markServerDirectoryFailure(context, "current PlaceId is unavailable")
+        return context
+    end
+
+    if jobId == "" then
+        markServerDirectoryFailure(context, "current JobId is unavailable")
+        return context
+    end
+
+    context.Generation += 1
+    local generation = context.Generation
+    local normalizedJobId = jobId:lower()
+    context.Pending = true
+    context.PendingSince = os.clock()
+
+    task.delay(PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT, function()
+        if
+            self._serverDirectoryContext == context
+            and context.Generation == generation
+            and context.Pending
+        then
+            context.Generation += 1
+            markServerDirectoryFailure(context, "public-server lookup timed out")
+        end
+    end)
+
+    task.spawn(function()
+        local scanned, resultType, resultSourceOrError = pcall(function()
+            local pagesScanned = 0
+
+            for confirmation = 1, PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS do
+                local cursor
+                local completedPass = false
+
+                for _ = 1, PRIVATE_SERVER_PUBLIC_SCAN_MAX_PAGES do
+                    if self._serverDirectoryContext ~= context or context.Generation ~= generation then
+                        error("server context changed during public-server lookup")
+                    end
+
+                    local query = confirmation % 2 == 0
+                            and "excludeFullGames=false&limit=100&sortOrder=Asc"
+                        or "sortOrder=Asc&excludeFullGames=false&limit=100"
+                    local url = "https://games.roblox.com/v1/games/"
+                        .. tostring(placeId)
+                        .. "/servers/Public?"
+                        .. query
+
+                    if cursor then
+                        url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+                    end
+
+                    local response = game:HttpGet(url)
+                    local page = HttpService:JSONDecode(response)
+
+                    if
+                        type(page) ~= "table"
+                        or type(page.data) ~= "table"
+                        or (type(page.errors) == "table" and next(page.errors) ~= nil)
+                    then
+                        error("Roblox returned an invalid public-server response")
+                    end
+
+                    pagesScanned += 1
+
+                    for _, server in ipairs(page.data) do
+                        if type(server) == "table" and tostring(server.id or ""):lower() == normalizedJobId then
+                            return "public", "Roblox public server directory (current JobId listed)"
+                        end
+                    end
+
+                    local nextCursor = page.nextPageCursor
+
+                    if nextCursor == nil then
+                        completedPass = true
+                        break
+                    end
+
+                    if type(nextCursor) ~= "string" or nextCursor == "" then
+                        error("Roblox returned an invalid public-server cursor")
+                    end
+
+                    cursor = nextCursor
+                end
+
+                if not completedPass then
+                    error("public-server pagination exceeded the safe page limit")
+                end
+
+                if confirmation < PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS then
+                    task.wait(PRIVATE_SERVER_PUBLIC_CONFIRMATION_DELAY)
+                end
+            end
+
+            return "nonpublic",
+                "Roblox public server directory (current JobId absent in "
+                    .. tostring(PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS)
+                    .. " complete scans, "
+                    .. tostring(pagesScanned)
+                    .. " pages checked)"
+        end)
+
+        if self._serverDirectoryContext ~= context or context.Generation ~= generation then
+            return
+        end
+
+        context.Pending = false
+        context.PendingSince = nil
+        context.LastCompletedAt = os.clock()
+
+        if scanned then
+            context.Type = resultType
+            context.Source = resultSourceOrError
+            context.Error = nil
+            context.FailureCount = 0
+            context.RetryAfter = -math.huge
+        else
+            markServerDirectoryFailure(context, resultType)
+        end
+    end)
+
+    return context
+end
+
+-- Returns "private", "reserved", "nonpublic", "public", or "unknown",
+-- followed by the detection source and (for native VIP servers) owner user ID.
 function LyraMacro:GetServerType()
     if type(self.PrivateServerStatusProvider) == "function" then
         local checked, providedStatus = pcall(self.PrivateServerStatusProvider)
@@ -2370,41 +2744,129 @@ function LyraMacro:GetServerType()
         end
     end
 
-    local readDataModel, privateServerId, privateServerOwnerId = pcall(function()
-        return game.PrivateServerId, game.PrivateServerOwnerId
-    end)
+    -- These properties are marked NotReplicated by Roblox. Read modern and
+    -- deprecated aliases independently so executor-specific access failures do
+    -- not discard positive evidence from another property. Empty client-side
+    -- values are inconclusive and must never be treated as proof of publicness.
+    local modernIdReadable, modernId = readDataModelProperty("PrivateServerId")
+    local modernOwnerReadable, modernOwner = readDataModelProperty("PrivateServerOwnerId")
+    local legacyIdReadable, legacyId = readDataModelProperty("VIPServerId")
+    local legacyOwnerReadable, legacyOwner = readDataModelProperty("VIPServerOwnerId")
+    local nativeOwners = {
+        {
+            Readable = modernOwnerReadable,
+            Value = modernOwner,
+            Source = "DataModel.PrivateServerOwnerId",
+        },
+        {
+            Readable = legacyOwnerReadable,
+            Value = legacyOwner,
+            Source = "DataModel.VIPServerOwnerId",
+        },
+    }
 
-    -- A non-empty PrivateServerId can describe either a user-owned VIP server
-    -- or a reserved server. Only the VIP server exposes a non-zero owner ID.
-    if readDataModel and type(privateServerId) == "string" then
-        if privateServerId == "" then
-            return "public", "DataModel.PrivateServerId"
-        end
+    for _, ownerObservation in ipairs(nativeOwners) do
+        local ownerUserId = ownerObservation.Readable and tonumber(ownerObservation.Value)
 
-        local ownerUserId = tonumber(privateServerOwnerId) or 0
-
-        if ownerUserId > 0 then
-            return "private", "DataModel.PrivateServerOwnerId", ownerUserId
-        end
-
-        return "reserved", "DataModel.PrivateServerId"
-    end
-
-    for _, root in ipairs({ LocalPlayer, ReplicatedStorage, workspace }) do
-        for _, markerName in ipairs(PRIVATE_SERVER_MARKER_NAMES) do
-            if isReplicatedPrivateServerMarker(readAttribute(root, markerName)) then
-                return "private", "replicated marker " .. markerName
-            end
-
-            local marker = safeFindFirstChild(root, markerName)
-
-            if marker and isReplicatedPrivateServerMarker(readInstanceValue(marker)) then
-                return "private", "replicated marker " .. markerName
-            end
+        if ownerUserId and ownerUserId > 0 then
+            return "private", ownerObservation.Source, ownerUserId
         end
     end
 
-    return "unknown", "DataModel private-server properties unavailable"
+    local nativePairs = {
+        {
+            IdReadable = modernIdReadable,
+            Id = modernId,
+            Source = "DataModel.PrivateServerId",
+        },
+        {
+            IdReadable = legacyIdReadable,
+            Id = legacyId,
+            Source = "DataModel.VIPServerId",
+        },
+    }
+
+    local _, _, contextKey = getCurrentServerIdentity()
+    local markedServerType, markerSource = getReplicatedServerMarker(self, contextKey)
+
+    for _, nativePair in ipairs(nativePairs) do
+        local privateServerId = nativePair.IdReadable and type(nativePair.Id) == "string" and trimString(nativePair.Id)
+
+        if privateServerId and privateServerId ~= "" then
+            if markedServerType then
+                return markedServerType, markerSource
+            end
+
+            -- A positive ID proves this is not public, but the paired owner can
+            -- still read as zero in an executor because it is NotReplicated.
+            return "nonpublic", nativePair.Source .. " (owner unavailable client-side)"
+        end
+    end
+
+    local directoryContext = self:RefreshServerContext()
+
+    if directoryContext.Type == "public" then
+        if markedServerType then
+            return "unknown",
+                "conflicting server evidence: "
+                    .. tostring(markerSource)
+                    .. "; current JobId is listed as public"
+        end
+
+        return "public", directoryContext.Source
+    end
+
+    if directoryContext.Type == "nonpublic" then
+        if markedServerType then
+            return markedServerType, markerSource
+        end
+
+        return "nonpublic", directoryContext.Source
+    end
+
+    if directoryContext.Pending then
+        if
+            markedServerType
+            and os.clock() - (tonumber(directoryContext.PendingSince) or os.clock())
+                >= PRIVATE_SERVER_PUBLIC_MARKER_FALLBACK_DELAY
+        then
+            return markedServerType, markerSource .. " (public-directory verification still pending)"
+        end
+
+        return "unknown",
+            markedServerType
+                    and ("verifying " .. tostring(markerSource) .. " against Roblox public server directory")
+                or "checking Roblox public server directory"
+    end
+
+    if directoryContext.Error then
+        if markedServerType then
+            return markedServerType, markerSource .. " (public-directory verification unavailable)"
+        end
+
+        return "unknown", "Roblox public server directory unavailable: " .. tostring(directoryContext.Error)
+    end
+
+    return "unknown", "private-server evidence unavailable"
+end
+
+function LyraMacro:WaitForServerContext(timeout)
+    local deadline = os.clock() + math.max(0, tonumber(timeout) or 8)
+    local serverType = self:GetServerType()
+
+    while os.clock() < deadline do
+        local context = self._serverDirectoryContext
+
+        if serverType ~= "unknown" and not (context and context.Pending) then
+            break
+        end
+
+        self:RefreshServerContext()
+        task.wait(0.05)
+        serverType = self:GetServerType()
+    end
+
+    return self:GetServerType()
 end
 
 function LyraMacro:GetServerTypeDisplayName()
@@ -2424,8 +2886,10 @@ function LyraMacro:GetServerStatusText()
         end
     elseif serverType == "reserved" then
         statusText ..= " (not a user-owned VIP lobby)"
+    elseif serverType == "nonpublic" then
+        statusText ..= " (VIP/reserved ownership unavailable to this client)"
     elseif serverType == "unknown" then
-        statusText ..= " (detection unavailable)"
+        statusText ..= " (detection checking or unavailable)"
     end
 
     return statusText .. ".", source
@@ -2433,7 +2897,7 @@ end
 
 function LyraMacro:IsPrivateServer()
     local serverType = self:GetServerType()
-    return serverType == "private" or serverType == "reserved"
+    return serverType == "private" or serverType == "reserved" or serverType == "nonpublic"
 end
 
 function LyraMacro:IsUserOwnedPrivateServer()
@@ -2448,28 +2912,28 @@ end
 
 function LyraMacro:ShouldUsePrivateServerWorkflow()
     local serverType, source = self:GetServerType()
-    local hasLinkCode = type(self.SelectedPrivateServerLinkCode) == "string"
-        and self.SelectedPrivateServerLinkCode ~= ""
+
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "private-server elevator commands are lobby-only"
+    end
 
     if serverType == "private" then
         return true, "detected Private/VIP server via " .. tostring(source)
     end
 
+    if serverType == "nonpublic" then
+        return true, "detected non-public lobby via " .. tostring(source)
+    end
+
     if serverType == "reserved" then
-        return false,
-            "current server is reserved, not a user-owned Private/VIP lobby"
-                .. (hasLinkCode and "; the configured link code is kept only for returning to that lobby" or "")
+        return false, "current server is reserved, not a confirmed Private/VIP lobby"
     end
 
     if serverType == "public" then
-        return false,
-            "current server is public"
-                .. (hasLinkCode and "; the configured link code does not make this server private" or "")
+        return false, "current server is public"
     end
 
-    return false,
-        "server type could not be detected"
-            .. (hasLinkCode and "; the configured link code is kept only for lobby return" or "")
+    return false, "server type could not be detected via " .. tostring(source)
 end
 
 function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
@@ -3631,6 +4095,11 @@ end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
+        -- Native private-server properties are not replicated to every client.
+        -- A normal type read starts the fallback lookup only when stronger
+        -- provider/native evidence did not already settle the answer.
+        self:GetServerType()
+
         local lastRefreshAt = -math.huge
         local lastRefreshError
         local lastEntryAttemptAt = -math.huge
@@ -3722,6 +4191,25 @@ function LyraMacro:_autoEnterPendingReplay(replay)
             end
 
             if entered then
+                local currentServerType = self:GetServerType()
+                local directoryContext = self._serverDirectoryContext
+
+                if currentServerType == "unknown" or (directoryContext and directoryContext.Pending) then
+                    -- Entry itself is already complete, so this bounded wait
+                    -- cannot make an available map rotate away. In a private
+                    -- lobby it gives the confirmation scan time to enable !start.
+                    self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+                end
+
+                -- Recompute even when an earlier strict marker said private;
+                -- a completed directory lookup may have disproved it meanwhile.
+                privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+                if privateServer and not announcedPrivateWorkflow then
+                    announcedPrivateWorkflow = true
+                    print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
+                end
+
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
 
                 if privateServer then
@@ -5311,6 +5799,19 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
     status.TextXAlignment = Enum.TextXAlignment.Left
     status.Parent = frame
 
+    local initialStatusText = status.Text
+
+    task.spawn(function()
+        self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+
+        if status.Parent and status.Text == initialStatusText then
+            local refreshedServerStatusText = self:GetServerStatusText()
+            status.Text = reason
+                    and ("Fallback UI: " .. tostring(reason) .. "\n" .. refreshedServerStatusText)
+                or (refreshedServerStatusText .. " Ready to record.")
+        end
+    end)
+
     local button = Instance.new("TextButton")
     button.Name = "RecordButton"
     button.Size = UDim2.new(1, -20, 0, 34)
@@ -5410,7 +5911,17 @@ function LyraMacro:CreateRecorderWindow(config)
         })
         local serverStatusText, serverStatusSource = self:GetServerStatusText()
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
-        strategyTab:CreateLabel(serverStatusText)
+        local serverStatusLabel = strategyTab:CreateLabel(serverStatusText)
+
+        task.spawn(function()
+            self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+
+            if serverStatusLabel and type(serverStatusLabel.UpdateText) == "function" then
+                local refreshedServerStatusText = self:GetServerStatusText()
+                serverStatusLabel.UpdateText(refreshedServerStatusText)
+            end
+        end)
+
         print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
         strategyTab:CreateToggle("Manual map override", self.ManualMapOverrideEnabled ~= false, function(enabled)
             local overrideChanged = (self.ManualMapOverrideEnabled ~= false) ~= enabled
@@ -5455,14 +5966,14 @@ function LyraMacro:CreateRecorderWindow(config)
             window:Notify("Elevator Watcher Unavailable", message or "Your executor cannot queue scripts across teleports.", 4)
         end)
 
-        strategyTab:CreateTextbox("Private server link code", self.SelectedPrivateServerLinkCode or "Optional privateServerLinkCode", function(linkCode)
+        strategyTab:CreateTextbox("Private return link code (optional)", self.SelectedPrivateServerLinkCode or "Not needed for detection", function(linkCode)
             local configuredCode = self:SetPrivateServerLinkCode(linkCode)
 
             if configuredCode then
-                descriptionLabel.UpdateText("Private server link code will be included in the next AutoStrategy export.")
-                window:Notify("Private Server Code Set", "The next AutoStrategy will include the configured link code.", 3)
+                descriptionLabel.UpdateText("Optional return link saved. Private-server detection remains automatic.")
+                window:Notify("Private Return Link Set", "Used only to target the same lobby after a match.", 3)
             else
-                descriptionLabel.UpdateText("Private server link code cleared. AutoStrategy exports will use the standard format.")
+                descriptionLabel.UpdateText("Return link cleared. Private-server detection still runs automatically.")
             end
         end)
 
