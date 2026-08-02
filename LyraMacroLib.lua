@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local DEFAULT_MACRO_LIBRARY_URL = "https://raw.githubusercontent.com/JGRJGIRJGO/Tungsten-Hub/main/LyraMacroLib.lua"
@@ -6384,13 +6385,20 @@ function LyraMacro:SkipWave()
     print("[LyraMacro] Skipped wave.")
 end
 
-local function makeGuiDraggable(handle, target)
+local function makeGuiDraggable(handle, target, onDrag)
     handle.Active = true
 
     local dragging = false
     local dragInput
     local dragStart
     local startPosition
+    local activeInputConnection
+    local connections = {}
+
+    local function track(connection)
+        table.insert(connections, connection)
+        return connection
+    end
 
     local function updatePosition(input)
         local camera = workspace.CurrentCamera
@@ -6404,13 +6412,17 @@ local function makeGuiDraggable(handle, target)
         local nextX = math.clamp(startPosition.X + delta.X, minX, maxX)
         local nextY = math.clamp(startPosition.Y + delta.Y, minY, maxY)
 
+        if onDrag and (nextX ~= startPosition.X or nextY ~= startPosition.Y) then
+            onDrag()
+        end
+
         target.Position = UDim2.fromOffset(
             nextX + target.AnchorPoint.X * targetSize.X,
             nextY + target.AnchorPoint.Y * targetSize.Y
         )
     end
 
-    handle.InputBegan:Connect(function(input)
+    track(handle.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
@@ -6419,24 +6431,52 @@ local function makeGuiDraggable(handle, target)
         dragStart = input.Position
         startPosition = target.AbsolutePosition
 
-        input.Changed:Connect(function()
+        if activeInputConnection then
+            activeInputConnection:Disconnect()
+            activeInputConnection = nil
+        end
+
+        local changedConnection
+        changedConnection = input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
+
+                if activeInputConnection == changedConnection then
+                    activeInputConnection = nil
+                end
+
+                changedConnection:Disconnect()
             end
         end)
-    end)
+        activeInputConnection = changedConnection
+    end))
 
-    handle.InputChanged:Connect(function(input)
+    track(handle.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
-    end)
+    end))
 
-    UserInputService.InputChanged:Connect(function(input)
+    track(UserInputService.InputChanged:Connect(function(input)
         if dragging and input == dragInput then
             updatePosition(input)
         end
-    end)
+    end))
+
+    return function()
+        dragging = false
+
+        if activeInputConnection then
+            activeInputConnection:Disconnect()
+            activeInputConnection = nil
+        end
+
+        for _, connection in ipairs(connections) do
+            connection:Disconnect()
+        end
+
+        table.clear(connections)
+    end
 end
 
 local function clampGuiToViewport(target)
@@ -6472,6 +6512,56 @@ local STRATEGY_LOGGER_COLORS = {
     Coral = Color3.fromRGB(255, 123, 120),
 }
 
+-- Sprite metadata from tijnepema/lucide-roblox (MIT); Lucide icons are ISC licensed.
+-- Keep this subset local because AutoStrategy runs without loading the full Lyra UI.
+local STRATEGY_LOGGER_LUCIDE_ICONS = {
+    ["arrow-right"] = { 18786021641, 48, 48, 845, 783 },
+    ["chevron-up"] = { 18786022917, 48, 48, 294, 833 },
+    ["circle-check"] = { 18786022917, 48, 48, 686, 539 },
+    ["list-checks"] = { 18786025432, 48, 48, 98, 98 },
+    ["mouse-pointer-click"] = { 18786025432, 48, 48, 392, 392 },
+    play = { 18786025432, 48, 48, 784, 392 },
+    ["radio-tower"] = { 18786025432, 48, 48, 539, 735 },
+    terminal = { 18786026913, 48, 48, 196, 735 },
+    ["trash-2"] = { 18786026913, 48, 48, 98, 931 },
+    ["triangle-alert"] = { 18786026913, 48, 48, 539, 539 },
+    upload = { 18786026913, 48, 48, 686, 490 },
+    zap = { 18786026913, 48, 48, 588, 882 },
+}
+
+local function setStrategyLoggerIcon(icon, iconName)
+    if not icon then
+        return false
+    end
+
+    local resolvedIconName = STRATEGY_LOGGER_LUCIDE_ICONS[iconName] and iconName or "terminal"
+    local sprite = STRATEGY_LOGGER_LUCIDE_ICONS[resolvedIconName]
+
+    icon.Image = "rbxassetid://" .. tostring(sprite[1])
+    icon.ImageRectSize = Vector2.new(sprite[2], sprite[3])
+    icon.ImageRectOffset = Vector2.new(sprite[4], sprite[5])
+    icon:SetAttribute("LucideIcon", resolvedIconName)
+    return true
+end
+
+local function createStrategyLoggerIcon(parent, iconName, properties)
+    local icon = Instance.new("ImageLabel")
+    icon.Name = "Icon"
+    icon.BackgroundTransparency = 1
+    icon.BorderSizePixel = 0
+    icon.ScaleType = Enum.ScaleType.Fit
+
+    for property, value in pairs(properties or {}) do
+        if property ~= "Parent" then
+            icon[property] = value
+        end
+    end
+
+    setStrategyLoggerIcon(icon, iconName)
+    icon.Parent = parent
+    return icon
+end
+
 local function addStrategyLoggerCorner(instance, radius)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, radius)
@@ -6504,29 +6594,29 @@ local function getStrategyLoggerAppearance(message)
     local actionText = string.match(normalized, "^%d+%s*/%s*%d+%s+(.+)$") or normalized
 
     if string.match(normalized, "^STRATEGY FAILED") or string.match(actionText, "^ERROR") then
-        return "ERR", STRATEGY_LOGGER_COLORS.Coral
+        return "triangle-alert", STRATEGY_LOGGER_COLORS.Coral
     elseif string.match(normalized, "^STRATEGY COMPLETED") then
-        return "DONE", STRATEGY_LOGGER_COLORS.Mint
+        return "circle-check", STRATEGY_LOGGER_COLORS.Mint
     elseif string.match(normalized, "^STRATEGY STARTED") then
-        return "SYS", STRATEGY_LOGGER_COLORS.Lavender
+        return "play", STRATEGY_LOGGER_COLORS.Lavender
     elseif string.match(actionText, "^ENABLE%s+CHAIN%s+COA")
         or string.match(actionText, "^DISABLE%s+CHAIN%s+COA") then
-        return "COA", STRATEGY_LOGGER_COLORS.Mint
+        return "radio-tower", STRATEGY_LOGGER_COLORS.Mint
     elseif string.match(actionText, "^ACTIVATE%s+") then
-        return "ABL", STRATEGY_LOGGER_COLORS.Mint
+        return "zap", STRATEGY_LOGGER_COLORS.Mint
     elseif string.match(actionText, "^PLACE%s+") then
-        return "PLC", STRATEGY_LOGGER_COLORS.Lavender
+        return "mouse-pointer-click", STRATEGY_LOGGER_COLORS.Lavender
     elseif string.match(actionText, "^UPGRADE%s+") then
-        return "UPG", STRATEGY_LOGGER_COLORS.Cyan
+        return "upload", STRATEGY_LOGGER_COLORS.Cyan
     elseif string.match(actionText, "^SELL%s+") then
-        return "SEL", STRATEGY_LOGGER_COLORS.Coral
+        return "trash-2", STRATEGY_LOGGER_COLORS.Coral
     elseif string.match(actionText, "^SKIP%s+") then
-        return "SKP", STRATEGY_LOGGER_COLORS.Amber
+        return "arrow-right", STRATEGY_LOGGER_COLORS.Amber
     elseif string.match(actionText, "^VOTE%s+") then
-        return "VOTE", STRATEGY_LOGGER_COLORS.Cyan
+        return "list-checks", STRATEGY_LOGGER_COLORS.Cyan
     end
 
-    return "LOG", STRATEGY_LOGGER_COLORS.Muted
+    return "terminal", STRATEGY_LOGGER_COLORS.Muted
 end
 
 local function parseStrategyLoggerMessage(message)
@@ -6558,6 +6648,18 @@ local function setStrategyLoggerProgress(logger, progress)
     end
 
     logger.ProgressFill.Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0)
+end
+
+local function setStrategyLoggerRuntimeStatus(logger, text, iconName, color)
+    if logger.LiveText and logger.LiveText.Parent then
+        logger.LiveText.Text = text
+        logger.LiveText.TextColor3 = color
+    end
+
+    if logger.LiveIcon and logger.LiveIcon.Parent then
+        setStrategyLoggerIcon(logger.LiveIcon, iconName)
+        logger.LiveIcon.ImageColor3 = color
+    end
 end
 
 local function getStrategyLoggerViewportLayout()
@@ -6679,16 +6781,13 @@ function LyraMacro:CreateStrategyLogger()
         35
     )
 
-    local brandText = Instance.new("TextLabel")
-    brandText.Name = "BrandText"
-    brandText.Size = UDim2.fromScale(1, 1)
-    brandText.BackgroundTransparency = 1
-    brandText.Text = "L"
-    brandText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    brandText.TextSize = 13
-    brandText.Font = Enum.Font.MontserratBold
-    brandText.ZIndex = 1003
-    brandText.Parent = brandBadge
+    createStrategyLoggerIcon(brandBadge, "terminal", {
+        Name = "BrandIcon",
+        Position = UDim2.new(0.5, -8, 0.5, -8),
+        Size = UDim2.fromOffset(16, 16),
+        ImageColor3 = Color3.fromRGB(255, 255, 255),
+        ZIndex = 1003,
+    })
 
     local headerText = Instance.new("TextLabel")
     headerText.Name = "Title"
@@ -6731,16 +6830,14 @@ function LyraMacro:CreateStrategyLogger()
     addStrategyLoggerCorner(liveStatus, 12)
     addStrategyLoggerStroke(liveStatus, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
 
-    local liveDot = Instance.new("Frame")
-    liveDot.Name = "Dot"
-    liveDot.AnchorPoint = Vector2.new(0, 0.5)
-    liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
-    liveDot.Size = UDim2.fromOffset(6, 6)
-    liveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
-    liveDot.BorderSizePixel = 0
-    liveDot.ZIndex = 1003
-    liveDot.Parent = liveStatus
-    addStrategyLoggerCorner(liveDot, 6)
+    local liveIcon = createStrategyLoggerIcon(liveStatus, "play", {
+        Name = "Icon",
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = compactLayout and UDim2.new(0.5, -6, 0.5, 0) or UDim2.new(0, 8, 0.5, 0),
+        Size = UDim2.fromOffset(12, 12),
+        ImageColor3 = STRATEGY_LOGGER_COLORS.Mint,
+        ZIndex = 1003,
+    })
 
     local liveText = Instance.new("TextLabel")
     liveText.Name = "Text"
@@ -6760,18 +6857,23 @@ function LyraMacro:CreateStrategyLogger()
     collapseButton.Name = "Collapse"
     collapseButton.AnchorPoint = Vector2.new(1, 0.5)
     collapseButton.Position = UDim2.new(1, -12, 0.5, 0)
-    collapseButton.Size = UDim2.fromOffset(26, 26)
+    collapseButton.Size = compactLayout and UDim2.fromOffset(32, 32) or UDim2.fromOffset(28, 28)
     collapseButton.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
     collapseButton.BorderSizePixel = 0
     collapseButton.AutoButtonColor = false
-    collapseButton.Text = "-"
-    collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
-    collapseButton.TextSize = 14
-    collapseButton.Font = Enum.Font.MontserratBold
+    collapseButton.Text = ""
     collapseButton.ZIndex = 1003
     collapseButton.Parent = header
     addStrategyLoggerCorner(collapseButton, 6)
     addStrategyLoggerStroke(collapseButton, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local collapseIcon = createStrategyLoggerIcon(collapseButton, "chevron-up", {
+        Name = "Icon",
+        Position = UDim2.new(0.5, -7, 0.5, -7),
+        Size = UDim2.fromOffset(14, 14),
+        ImageColor3 = STRATEGY_LOGGER_COLORS.Muted,
+        ZIndex = 1004,
+    })
 
     local headerDivider = Instance.new("Frame")
     headerDivider.Name = "Divider"
@@ -6784,12 +6886,13 @@ function LyraMacro:CreateStrategyLogger()
     headerDivider.ZIndex = 1002
     headerDivider.Parent = header
 
-    local content = Instance.new("Frame")
+    local content = Instance.new("CanvasGroup")
     content.Name = "Content"
     content.Position = UDim2.fromOffset(0, 54)
     content.Size = UDim2.new(1, 0, 1, -54)
     content.BackgroundTransparency = 1
     content.BorderSizePixel = 0
+    content.GroupTransparency = 0
     content.ZIndex = 1001
     content.Parent = panel
 
@@ -6894,6 +6997,110 @@ function LyraMacro:CreateStrategyLogger()
     local viewportConnection
     local currentCameraConnection
     local ancestryConnection
+    local collapseSizeTween
+    local collapseContentTween
+    local collapseIconTween
+    local collapseHoverTween
+    local collapseCompletionConnection
+    local collapseTransitionToken = 0
+    local loggerWasDragged = false
+
+    local function cancelCollapseAnimation()
+        if collapseCompletionConnection then
+            collapseCompletionConnection:Disconnect()
+            collapseCompletionConnection = nil
+        end
+
+        for _, tween in ipairs({ collapseSizeTween, collapseContentTween, collapseIconTween }) do
+            if tween then
+                pcall(function()
+                    tween:Cancel()
+                end)
+            end
+        end
+
+        collapseSizeTween = nil
+        collapseContentTween = nil
+        collapseIconTween = nil
+    end
+
+    local function clampLoggerAfterLayout()
+        task.defer(function()
+            if frame.Parent then
+                clampGuiToViewport(frame)
+            end
+        end)
+    end
+
+    local function setCollapsed(nextCollapsed, animate)
+        collapsed = nextCollapsed == true
+        collapseTransitionToken += 1
+        local transitionToken = collapseTransitionToken
+        cancelCollapseAnimation()
+
+        content.Visible = true
+        collapseButton:SetAttribute("Collapsed", collapsed)
+        collapseButton:SetAttribute("Action", collapsed and "Expand console" or "Collapse console")
+
+        local targetSize = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
+        local targetTransparency = collapsed and 1 or 0
+        local targetRotation = collapsed and 180 or 0
+
+        if not animate then
+            frame.Size = targetSize
+            content.GroupTransparency = targetTransparency
+            content.Visible = not collapsed
+
+            if collapseIcon then
+                collapseIcon.Rotation = targetRotation
+            end
+
+            clampLoggerAfterLayout()
+            return
+        end
+
+        local tweenInfo = TweenInfo.new(0.24, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        collapseSizeTween = TweenService:Create(frame, tweenInfo, { Size = targetSize })
+        collapseContentTween = TweenService:Create(content, tweenInfo, {
+            GroupTransparency = targetTransparency,
+        })
+
+        if collapseIcon then
+            collapseIconTween = TweenService:Create(collapseIcon, tweenInfo, {
+                Rotation = targetRotation,
+            })
+            collapseIconTween:Play()
+        end
+
+        local activeSizeTween = collapseSizeTween
+        local completionConnection
+        completionConnection = activeSizeTween.Completed:Connect(function(playbackState)
+            if completionConnection then
+                completionConnection:Disconnect()
+            end
+
+            if collapseCompletionConnection == completionConnection then
+                collapseCompletionConnection = nil
+            end
+
+            if
+                collapseTransitionToken ~= transitionToken
+                or playbackState ~= Enum.PlaybackState.Completed
+            then
+                return
+            end
+
+            collapseSizeTween = nil
+            collapseContentTween = nil
+            collapseIconTween = nil
+            content.Visible = not collapsed
+            clampLoggerAfterLayout()
+        end)
+        collapseCompletionConnection = completionConnection
+
+        collapseContentTween:Play()
+        activeSizeTween:Play()
+    end
 
     local function applyCompactLayout(nextCompactLayout)
         compactLayout = nextCompactLayout
@@ -6901,7 +7108,12 @@ function LyraMacro:CreateStrategyLogger()
         headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
         headerSubtitle.Visible = not compactLayout
         liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
-        liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+        collapseButton.Size = compactLayout and UDim2.fromOffset(32, 32) or UDim2.fromOffset(28, 28)
+
+        if liveIcon then
+            liveIcon.Position = compactLayout and UDim2.new(0.5, -6, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
+        end
+
         liveText.Visible = not compactLayout
 
         for _, child in ipairs(scroll:GetChildren()) do
@@ -6932,14 +7144,22 @@ function LyraMacro:CreateStrategyLogger()
         frameWidth = nextLayout.Width
         frameHeight = nextLayout.Height
         expandedSize = UDim2.fromOffset(frameWidth, frameHeight)
+        collapseTransitionToken += 1
+        cancelCollapseAnimation()
         frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
-        applyCompactLayout(nextLayout.Compact)
+        content.GroupTransparency = collapsed and 1 or 0
+        content.Visible = not collapsed
 
-        task.defer(function()
-            if frame.Parent then
-                clampGuiToViewport(frame)
-            end
-        end)
+        if collapseIcon then
+            collapseIcon.Rotation = collapsed and 180 or 0
+        end
+
+        if not loggerWasDragged then
+            frame.Position = UDim2.new(1, -nextLayout.FrameMargin, 0, nextLayout.TopMargin)
+        end
+
+        applyCompactLayout(nextLayout.Compact)
+        clampLoggerAfterLayout()
     end
 
     local function bindCurrentCamera()
@@ -6958,27 +7178,48 @@ function LyraMacro:CreateStrategyLogger()
     end
 
     collapseButton.MouseButton1Click:Connect(function()
-        collapsed = not collapsed
-        content.Visible = not collapsed
-        collapseButton.Text = collapsed and "+" or "-"
-        frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
-
-        task.defer(function()
-            if frame.Parent then
-                clampGuiToViewport(frame)
-            end
-        end)
+        setCollapsed(not collapsed, true)
     end)
 
     collapseButton.MouseEnter:Connect(function()
-        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+        if not collapseIcon then
+            return
+        end
+
+        if collapseHoverTween then
+            collapseHoverTween:Cancel()
+        end
+
+        collapseHoverTween = TweenService:Create(
+            collapseIcon,
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { ImageColor3 = STRATEGY_LOGGER_COLORS.Text }
+        )
+        collapseHoverTween:Play()
     end)
 
     collapseButton.MouseLeave:Connect(function()
-        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+        if not collapseIcon then
+            return
+        end
+
+        if collapseHoverTween then
+            collapseHoverTween:Cancel()
+        end
+
+        collapseHoverTween = TweenService:Create(
+            collapseIcon,
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { ImageColor3 = STRATEGY_LOGGER_COLORS.Muted }
+        )
+        collapseHoverTween:Play()
     end)
 
-    makeGuiDraggable(header, frame)
+    collapseButton:SetAttribute("Collapsed", false)
+    collapseButton:SetAttribute("Action", "Collapse console")
+    local cleanupDrag = makeGuiDraggable(header, frame, function()
+        loggerWasDragged = true
+    end)
 
     self.StrategyLogger = {
         Gui = screenGui,
@@ -6993,7 +7234,9 @@ function LyraMacro:CreateStrategyLogger()
         ProgressText = progressText,
         ProgressFill = progressFill,
         LiveText = liveText,
-        LiveDot = liveDot,
+        LiveIcon = liveIcon,
+        CollapseButton = collapseButton,
+        CollapseIcon = collapseIcon,
         Entries = 0,
         StartedAt = os.clock(),
         TotalActions = nil,
@@ -7020,6 +7263,23 @@ function LyraMacro:CreateStrategyLogger()
             currentCameraConnection = nil
         end
 
+        collapseTransitionToken += 1
+        cancelCollapseAnimation()
+
+        if collapseHoverTween then
+            collapseHoverTween:Cancel()
+            collapseHoverTween = nil
+        end
+
+        if cleanupDrag then
+            cleanupDrag()
+            cleanupDrag = nil
+        end
+
+        if self.StrategyLogger and self.StrategyLogger.Gui == screenGui then
+            self.StrategyLogger = nil
+        end
+
         if ancestryConnection then
             ancestryConnection:Disconnect()
             ancestryConnection = nil
@@ -7037,7 +7297,7 @@ function LyraMacro:LogStrategyAction(message)
     end
 
     local parsed = parseStrategyLoggerMessage(message)
-    local badgeText, accentColor = getStrategyLoggerAppearance(message)
+    local badgeIconName, accentColor = getStrategyLoggerAppearance(message)
 
     if logger.CurrentRow and logger.CurrentRow.Parent then
         logger.CurrentRow.BackgroundTransparency = 1
@@ -7052,6 +7312,12 @@ function LyraMacro:LogStrategyAction(message)
 
         if previousBadge then
             previousBadge.BackgroundTransparency = 0.84
+
+            local previousIcon = previousBadge:FindFirstChild("Icon")
+
+            if previousIcon and previousIcon:IsA("ImageLabel") then
+                previousIcon.ImageTransparency = 0.25
+            end
         end
 
         if previousAccent then
@@ -7065,14 +7331,14 @@ function LyraMacro:LogStrategyAction(message)
         logger.StatusText.Text = "STRATEGY RUNNING"
         logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
         logger.ProgressText.Text = "0 / " .. tostring(parsed.StartedTotal) .. " DONE"
-        logger.LiveText.Text = "LIVE"
-        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
-        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+        setStrategyLoggerRuntimeStatus(logger, "LIVE", "play", STRATEGY_LOGGER_COLORS.Mint)
         setStrategyLoggerProgress(logger, 0)
     elseif parsed.Step then
         logger.TotalActions = parsed.Total or logger.TotalActions
         logger.CurrentStep = parsed.Step
         logger.StatusText.Text = "RUNNING STEP " .. tostring(parsed.Step)
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
+        setStrategyLoggerRuntimeStatus(logger, "LIVE", "play", STRATEGY_LOGGER_COLORS.Mint)
 
         if logger.TotalActions then
             local completedActions = math.max(0, parsed.Step - 1)
@@ -7083,9 +7349,7 @@ function LyraMacro:LogStrategyAction(message)
         logger.CurrentStep = logger.TotalActions or logger.CurrentStep
         logger.StatusText.Text = "STRATEGY COMPLETE"
         logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
-        logger.LiveText.Text = "DONE"
-        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
-        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+        setStrategyLoggerRuntimeStatus(logger, "DONE", "circle-check", STRATEGY_LOGGER_COLORS.Mint)
 
         if logger.TotalActions then
             logger.ProgressText.Text = tostring(logger.TotalActions) .. " / " .. tostring(logger.TotalActions) .. " DONE"
@@ -7095,9 +7359,7 @@ function LyraMacro:LogStrategyAction(message)
     elseif parsed.Failed then
         logger.StatusText.Text = "STRATEGY FAILED"
         logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
-        logger.LiveText.Text = "ERROR"
-        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
-        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Coral
+        setStrategyLoggerRuntimeStatus(logger, "ERROR", "triangle-alert", STRATEGY_LOGGER_COLORS.Coral)
     end
 
     logger.Entries += 1
@@ -7150,16 +7412,14 @@ function LyraMacro:LogStrategyAction(message)
     addStrategyLoggerCorner(typeBadge, 5)
     addStrategyLoggerStroke(typeBadge, accentColor, 0.35, 1)
 
-    local typeText = Instance.new("TextLabel")
-    typeText.Name = "Text"
-    typeText.Size = UDim2.fromScale(1, 1)
-    typeText.BackgroundTransparency = 1
-    typeText.Text = badgeText
-    typeText.TextColor3 = accentColor
-    typeText.TextSize = 8
-    typeText.Font = Enum.Font.Code
-    typeText.ZIndex = 1004
-    typeText.Parent = typeBadge
+    typeBadge:SetAttribute("LucideIcon", badgeIconName)
+    createStrategyLoggerIcon(typeBadge, badgeIconName, {
+        Name = "Icon",
+        Position = UDim2.new(0.5, -7, 0.5, -7),
+        Size = UDim2.fromOffset(14, 14),
+        ImageColor3 = accentColor,
+        ZIndex = 1004,
+    })
 
     local actionText = Instance.new("TextLabel")
     actionText.Name = "ActionText"
