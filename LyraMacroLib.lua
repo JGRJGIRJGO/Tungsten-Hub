@@ -8,6 +8,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -17,7 +18,10 @@ local DEFAULT_STRATEGY_FOLDER = "LyraStrategies"
 local MAP_SCAN_LIMIT = 2500
 local LOBBY_PLACE_ID = 113331026373939
 local MATCH_PLACE_ID = 133260551256133
-local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/113331026373939/TDS-Reanimated?privateServerLinkCode="
+-- A user-owned VIP linkCode is a launcher parameter, not a reserved-server
+-- access code. Never pass it to TeleportToPrivateServer/ReservedServerAccessCode.
+local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/start?placeId=113331026373939&linkCode="
+local PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX = "roblox://placeId=113331026373939&linkCode="
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 
 local MAP_NAME_KEYS = {
@@ -102,15 +106,30 @@ local DYNAMIC_CONTAINER_NAMES = {
 }
 
 local MAP_FINGERPRINT_PART_LIMIT = 500
-local CHAIN_COA_INTERVAL = 10.2
+local CHAIN_COA_ACTIVE_DURATION = 6
+local CHAIN_COA_HANDOFF_DELAY = 2
 local CHAIN_COA_REQUIRED_TOWERS = 3
-local CHAIN_COA_MIN_UPGRADE = 3
-local CHAIN_COA_RETRY_DELAY = 0.75
+local CHAIN_COA_MIN_UPGRADE = 2
+local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
+local ABILITY_DELAY_FROM_TOWER_PLACEMENT = "tower_placement"
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
 local PRIVATE_SERVER_CHAT_STATUS_TIMEOUT = 1
+local PRIVATE_SERVER_MARKER_SCAN_INTERVAL = 0.75
+local PRIVATE_SERVER_MARKER_SCAN_LIMIT = 96
+local PRIVATE_SERVER_MARKER_SCAN_DEPTH = 3
+local PRIVATE_SERVER_PUBLIC_SCAN_MAX_PAGES = 20
+local PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY = 10
+local PRIVATE_SERVER_PUBLIC_SCAN_MAX_RETRY_DELAY = 120
+local PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT = 12
+local PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS = 2
+local PRIVATE_SERVER_PUBLIC_CONFIRMATION_DELAY = 2
+local PRIVATE_SERVER_PUBLIC_MARKER_FALLBACK_DELAY = 3.5
+local PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT = PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT * 2
+    + PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY
+    + 1
 local PRIVATE_SERVER_FLOODCHECK_BASE_COOLDOWN = 3
 local PRIVATE_SERVER_FLOODCHECK_MAX_COOLDOWN = 30
 local PRIVATE_SERVER_START_RETRY_INTERVAL = 0.2
@@ -127,11 +146,33 @@ local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
 local REPLAY_RETRY_INTERVAL = 0.75
 local REPLAY_PLACEMENT_MATCH_RADIUS = 8
 local DEFAULT_MAX_TOWER_UPGRADE = 5
-local PRIVATE_SERVER_MARKER_NAMES = {
-    "IsPrivateServer",
-    "PrivateServer",
-    "PrivateServerEnabled",
-    "VIPServer",
+local PRIVATE_SERVER_MARKER_KEYS = {
+    isprivateserver = true,
+    privateserver = true,
+    isvipserver = true,
+    vipserver = true,
+}
+
+local PRIVATE_SERVER_TYPE_MARKER_KEYS = {
+    lobbytype = true,
+    serverkind = true,
+    servertype = true,
+}
+
+local PRIVATE_SERVER_STATE_CONTAINER_KEYS = {
+    currentserver = true,
+    replicatedstate = true,
+    runtimestate = true,
+    serverstate = true,
+    sessionstate = true,
+}
+
+local SERVER_TYPE_DISPLAY_NAMES = {
+    nonpublic = "Non-public (Private/Reserved)",
+    private = "Private/VIP",
+    public = "Public",
+    reserved = "Reserved",
+    unknown = "Unknown",
 }
 
 local TRACKED_ABILITIES = {
@@ -162,6 +203,7 @@ local TowersFolder = workspace:FindFirstChild("Towers")
 
 local LyraMacro = {
     SpawnedTowers = {},
+    SpawnedTowerPlacedAt = {},
     SpawnedTowerUpgradeLevels = {},
     KnownTowerTroops = {},
     KnownTowerUpgradeLevels = {},
@@ -170,18 +212,22 @@ local LyraMacro = {
     SelectedLoadout = {},
     SelectedMode = "Normal",
     SelectedMap = "",
+    ManualMapOverrideEnabled = true,
     SelectedPrivateServerLinkCode = nil,
     PrivateServerStatusProvider = nil,
     PrivateServerReturnProvider = nil,
     PrivateServerReturnUrl = nil,
+    PrivateServerReturnDeepLink = nil,
     IsRecording = false,
     RecordedStrategy = {},
     RecordedTowerIndexes = {},
     RecordedTowerUpgradeLevels = {},
+    RecordedTowerPlacedAt = {},
     PendingRecordedPlacements = {},
     RecordingSeenTowers = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
+    RecordingLastAbilityAt = nil,
     LastStrategyExport = nil,
     LastDetectedMapSource = nil,
     SelectedMapFingerprint = "",
@@ -195,9 +241,12 @@ local LyraMacro = {
     PendingElevatorReplay = nil,
     PendingLegacyReplayFingerprint = nil,
     ChainCOAEnabled = false,
-    ChainCOAInterval = CHAIN_COA_INTERVAL,
+    ChainCOAActiveDuration = CHAIN_COA_ACTIVE_DURATION,
+    ChainCOAHandoffDelay = CHAIN_COA_HANDOFF_DELAY,
+    ChainCOARetryDelay = CHAIN_COA_RETRY_DELAY,
     ChainCOANextIndex = 0,
     ChainCOASeenTowers = {},
+    _chainCOAInternalAbilityRequests = setmetatable({}, { __mode = "k" }),
     _chainCOAToken = 0,
     _chainCOAConnections = {},
     _resultsWatchToken = 0,
@@ -206,6 +255,11 @@ local LyraMacro = {
     _privateServerReturnStarted = false,
     _privateServerReturnToken = 0,
     _privateServerReturnConnections = {},
+    _privateServerMarkerLastScanAt = -math.huge,
+    _privateServerMarkerContextKey = nil,
+    _privateServerMarkerType = nil,
+    _privateServerMarkerSource = nil,
+    _serverDirectoryContext = nil,
     _chatFloodcheckCount = 0,
     _chatFloodcheckedUntil = 0,
     _chatMessageResults = {},
@@ -215,6 +269,7 @@ local LyraMacro = {
     _lastPrivateServerMessageId = nil,
     StrategyLogger = nil,
     _recordHookInstalled = false,
+    _recordingSessionToken = 0,
     _originalNamecall = nil,
     _remoteObservationQueue = {},
     _remoteObservationWorkerRunning = false,
@@ -235,6 +290,16 @@ local function roundNumber(value)
     end
 
     return math.ceil(value * 1000 - 0.5) / 1000
+end
+
+local function normalizeAbilityDelay(value)
+    local delay = tonumber(value)
+
+    if not delay or delay ~= delay or delay == math.huge or delay == -math.huge then
+        return nil
+    end
+
+    return math.max(0, delay)
 end
 
 local function formatNumber(value)
@@ -303,6 +368,21 @@ local function formatRecordedStep(step)
     elseif step.action == "ability" then
         table.insert(fields, formatField("tower", step.tower))
         table.insert(fields, formatField("ability", step.ability))
+
+        local abilityDelay = normalizeAbilityDelay(step.delay)
+
+        if abilityDelay then
+            table.insert(fields, formatField("delay", abilityDelay))
+
+            if step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
+                table.insert(fields, formatField("delay_from", ABILITY_DELAY_FROM_TOWER_PLACEMENT))
+            end
+        end
+    elseif step.action == "chaincoa" then
+        table.insert(fields, formatField("enabled", step.enabled ~= false))
+        table.insert(fields, formatField("active_duration", step.active_duration))
+        table.insert(fields, formatField("handoff_delay", step.handoff_delay))
+        table.insert(fields, formatField("retry_delay", step.retry_delay))
     elseif step.action == "skip" and step.label then
         table.insert(fields, formatField("label", step.label))
     end
@@ -323,7 +403,12 @@ local function describeStrategyStep(step)
     elseif step.action == "skip" then
         return "SKIP WAVE"
     elseif step.action == "ability" then
-        return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower)
+        local abilityDelay = normalizeAbilityDelay(step.delay)
+        local delaySource = step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT and " from placement" or ""
+        local delaySuffix = abilityDelay and " (+" .. formatNumber(abilityDelay) .. "s" .. delaySource .. ")" or ""
+        return "ACTIVATE " .. tostring(step.ability) .. " ON TOWER #" .. tostring(step.tower) .. delaySuffix
+    elseif step.action == "chaincoa" then
+        return (step.enabled == false and "DISABLE" or "ENABLE") .. " CHAIN COA"
     end
 
     return string.upper(tostring(step.action or "UNKNOWN"))
@@ -1549,8 +1634,50 @@ local function remoteResponseWasAccepted(response)
         and (response.Success == true or response.Successful == true or response.Ok == true)
 end
 
+local function remoteTextWasRejected(value)
+    if type(value) ~= "string" then
+        return false
+    end
+
+    local lookupKey = normalizeLookupKey(value)
+
+    for _, rejectionWord in ipairs({
+        "cannot",
+        "cant",
+        "failed",
+        "failure",
+        "notready",
+        "rejected",
+        "stunned",
+        "unavailable",
+    }) do
+        if lookupKey:find(rejectionWord, 1, true) ~= nil then
+            return true
+        end
+    end
+
+    if lookupKey:find("cooldown", 1, true) ~= nil
+        and lookupKey:find("cooldownstarted", 1, true) == nil then
+        return true
+    end
+
+    if lookupKey:find("error", 1, true) ~= nil
+        and lookupKey:find("noerror", 1, true) == nil
+        and lookupKey:find("errorfree", 1, true) == nil
+        and lookupKey:find("withouterror", 1, true) == nil then
+        return true
+    end
+
+    local spacedText = " " .. string.lower(value):gsub("[^%w]+", " ") .. " "
+    return spacedText:find(" locked ", 1, true) ~= nil
+end
+
 local function remoteResponseWasRejected(response)
     if response == false then
+        return true
+    end
+
+    if remoteTextWasRejected(response) then
         return true
     end
 
@@ -1564,8 +1691,33 @@ local function remoteResponseWasRejected(response)
             return true
         end
 
-        local statusKey = normalizeLookupKey(response.Status)
-        return statusKey == "error" or statusKey == "failed" or statusKey == "rejected"
+        for _, messageKey in ipairs({ "Message", "Reason", "Result", "Status" }) do
+            if remoteTextWasRejected(response[messageKey]) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function remoteResultsWereRejected(remoteResults)
+    if type(remoteResults) ~= "table" then
+        return remoteResponseWasRejected(remoteResults)
+    end
+
+    local resultCount = tonumber(remoteResults.n) or #remoteResults
+
+    -- A leading true/Instance/explicit success table is authoritative. Some
+    -- remotes return informational strings (for example cooldown metadata) after it.
+    if resultCount > 0 and remoteResponseWasAccepted(remoteResults[1]) then
+        return false
+    end
+
+    for index = 1, resultCount do
+        if remoteResponseWasRejected(remoteResults[index]) then
+            return true
+        end
     end
 
     return false
@@ -1607,6 +1759,25 @@ local function summarizeRemoteResponse(response)
     return "{" .. table.concat(entries, ", ") .. "}"
 end
 
+local function summarizeRemoteResults(remoteResults)
+    if type(remoteResults) ~= "table" then
+        return summarizeRemoteResponse(remoteResults)
+    end
+
+    local summaries = {}
+    local resultCount = tonumber(remoteResults.n) or #remoteResults
+
+    if resultCount == 0 then
+        return "no return values"
+    end
+
+    for index = 1, resultCount do
+        table.insert(summaries, summarizeRemoteResponse(remoteResults[index]))
+    end
+
+    return table.concat(summaries, ", ")
+end
+
 local function isCallOfArmsTowerStunned(tower)
     local replicator = getTowerReplicator(tower)
     local stuns = replicator and safeFindFirstChild(replicator, "Stuns")
@@ -1626,7 +1797,11 @@ end
 local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
     local upgrade = getTowerUpgradeLevel(tower) or tonumber(knownUpgradeLevel)
 
-    if upgrade and upgrade < CHAIN_COA_MIN_UPGRADE then
+    if upgrade == nil then
+        return false, "unknown upgrade"
+    end
+
+    if upgrade < CHAIN_COA_MIN_UPGRADE then
         return false, "needs upgrade"
     end
 
@@ -1637,16 +1812,22 @@ local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
     return true
 end
 
-function LyraMacro:ActivateAbilityForTower(tower, abilityName)
+function LyraMacro:ActivateAbilityForTower(tower, abilityName, options)
     assert(tower and tower.Parent, "[LyraMacro] Cannot activate an ability for a missing tower.")
 
     local canonicalAbilityName = TRACKED_ABILITIES[normalizeLookupKey(abilityName)] or tostring(abilityName or "")
     assert(canonicalAbilityName ~= "", "[LyraMacro] Ability name is required.")
 
-    return RemoteFunction:InvokeServer("Troops", "Abilities", "Activate", {
+    local abilityInfo = {
         Name = canonicalAbilityName,
         Troop = tower,
-    })
+    }
+
+    if type(options) == "table" and options.InternalChainCOA == true then
+        self._chainCOAInternalAbilityRequests[abilityInfo] = true
+    end
+
+    return RemoteFunction:InvokeServer("Troops", "Abilities", "Activate", abilityInfo)
 end
 
 function LyraMacro:ActivateAbility(towerIndex, abilityName)
@@ -1701,11 +1882,39 @@ function LyraMacro:_clearChainCOAConnections()
     self._chainCOAConnections = {}
 end
 
-function LyraMacro:SetChainCOA(enabled)
+function LyraMacro:SetChainCOA(enabled, options)
     enabled = enabled == true
+    options = type(options) == "table" and options or {}
 
     if enabled and game.PlaceId ~= MATCH_PLACE_ID then
         return false, "Chain COA can only run in match place " .. tostring(MATCH_PLACE_ID) .. "."
+    end
+
+    local wasEnabled = self.ChainCOAEnabled
+    local configuredActiveDuration = tonumber(options.ActiveDuration)
+    local configuredHandoffDelay = tonumber(options.HandoffDelay)
+    local configuredRetryDelay = tonumber(options.RetryDelay)
+
+    if configuredActiveDuration then
+        self.ChainCOAActiveDuration = math.max(0, configuredActiveDuration)
+    end
+    if configuredHandoffDelay then
+        self.ChainCOAHandoffDelay = math.max(0, configuredHandoffDelay)
+    end
+    if configuredRetryDelay then
+        self.ChainCOARetryDelay = math.max(0, configuredRetryDelay)
+    end
+
+    local function recordSettingIfNeeded()
+        if self.IsRecording and options.Record ~= false and wasEnabled ~= enabled then
+            self:_appendRecordedStep({
+                action = "chaincoa",
+                enabled = enabled,
+                active_duration = self.ChainCOAActiveDuration,
+                handoff_delay = self.ChainCOAHandoffDelay,
+                retry_delay = self.ChainCOARetryDelay,
+            })
+        end
     end
 
     self.ChainCOAEnabled = enabled
@@ -1714,6 +1923,7 @@ function LyraMacro:SetChainCOA(enabled)
 
     if not enabled then
         table.clear(self.ChainCOASeenTowers)
+        recordSettingIfNeeded()
         print("[LyraMacro] Chain COA disabled.")
         return true, "Chain COA disabled."
     end
@@ -1745,13 +1955,23 @@ function LyraMacro:SetChainCOA(enabled)
     end))
     table.insert(self._chainCOAConnections, towersFolder.ChildRemoved:Connect(markRosterChanged))
 
-    print("[LyraMacro] Chain COA armed. Waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected, upgrade-ready Commander/Lifeguard towers, then rotating Call Of Arms every " .. tostring(self.ChainCOAInterval) .. " seconds.")
+    recordSettingIfNeeded()
+    print(
+        "[LyraMacro] Chain COA armed. Waiting for "
+            .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+            .. " detected, upgrade-ready Commander/Lifeguard towers. Each accepted activation stays active for "
+            .. tostring(self.ChainCOAActiveDuration)
+            .. " seconds, followed by a "
+            .. tostring(self.ChainCOAHandoffDelay)
+            .. " second handoff."
+    )
 
     task.spawn(function()
         local towerOrder = {}
         local nextTowerOrder = 0
-        local lastActivatedTower
-        local nextActivationAt
+        local lastSuccessfulTower
+        local pendingTower
+        local nextAttemptAt
         local activationInFlight = false
         local rotationActive = false
         local lastStatus = ""
@@ -1769,6 +1989,7 @@ function LyraMacro:SetChainCOA(enabled)
             local states = {
                 NeedsUpgrade = 0,
                 Stunned = 0,
+                UnknownUpgrade = 0,
             }
 
             for _, tower in ipairs(allTowers) do
@@ -1786,6 +2007,8 @@ function LyraMacro:SetChainCOA(enabled)
                     states.NeedsUpgrade += 1
                 elseif reason == "stunned" then
                     states.Stunned += 1
+                elseif reason == "unknown upgrade" then
+                    states.UnknownUpgrade += 1
                 end
             end
 
@@ -1797,40 +2020,40 @@ function LyraMacro:SetChainCOA(enabled)
         end
 
         local function getNextTower(readyTowers)
-            local previousIndex
-
-            if lastActivatedTower then
-                for index, tower in ipairs(readyTowers) do
-                    if tower == lastActivatedTower then
-                        previousIndex = index
-                        break
+            if pendingTower then
+                for _, tower in ipairs(readyTowers) do
+                    if tower == pendingTower then
+                        return pendingTower
                     end
+                end
+
+                pendingTower = nil
+            end
+
+            local lastOrder = lastSuccessfulTower and towerOrder[lastSuccessfulTower] or 0
+
+            for _, tower in ipairs(readyTowers) do
+                if towerOrder[tower] > lastOrder then
+                    return tower
                 end
             end
 
-            local nextIndex
-
-            if previousIndex then
-                nextIndex = previousIndex % #readyTowers + 1
-            else
-                nextIndex = self.ChainCOANextIndex % #readyTowers + 1
-            end
-
-            self.ChainCOANextIndex = nextIndex
-            return readyTowers[nextIndex]
+            return readyTowers[1]
         end
 
         while self.ChainCOAEnabled and self._chainCOAToken == chainToken and game.PlaceId == MATCH_PLACE_ID do
             local callOfArmsTowers, readyTowers, states = getReadyRoster()
 
             if #callOfArmsTowers < CHAIN_COA_REQUIRED_TOWERS then
-                reportStatus("Chain COA has " .. tostring(#callOfArmsTowers) .. "/" .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " detected Commander/Lifeguard towers.")
-                rotationActive = false
-                lastActivatedTower = nil
-                self.ChainCOANextIndex = 0
-                nextActivationAt = nil
+                reportStatus(
+                    "Chain COA has "
+                        .. tostring(#callOfArmsTowers)
+                        .. "/"
+                        .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+                        .. " detected Commander/Lifeguard towers."
+                )
                 task.wait(CHAIN_COA_POLL_INTERVAL)
-            elseif #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
+            elseif not rotationActive and #readyTowers < CHAIN_COA_REQUIRED_TOWERS then
                 local waiting = {}
 
                 if states.NeedsUpgrade > 0 then
@@ -1839,25 +2062,35 @@ function LyraMacro:SetChainCOA(enabled)
                 if states.Stunned > 0 then
                     table.insert(waiting, tostring(states.Stunned) .. " stunned")
                 end
+                if states.UnknownUpgrade > 0 then
+                    table.insert(waiting, tostring(states.UnknownUpgrade) .. " missing upgrade state")
+                end
 
-                reportStatus("Chain COA is waiting for " .. tostring(CHAIN_COA_REQUIRED_TOWERS) .. " ready commanders (" .. tostring(#readyTowers) .. " ready; " .. table.concat(waiting, ", ") .. ").")
-                rotationActive = false
-                lastActivatedTower = nil
-                self.ChainCOANextIndex = 0
-                nextActivationAt = nil
+                reportStatus(
+                    "Chain COA is waiting for "
+                        .. tostring(CHAIN_COA_REQUIRED_TOWERS)
+                        .. " ready commanders ("
+                        .. tostring(#readyTowers)
+                        .. " ready; "
+                        .. table.concat(waiting, ", ")
+                        .. ")."
+                )
+                task.wait(CHAIN_COA_POLL_INTERVAL)
+            elseif #readyTowers == 0 then
+                reportStatus("Chain COA is preserving its rotation until a commander becomes ready again.")
                 task.wait(CHAIN_COA_POLL_INTERVAL)
             else
                 if not rotationActive then
                     rotationActive = true
-                    nextActivationAt = os.clock()
+                    nextAttemptAt = os.clock()
                     reportStatus("Chain COA detected " .. tostring(#readyTowers) .. " ready commanders; starting stable rotation.")
                 elseif rosterChanged then
-                    print("[LyraMacro] Chain COA roster changed; preserving the next activation slot.")
+                    print("[LyraMacro] Chain COA roster changed; preserving the rotation and timer.")
                 end
 
                 rosterChanged = false
                 local now = os.clock()
-                local waitTime = (nextActivationAt or now) - now
+                local waitTime = (nextAttemptAt or now) - now
 
                 if waitTime > 0 then
                     task.wait(math.min(waitTime, CHAIN_COA_POLL_INTERVAL))
@@ -1865,40 +2098,68 @@ function LyraMacro:SetChainCOA(enabled)
                     task.wait(0.05)
                 else
                     local targetTower = getNextTower(readyTowers)
-                    local scheduledAt = os.clock()
 
-                    lastActivatedTower = targetTower
-                    nextActivationAt = scheduledAt + self.ChainCOAInterval
-                    activationInFlight = true
+                    if not targetTower then
+                        task.wait(CHAIN_COA_POLL_INTERVAL)
+                    else
+                        pendingTower = targetTower
+                        activationInFlight = true
 
-                    task.spawn(function()
-                        local activated, responseOrError = pcall(function()
-                            assert(
-                                self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
-                                "The selected commander is no longer available."
-                            )
+                        task.spawn(function()
+                            local attempt = table.pack(pcall(function()
+                                assert(
+                                    self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
+                                    "The selected commander is no longer available."
+                                )
 
-                            return self:ActivateAbilityForTower(targetTower, "Call Of Arms")
-                        end)
+                                return self:ActivateAbilityForTower(targetTower, "Call Of Arms", {
+                                    InternalChainCOA = true,
+                                })
+                            end))
+                            local invoked = attempt[1] == true
+                            local attemptCount = attempt.n or #attempt
+                            local remoteResults = {
+                                n = math.max(0, attemptCount - 1),
+                            }
 
-                        activationInFlight = false
-
-                        if not activated or remoteResponseWasRejected(responseOrError) then
-                            if self.ChainCOAEnabled and self._chainCOAToken == chainToken then
-                                nextActivationAt = math.min(nextActivationAt or math.huge, os.clock() + CHAIN_COA_RETRY_DELAY)
+                            for index = 2, attemptCount do
+                                remoteResults[index - 1] = attempt[index]
                             end
 
-                            warn("[LyraMacro] Chain COA skipped a rejected commander activation: " .. tostring(responseOrError))
-                        else
-                            print(
-                                "[LyraMacro] Chain COA activated commander slot "
-                                    .. tostring(towerOrder[targetTower] or "?")
-                                    .. "; next activation in "
-                                    .. tostring(self.ChainCOAInterval)
-                                    .. " seconds."
-                            )
-                        end
-                    end)
+                            activationInFlight = false
+
+                            if not self.ChainCOAEnabled or self._chainCOAToken ~= chainToken then
+                                return
+                            end
+
+                            if not invoked or remoteResultsWereRejected(remoteResults) then
+                                pendingTower = targetTower.Parent and targetTower or nil
+                                nextAttemptAt = os.clock() + self.ChainCOARetryDelay
+                                warn(
+                                    "[LyraMacro] Chain COA activation was rejected; retrying in "
+                                        .. tostring(self.ChainCOARetryDelay)
+                                        .. " seconds without advancing the rotation. Response: "
+                                        .. summarizeRemoteResults(remoteResults)
+                                )
+                            else
+                                lastSuccessfulTower = targetTower
+                                pendingTower = nil
+                                self.ChainCOANextIndex = towerOrder[targetTower] or self.ChainCOANextIndex
+                                nextAttemptAt = os.clock()
+                                    + self.ChainCOAActiveDuration
+                                    + self.ChainCOAHandoffDelay
+                                print(
+                                    "[LyraMacro] Chain COA accepted commander slot "
+                                        .. tostring(towerOrder[targetTower] or "?")
+                                        .. "; active for "
+                                        .. tostring(self.ChainCOAActiveDuration)
+                                        .. " seconds, then waiting "
+                                        .. tostring(self.ChainCOAHandoffDelay)
+                                        .. " seconds before the next commander."
+                                )
+                            end
+                        end)
+                    end
                 end
             end
         end
@@ -2040,6 +2301,7 @@ local function normalizePrivateServerLinkCode(value)
     local linkCode = trimString(value)
 
     local codeFromUrl = linkCode:match("[?&]privateServerLinkCode=([^&#]+)")
+        or linkCode:match("[?&]linkCode=([^&#]+)")
 
     if codeFromUrl then
         linkCode = codeFromUrl
@@ -2089,51 +2351,589 @@ local function isReplicatedPrivateServerMarker(value)
 
     if type(value) == "string" then
         local normalized = normalizeLookupKey(value)
-        return normalized == "true" or normalized == "private" or normalized == "vip"
+        return normalized == "private"
+            or normalized == "privateserver"
+            or normalized == "vip"
+            or normalized == "vipserver"
     end
 
     return false
+end
+
+local function normalizeProvidedServerType(value)
+    if value == true then
+        return "private"
+    end
+
+    if value == false then
+        return "public"
+    end
+
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local normalized = normalizeLookupKey(value)
+
+    if normalized == "private" or normalized == "privateserver" or normalized == "vip" or normalized == "vipserver" then
+        return "private"
+    end
+
+    if normalized == "reserved" or normalized == "reservedserver" then
+        return "reserved"
+    end
+
+    if normalized == "nonpublic" or normalized == "nonpublicserver" then
+        return "nonpublic"
+    end
+
+    if normalized == "public" or normalized == "publicserver" or normalized == "standard" or normalized == "standardserver" then
+        return "public"
+    end
+
+    return nil
+end
+
+local function readDataModelProperty(propertyName)
+    local readable, value = pcall(function()
+        return game[propertyName]
+    end)
+
+    return readable, value
+end
+
+local function getCurrentServerIdentity()
+    local placeId = tonumber(game.PlaceId) or 0
+    local jobId = type(game.JobId) == "string" and game.JobId or ""
+    return placeId, jobId, tostring(placeId) .. ":" .. jobId
+end
+
+local function safeGetAttributes(instance)
+    local readable, attributes = pcall(function()
+        return instance:GetAttributes()
+    end)
+
+    if readable and type(attributes) == "table" then
+        return attributes
+    end
+
+    return {}
+end
+
+local function getInstancePath(instance)
+    local readable, fullName = pcall(function()
+        return instance:GetFullName()
+    end)
+
+    if readable and type(fullName) == "string" and fullName ~= "" then
+        return fullName
+    end
+
+    return getInstanceName(instance) or "unknown instance"
+end
+
+local function inspectReplicatedServerMarker(instance)
+    local instancePath = getInstancePath(instance)
+
+    for attributeName, attributeValue in pairs(safeGetAttributes(instance)) do
+        local attributeKey = normalizeLookupKey(attributeName)
+
+        if PRIVATE_SERVER_MARKER_KEYS[attributeKey] and isReplicatedPrivateServerMarker(attributeValue) then
+            return "private", "replicated marker " .. instancePath .. "." .. tostring(attributeName)
+        end
+
+        if PRIVATE_SERVER_TYPE_MARKER_KEYS[attributeKey] and type(attributeValue) == "string" then
+            local markedServerType = normalizeProvidedServerType(attributeValue)
+
+            if markedServerType == "private" or markedServerType == "reserved" or markedServerType == "nonpublic" then
+                return markedServerType, "replicated server type " .. instancePath .. "." .. tostring(attributeName)
+            end
+        end
+    end
+
+    local instanceKey = normalizeLookupKey(getInstanceName(instance))
+    local instanceValue = readInstanceValue(instance)
+
+    if PRIVATE_SERVER_MARKER_KEYS[instanceKey] and isReplicatedPrivateServerMarker(instanceValue) then
+        return "private", "replicated marker " .. instancePath
+    end
+
+    if PRIVATE_SERVER_TYPE_MARKER_KEYS[instanceKey] and type(instanceValue) == "string" then
+        local markedServerType = normalizeProvidedServerType(instanceValue)
+
+        if markedServerType == "private" or markedServerType == "reserved" or markedServerType == "nonpublic" then
+            return markedServerType, "replicated server type " .. instancePath
+        end
+    end
+
+    return nil
+end
+
+local function scanReplicatedServerMarkers()
+    local queue = {}
+    local visited = {}
+    local scannedCount = 0
+
+    local function enqueue(instance, depth)
+        if not instance or visited[instance] or scannedCount >= PRIVATE_SERVER_MARKER_SCAN_LIMIT then
+            return
+        end
+
+        visited[instance] = true
+        scannedCount += 1
+        table.insert(queue, {
+            Instance = instance,
+            Depth = depth,
+        })
+    end
+
+    enqueue(LocalPlayer, 0)
+    enqueue(ReplicatedStorage, 0)
+    enqueue(workspace, 0)
+    enqueue(game, 0)
+
+    local queueIndex = 1
+
+    while queueIndex <= #queue do
+        local entry = queue[queueIndex]
+        queueIndex += 1
+
+        local markedServerType, markerSource = inspectReplicatedServerMarker(entry.Instance)
+
+        if markedServerType then
+            return markedServerType, markerSource
+        end
+
+        if entry.Depth < PRIVATE_SERVER_MARKER_SCAN_DEPTH then
+            for _, child in ipairs(safeGetChildren(entry.Instance)) do
+                local childKey = normalizeLookupKey(getInstanceName(child))
+
+                if
+                    PRIVATE_SERVER_MARKER_KEYS[childKey]
+                    or PRIVATE_SERVER_TYPE_MARKER_KEYS[childKey]
+                    or PRIVATE_SERVER_STATE_CONTAINER_KEYS[childKey]
+                then
+                    enqueue(child, entry.Depth + 1)
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getReplicatedServerMarker(self, contextKey)
+    if self._privateServerMarkerContextKey ~= contextKey then
+        self._privateServerMarkerContextKey = contextKey
+        self._privateServerMarkerType = nil
+        self._privateServerMarkerSource = nil
+        self._privateServerMarkerLastScanAt = -math.huge
+    end
+
+    if self._privateServerMarkerType and self._privateServerMarkerSource then
+        return self._privateServerMarkerType, self._privateServerMarkerSource
+    end
+
+    if os.clock() - self._privateServerMarkerLastScanAt < PRIVATE_SERVER_MARKER_SCAN_INTERVAL then
+        return nil
+    end
+
+    self._privateServerMarkerLastScanAt = os.clock()
+    local markedServerType, markerSource = scanReplicatedServerMarkers()
+
+    if markedServerType then
+        self._privateServerMarkerType = markedServerType
+        self._privateServerMarkerSource = markerSource
+    end
+
+    return markedServerType, markerSource
+end
+
+local function markServerDirectoryFailure(context, failure)
+    context.Pending = false
+    context.PendingSince = nil
+    context.Type = nil
+    context.Source = nil
+    context.Error = tostring(failure)
+    context.FailureCount = (tonumber(context.FailureCount) or 0) + 1
+
+    local retryDelay = math.min(
+        PRIVATE_SERVER_PUBLIC_SCAN_RETRY_DELAY * (2 ^ math.min(context.FailureCount - 1, 4)),
+        PRIVATE_SERVER_PUBLIC_SCAN_MAX_RETRY_DELAY
+    )
+    context.RetryAfter = os.clock() + retryDelay
+end
+
+function LyraMacro:RefreshServerContext()
+    local placeId, jobId, contextKey = getCurrentServerIdentity()
+    local context = self._serverDirectoryContext
+
+    if not context or context.Key ~= contextKey then
+        context = {
+            Key = contextKey,
+            PlaceId = placeId,
+            JobId = jobId,
+            Pending = false,
+            Generation = 0,
+            FailureCount = 0,
+            RetryAfter = -math.huge,
+        }
+        self._serverDirectoryContext = context
+    end
+
+    if context.Type == "public" or context.Type == "nonpublic" then
+        return context
+    end
+
+    if context.Pending then
+        if os.clock() - (tonumber(context.PendingSince) or os.clock()) < PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT then
+            return context
+        end
+
+        -- The executor's HttpGet cannot always be cancelled. Invalidate this
+        -- generation so a late completion cannot overwrite a newer result.
+        context.Generation += 1
+        markServerDirectoryFailure(context, "public-server lookup timed out")
+        return context
+    end
+
+    if os.clock() < (tonumber(context.RetryAfter) or -math.huge) then
+        return context
+    end
+
+    context.Error = nil
+
+    if placeId <= 0 then
+        markServerDirectoryFailure(context, "current PlaceId is unavailable")
+        return context
+    end
+
+    if jobId == "" then
+        markServerDirectoryFailure(context, "current JobId is unavailable")
+        return context
+    end
+
+    context.Generation += 1
+    local generation = context.Generation
+    local normalizedJobId = jobId:lower()
+    context.Pending = true
+    context.PendingSince = os.clock()
+
+    task.delay(PRIVATE_SERVER_PUBLIC_SCAN_TIMEOUT, function()
+        if
+            self._serverDirectoryContext == context
+            and context.Generation == generation
+            and context.Pending
+        then
+            context.Generation += 1
+            markServerDirectoryFailure(context, "public-server lookup timed out")
+        end
+    end)
+
+    task.spawn(function()
+        local scanned, resultType, resultSourceOrError = pcall(function()
+            local pagesScanned = 0
+
+            for confirmation = 1, PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS do
+                local cursor
+                local completedPass = false
+
+                for _ = 1, PRIVATE_SERVER_PUBLIC_SCAN_MAX_PAGES do
+                    if self._serverDirectoryContext ~= context or context.Generation ~= generation then
+                        error("server context changed during public-server lookup")
+                    end
+
+                    local query = confirmation % 2 == 0
+                            and "excludeFullGames=false&limit=100&sortOrder=Asc"
+                        or "sortOrder=Asc&excludeFullGames=false&limit=100"
+                    local url = "https://games.roblox.com/v1/games/"
+                        .. tostring(placeId)
+                        .. "/servers/Public?"
+                        .. query
+
+                    if cursor then
+                        url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+                    end
+
+                    local response = game:HttpGet(url)
+                    local page = HttpService:JSONDecode(response)
+
+                    if
+                        type(page) ~= "table"
+                        or type(page.data) ~= "table"
+                        or (type(page.errors) == "table" and next(page.errors) ~= nil)
+                    then
+                        error("Roblox returned an invalid public-server response")
+                    end
+
+                    pagesScanned += 1
+
+                    for _, server in ipairs(page.data) do
+                        if type(server) == "table" and tostring(server.id or ""):lower() == normalizedJobId then
+                            return "public", "Roblox public server directory (current JobId listed)"
+                        end
+                    end
+
+                    local nextCursor = page.nextPageCursor
+
+                    if nextCursor == nil then
+                        completedPass = true
+                        break
+                    end
+
+                    if type(nextCursor) ~= "string" or nextCursor == "" then
+                        error("Roblox returned an invalid public-server cursor")
+                    end
+
+                    cursor = nextCursor
+                end
+
+                if not completedPass then
+                    error("public-server pagination exceeded the safe page limit")
+                end
+
+                if confirmation < PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS then
+                    task.wait(PRIVATE_SERVER_PUBLIC_CONFIRMATION_DELAY)
+                end
+            end
+
+            return "nonpublic",
+                "Roblox public server directory (current JobId absent in "
+                    .. tostring(PRIVATE_SERVER_PUBLIC_ABSENCE_CONFIRMATIONS)
+                    .. " complete scans, "
+                    .. tostring(pagesScanned)
+                    .. " pages checked)"
+        end)
+
+        if self._serverDirectoryContext ~= context or context.Generation ~= generation then
+            return
+        end
+
+        context.Pending = false
+        context.PendingSince = nil
+        context.LastCompletedAt = os.clock()
+
+        if scanned then
+            context.Type = resultType
+            context.Source = resultSourceOrError
+            context.Error = nil
+            context.FailureCount = 0
+            context.RetryAfter = -math.huge
+        else
+            markServerDirectoryFailure(context, resultType)
+        end
+    end)
+
+    return context
+end
+
+-- Returns "private", "reserved", "nonpublic", "public", or "unknown",
+-- followed by the detection source and (for native VIP servers) owner user ID.
+function LyraMacro:GetServerType()
+    if type(self.PrivateServerStatusProvider) == "function" then
+        local checked, providedStatus = pcall(self.PrivateServerStatusProvider)
+
+        if checked then
+            local providedServerType = normalizeProvidedServerType(providedStatus)
+
+            if providedServerType then
+                return providedServerType, "custom provider"
+            end
+        else
+            warn("[LyraMacro] Private server status provider failed: " .. tostring(providedStatus))
+        end
+    end
+
+    -- These properties are marked NotReplicated by Roblox. Read modern and
+    -- deprecated aliases independently so executor-specific access failures do
+    -- not discard positive evidence from another property. Empty client-side
+    -- values are inconclusive and must never be treated as proof of publicness.
+    local modernIdReadable, modernId = readDataModelProperty("PrivateServerId")
+    local modernOwnerReadable, modernOwner = readDataModelProperty("PrivateServerOwnerId")
+    local legacyIdReadable, legacyId = readDataModelProperty("VIPServerId")
+    local legacyOwnerReadable, legacyOwner = readDataModelProperty("VIPServerOwnerId")
+    local nativeOwners = {
+        {
+            Readable = modernOwnerReadable,
+            Value = modernOwner,
+            Source = "DataModel.PrivateServerOwnerId",
+        },
+        {
+            Readable = legacyOwnerReadable,
+            Value = legacyOwner,
+            Source = "DataModel.VIPServerOwnerId",
+        },
+    }
+
+    for _, ownerObservation in ipairs(nativeOwners) do
+        local ownerUserId = ownerObservation.Readable and tonumber(ownerObservation.Value)
+
+        if ownerUserId and ownerUserId > 0 then
+            return "private", ownerObservation.Source, ownerUserId
+        end
+    end
+
+    local nativePairs = {
+        {
+            IdReadable = modernIdReadable,
+            Id = modernId,
+            Source = "DataModel.PrivateServerId",
+        },
+        {
+            IdReadable = legacyIdReadable,
+            Id = legacyId,
+            Source = "DataModel.VIPServerId",
+        },
+    }
+
+    local _, _, contextKey = getCurrentServerIdentity()
+    local markedServerType, markerSource = getReplicatedServerMarker(self, contextKey)
+
+    for _, nativePair in ipairs(nativePairs) do
+        local privateServerId = nativePair.IdReadable and type(nativePair.Id) == "string" and trimString(nativePair.Id)
+
+        if privateServerId and privateServerId ~= "" then
+            if markedServerType then
+                return markedServerType, markerSource
+            end
+
+            -- A positive ID proves this is not public, but the paired owner can
+            -- still read as zero in an executor because it is NotReplicated.
+            return "nonpublic", nativePair.Source .. " (owner unavailable client-side)"
+        end
+    end
+
+    local directoryContext = self:RefreshServerContext()
+
+    if directoryContext.Type == "public" then
+        if markedServerType then
+            return "unknown",
+                "conflicting server evidence: "
+                    .. tostring(markerSource)
+                    .. "; current JobId is listed as public"
+        end
+
+        return "public", directoryContext.Source
+    end
+
+    if directoryContext.Type == "nonpublic" then
+        if markedServerType then
+            return markedServerType, markerSource
+        end
+
+        return "nonpublic", directoryContext.Source
+    end
+
+    if directoryContext.Pending then
+        if
+            markedServerType
+            and os.clock() - (tonumber(directoryContext.PendingSince) or os.clock())
+                >= PRIVATE_SERVER_PUBLIC_MARKER_FALLBACK_DELAY
+        then
+            return markedServerType, markerSource .. " (public-directory verification still pending)"
+        end
+
+        return "unknown",
+            markedServerType
+                    and ("verifying " .. tostring(markerSource) .. " against Roblox public server directory")
+                or "checking Roblox public server directory"
+    end
+
+    if directoryContext.Error then
+        if markedServerType then
+            return markedServerType, markerSource .. " (public-directory verification unavailable)"
+        end
+
+        return "unknown", "Roblox public server directory unavailable: " .. tostring(directoryContext.Error)
+    end
+
+    return "unknown", "private-server evidence unavailable"
+end
+
+function LyraMacro:WaitForServerContext(timeout)
+    local deadline = os.clock() + math.max(0, tonumber(timeout) or 8)
+    local serverType = self:GetServerType()
+
+    while os.clock() < deadline do
+        local context = self._serverDirectoryContext
+
+        if serverType ~= "unknown" and not (context and context.Pending) then
+            break
+        end
+
+        self:RefreshServerContext()
+        task.wait(0.05)
+        serverType = self:GetServerType()
+    end
+
+    return self:GetServerType()
+end
+
+function LyraMacro:GetServerTypeDisplayName()
+    local serverType, source, ownerUserId = self:GetServerType()
+    return SERVER_TYPE_DISPLAY_NAMES[serverType] or "Unknown", source, ownerUserId
+end
+
+function LyraMacro:GetServerStatusText()
+    local serverType, source, ownerUserId = self:GetServerType()
+    local statusText = "Server: " .. (SERVER_TYPE_DISPLAY_NAMES[serverType] or "Unknown")
+
+    if serverType == "private" and ownerUserId then
+        if LocalPlayer and tonumber(LocalPlayer.UserId) == ownerUserId then
+            statusText ..= " (owned by you)"
+        else
+            statusText ..= " (owner user ID " .. tostring(ownerUserId) .. ")"
+        end
+    elseif serverType == "reserved" then
+        statusText ..= " (not a user-owned VIP lobby)"
+    elseif serverType == "nonpublic" then
+        statusText ..= " (VIP/reserved ownership unavailable to this client)"
+    elseif serverType == "unknown" then
+        statusText ..= " (detection checking or unavailable)"
+    end
+
+    return statusText .. ".", source
 end
 
 function LyraMacro:IsPrivateServer()
-    if type(self.PrivateServerStatusProvider) == "function" then
-        local checked, isPrivate = pcall(self.PrivateServerStatusProvider)
+    local serverType = self:GetServerType()
+    return serverType == "private" or serverType == "reserved" or serverType == "nonpublic"
+end
 
-        if checked then
-            return isPrivate == true
-        end
+function LyraMacro:IsUserOwnedPrivateServer()
+    local serverType = self:GetServerType()
+    return serverType == "private"
+end
 
-        warn("[LyraMacro] Private server status provider failed: " .. tostring(isPrivate))
-        return false
-    end
-
-    for _, root in ipairs({ LocalPlayer, ReplicatedStorage, workspace }) do
-        for _, markerName in ipairs(PRIVATE_SERVER_MARKER_NAMES) do
-            if isReplicatedPrivateServerMarker(readAttribute(root, markerName)) then
-                return true
-            end
-
-            local marker = safeFindFirstChild(root, markerName)
-
-            if marker and isReplicatedPrivateServerMarker(readInstanceValue(marker)) then
-                return true
-            end
-        end
-    end
-
-    return false
+function LyraMacro:IsReservedServer()
+    local serverType = self:GetServerType()
+    return serverType == "reserved"
 end
 
 function LyraMacro:ShouldUsePrivateServerWorkflow()
-    if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
-        return true, "configured privateServerLinkCode"
+    local serverType, source = self:GetServerType()
+
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "private-server elevator commands are lobby-only"
     end
 
-    if self:IsPrivateServer() then
-        return true, "replicated private-server status"
+    if serverType == "private" then
+        return true, "detected Private/VIP server via " .. tostring(source)
     end
 
-    return false, "private-server status is unavailable and no privateServerLinkCode is configured"
+    if serverType == "nonpublic" then
+        return true, "detected non-public lobby via " .. tostring(source)
+    end
+
+    if serverType == "reserved" then
+        return false, "current server is reserved, not a confirmed Private/VIP lobby"
+    end
+
+    if serverType == "public" then
+        return false, "current server is public"
+    end
+
+    return false, "server type could not be detected via " .. tostring(source)
 end
 
 function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOptions)
@@ -2168,6 +2968,7 @@ end
 -- Clears only this strategy's stable tower IDs for a fresh solo match.
 function LyraMacro:RemoveIndex()
     table.clear(self.SpawnedTowers)
+    table.clear(self.SpawnedTowerPlacedAt)
     table.clear(self.SpawnedTowerUpgradeLevels)
     table.clear(self.KnownTowerTroops)
     table.clear(self.KnownTowerUpgradeLevels)
@@ -2192,6 +2993,154 @@ local function getTeleportQueueFunction()
     return nil
 end
 
+local EXECUTOR_URL_LAUNCHER_NAMES = {
+    "open_url",
+    "openurl",
+    "openUrl",
+    "open_uri",
+    "openuri",
+    "openUri",
+    "open_browser",
+    "openbrowser",
+    "openBrowser",
+}
+
+local function getExecutorUrlLaunchers()
+    local launchers = {}
+    local seenFunctions = {}
+    local seenContainers = {}
+
+    local function addContainer(label, container, methodFallback)
+        if type(container) ~= "table" or seenContainers[container] then
+            return
+        end
+
+        seenContainers[container] = true
+
+        for _, functionName in ipairs(EXECUTOR_URL_LAUNCHER_NAMES) do
+            local read, candidate = pcall(function()
+                return container[functionName]
+            end)
+
+            if read and type(candidate) == "function" and not seenFunctions[candidate] then
+                seenFunctions[candidate] = true
+                table.insert(launchers, {
+                    Callback = candidate,
+                    Name = label .. "." .. functionName,
+                    Owner = methodFallback and container or nil,
+                })
+            end
+        end
+    end
+
+    local sharedEnvironment = getSharedEnvironment()
+    local currentEnvironment
+
+    if type(getfenv) == "function" then
+        local readEnvironment, environment = pcall(getfenv, 0)
+
+        if not readEnvironment or type(environment) ~= "table" then
+            readEnvironment, environment = pcall(getfenv)
+        end
+
+        if readEnvironment and type(environment) == "table" then
+            currentEnvironment = environment
+        end
+    end
+
+    addContainer("getgenv()", sharedEnvironment)
+    addContainer("getfenv(0)", currentEnvironment)
+    addContainer("_G", _G)
+
+    for _, namespaceName in ipairs({ "syn", "executor", "fluxus" }) do
+        local namespace
+
+        if type(sharedEnvironment) == "table" then
+            namespace = sharedEnvironment[namespaceName]
+        end
+        if type(namespace) ~= "table" and type(currentEnvironment) == "table" then
+            namespace = currentEnvironment[namespaceName]
+        end
+        if type(namespace) ~= "table" and type(_G) == "table" then
+            namespace = _G[namespaceName]
+        end
+
+        addContainer(namespaceName, namespace, true)
+    end
+
+    return launchers
+end
+
+local function invokeExecutorUrlLauncher(launcher, url)
+    local invoked, result = pcall(launcher.Callback, url)
+
+    if invoked and result ~= false then
+        return true, result
+    end
+
+    local firstError = result
+
+    if launcher.Owner then
+        local methodInvoked, methodResult = pcall(launcher.Callback, launcher.Owner, url)
+
+        if methodInvoked and methodResult ~= false then
+            return true, methodResult
+        end
+
+        return false,
+            tostring(firstError)
+                .. "; method-style call failed: "
+                .. tostring(methodResult)
+    end
+
+    return false, firstError
+end
+
+local function launchPrivateServerUrl(deepLink, webUrl)
+    local launchers = getExecutorUrlLaunchers()
+    local errors = {}
+
+    if #launchers == 0 then
+        return false, "executor does not expose an openurl/open_url-style URL launcher"
+    end
+
+    for _, launcher in ipairs(launchers) do
+        for _, target in ipairs({
+            { Kind = "Roblox deep link", Url = deepLink },
+            { Kind = "Roblox web link", Url = webUrl },
+        }) do
+            local launched, result = invokeExecutorUrlLauncher(launcher, target.Url)
+
+            if launched then
+                return true, launcher.Name .. " using " .. target.Kind
+            end
+
+            table.insert(
+                errors,
+                launcher.Name
+                    .. " rejected "
+                    .. target.Kind
+                    .. ": "
+                    .. tostring(result)
+            )
+        end
+    end
+
+    return false, table.concat(errors, "; ")
+end
+
+local function copyPrivateServerUrl(url)
+    local clipboard = type(setclipboard) == "function" and setclipboard
+        or (type(toclipboard) == "function" and toclipboard or nil)
+
+    if not clipboard then
+        return false
+    end
+
+    local copied = pcall(clipboard, url)
+    return copied
+end
+
 function LyraMacro:GetPrivateServerReturnUrl()
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
 
@@ -2200,6 +3149,16 @@ function LyraMacro:GetPrivateServerReturnUrl()
     end
 
     return PRIVATE_SERVER_RETURN_URL_PREFIX .. linkCode
+end
+
+function LyraMacro:GetPrivateServerReturnDeepLink()
+    local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+
+    if not linkCode then
+        return nil
+    end
+
+    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX .. linkCode
 end
 
 function LyraMacro:_clearLobbyReturnConnections()
@@ -2333,7 +3292,8 @@ function LyraMacro:ReturnToPrivateServer(results)
 
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
     local url = linkCode and self:GetPrivateServerReturnUrl() or nil
-    local destinationName = linkCode and "configured private lobby" or "public lobby"
+    local deepLink = linkCode and self:GetPrivateServerReturnDeepLink() or nil
+    local destinationName = linkCode and "configured private lobby" or "lobby"
     local usesProvider = linkCode and type(self.PrivateServerReturnProvider) == "function"
 
     self:_clearLobbyReturnConnections()
@@ -2341,10 +3301,12 @@ function LyraMacro:ReturnToPrivateServer(results)
     local returnToken = self._privateServerReturnToken
     self._privateServerReturnStarted = true
     self.PrivateServerReturnUrl = url
+    self.PrivateServerReturnDeepLink = deepLink
 
     local attempts = 0
     local completed = false
     local retryScheduled = false
+    local privateLinkDispatched = false
     local attemptTeleport
     local scheduleRetry
 
@@ -2426,6 +3388,7 @@ function LyraMacro:ReturnToPrivateServer(results)
 
         attempts += 1
         local attemptNumber = attempts
+        local externalLaunchStarted = false
         print(
             "[LyraMacro] Returning to "
                 .. destinationName
@@ -2441,20 +3404,76 @@ function LyraMacro:ReturnToPrivateServer(results)
                 return self.PrivateServerReturnProvider(url, linkCode, LOBBY_PLACE_ID)
             end
 
+            local privateLaunchError
             local returnButton = findResultsLobbyButton(results)
+            local buttonAttempted = false
 
-            if returnButton then
+            local function tryReturnButton()
+                buttonAttempted = true
+
                 local activated, activationMethod = activateResultsLobbyButton(returnButton)
 
                 if not activated then
-                    error(activationMethod, 0)
+                    privateLaunchError = privateLaunchError
+                        and (privateLaunchError .. "; " .. tostring(activationMethod))
+                        or activationMethod
+                    return false
                 end
 
-                return activationMethod
+                if linkCode then
+                    print(
+                        "[LyraMacro] Using the game's private-context Return to Lobby route; the configured private link remains available as a fallback."
+                    )
+                end
+
+                return true, activationMethod
+            end
+
+            -- Let the game preserve its own private-lobby context first. If that
+            -- produces no teleport state, the next attempt launches the exact link.
+            if returnButton and (not linkCode or attemptNumber == 1) then
+                local activated, activationMethod = tryReturnButton()
+
+                if activated then
+                    return activationMethod
+                end
+            end
+
+            if linkCode and not privateLinkDispatched then
+                local launched, launchSource = launchPrivateServerUrl(deepLink, url)
+
+                if launched then
+                    privateLinkDispatched = true
+                    externalLaunchStarted = true
+                    return launchSource
+                end
+
+                privateLaunchError = privateLaunchError
+                    and (privateLaunchError .. "; " .. tostring(launchSource))
+                    or launchSource
+            elseif linkCode then
+                privateLaunchError = "the private-lobby link was already dispatched without an observed teleport"
+            end
+
+            if returnButton and not buttonAttempted then
+                local activated, activationMethod = tryReturnButton()
+
+                if activated then
+                    return activationMethod
+                end
             end
 
             if linkCode then
-                error("the game Return to Lobby button is required for a server-side private-lobby teleport", 0)
+                local copied = copyPrivateServerUrl(url)
+                local fallbackMessage = copied
+                    and " The private-lobby URL was copied to the clipboard."
+                    or ""
+                error(
+                    "could not launch the configured private lobby: "
+                        .. tostring(privateLaunchError or "no usable Return to Lobby button or URL launcher was found")
+                        .. fallbackMessage,
+                    0
+                )
             end
 
             return TeleportService:Teleport(LOBBY_PLACE_ID, LocalPlayer)
@@ -2467,6 +3486,28 @@ function LyraMacro:ReturnToPrivateServer(results)
 
         if usesProvider then
             finishSuccess("configured return provider")
+            return
+        end
+
+        if externalLaunchStarted then
+            print(
+                "[LyraMacro] Private-lobby link dispatched via "
+                    .. tostring(result)
+                    .. "; waiting for the current client to enter a teleport state."
+            )
+            task.delay(LOBBY_RETURN_STATE_TIMEOUT, function()
+                if isCurrentReturn() and attempts == attemptNumber and not retryScheduled then
+                    local copied = copyPrivateServerUrl(url)
+                    finishFailure(
+                        "no teleport state was observed after the private-lobby link was dispatched"
+                            .. (
+                                copied
+                                    and "; the private-lobby URL was copied to the clipboard"
+                                or ""
+                            )
+                    )
+                end
+            end)
             return
         end
 
@@ -3054,6 +4095,11 @@ end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
     task.spawn(function()
+        -- Native private-server properties are not replicated to every client.
+        -- A normal type read starts the fallback lookup only when stronger
+        -- provider/native evidence did not already settle the answer.
+        self:GetServerType()
+
         local lastRefreshAt = -math.huge
         local lastRefreshError
         local lastEntryAttemptAt = -math.huge
@@ -3145,6 +4191,25 @@ function LyraMacro:_autoEnterPendingReplay(replay)
             end
 
             if entered then
+                local currentServerType = self:GetServerType()
+                local directoryContext = self._serverDirectoryContext
+
+                if currentServerType == "unknown" or (directoryContext and directoryContext.Pending) then
+                    -- Entry itself is already complete, so this bounded wait
+                    -- cannot make an available map rotate away. In a private
+                    -- lobby it gives the confirmation scan time to enable !start.
+                    self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+                end
+
+                -- Recompute even when an earlier strict marker said private;
+                -- a completed directory lookup may have disproved it meanwhile.
+                privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+                if privateServer and not announcedPrivateWorkflow then
+                    announcedPrivateWorkflow = true
+                    print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
+                end
+
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
 
                 if privateServer then
@@ -3530,6 +4595,22 @@ function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
     return false, "Timed out waiting for the destination map to load."
 end
 
+function LyraMacro:SetManualMapOverrideEnabled(enabled)
+    self.ManualMapOverrideEnabled = enabled ~= false
+
+    if not self.ManualMapOverrideEnabled and self.LastDetectedMapSource == "manual override" then
+        self.SelectedMap = ""
+        self.LastDetectedMapSource = nil
+    end
+
+    print(
+        "[LyraMacro] Manual map override "
+            .. (self.ManualMapOverrideEnabled and "enabled" or "disabled")
+            .. "."
+    )
+    return self.ManualMapOverrideEnabled
+end
+
 function LyraMacro:_setDetectedMap(mapName, source, force)
     local normalizedMapName = normalizeMapCandidate(mapName)
 
@@ -3537,7 +4618,10 @@ function LyraMacro:_setDetectedMap(mapName, source, force)
         return nil
     end
 
-    if self.SelectedMap ~= "" and self.SelectedMap ~= normalizedMapName and self.LastDetectedMapSource == "manual" and not force then
+    local hasManualMap = self.LastDetectedMapSource == "manual"
+        or self.LastDetectedMapSource == "manual override"
+
+    if self.SelectedMap ~= "" and self.SelectedMap ~= normalizedMapName and hasManualMap and not force then
         return self.SelectedMap, self.LastDetectedMapSource
     end
 
@@ -3555,16 +4639,16 @@ end
 function LyraMacro:DetectMap(options)
     options = options or {}
 
-    if self.SelectedMap ~= "" and not options.Force then
-        return self.SelectedMap, self.LastDetectedMapSource or "configured"
-    end
-
-    if type(getgenv) == "function" then
+    if self.ManualMapOverrideEnabled ~= false and type(getgenv) == "function" then
         local override = normalizeMapCandidate(getgenv().LyraMacroMapName)
 
         if override then
             return self:_setDetectedMap(override, "manual override", true)
         end
+    end
+
+    if self.SelectedMap ~= "" and not options.Force then
+        return self.SelectedMap, self.LastDetectedMapSource or "configured"
     end
 
     local roots = {
@@ -3815,7 +4899,7 @@ function LyraMacro:_completeChainCOAObservation(observation, remoteResults)
 
     local response = remoteResults and remoteResults[1]
 
-    if remoteResponseWasRejected(response) then
+    if remoteResultsWereRejected(remoteResults) then
         return
     end
 
@@ -3911,13 +4995,8 @@ function LyraMacro:_getRecordedTowerIndex(tower)
     return towerIndex
 end
 
-function LyraMacro:_recordRemoteInvoke(args, remoteResults)
-    if not self.IsRecording then
-        return
-    end
-
-    if remoteResults and remoteResponseWasRejected(remoteResults[1]) then
-        print("[LyraMacro] Ignored a rejected remote action while recording.")
+function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordingSessionToken)
+    if not self.IsRecording or recordingSessionToken ~= self._recordingSessionToken then
         return
     end
 
@@ -3925,6 +5004,21 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
     local action = args[2]
     local categoryKey = normalizeLookupKey(category)
     local actionKey = normalizeLookupKey(action)
+
+    if categoryKey == "troops" and actionKey == "abilities" and normalizeLookupKey(args[3]) == "activate" then
+        local abilityInfo = args[4]
+
+        if type(abilityInfo) == "table" and self._chainCOAInternalAbilityRequests[abilityInfo] then
+            self._chainCOAInternalAbilityRequests[abilityInfo] = nil
+            return
+        end
+    end
+
+    if remoteResultsWereRejected(remoteResults) then
+        print("[LyraMacro] Ignored a rejected remote action while recording.")
+        return
+    end
+
     local remoteMapName, remoteMapSource = detectMapFromRemoteArgs(args)
 
     if remoteMapName then
@@ -3970,11 +5064,25 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
         local towerIndex = self:_getRecordedTowerIndex(abilityInfo.Troop)
 
         if towerIndex then
+            local abilityObservedAt = tonumber(observedAt) or os.clock()
+            local previousAbilityAt = tonumber(self.RecordingLastAbilityAt)
+            local delayAnchor = previousAbilityAt or tonumber(self.RecordedTowerPlacedAt[towerIndex])
+            local abilityDelay = delayAnchor
+                    and roundNumber(math.max(0, abilityObservedAt - delayAnchor))
+                or 0
+            local abilityDelayFrom = not previousAbilityAt
+                    and delayAnchor
+                    and ABILITY_DELAY_FROM_TOWER_PLACEMENT
+                or nil
+
             self:_appendRecordedStep({
                 action = "ability",
                 tower = towerIndex,
                 ability = abilityName,
+                delay = abilityDelay,
+                delay_from = abilityDelayFrom,
             })
+            self.RecordingLastAbilityAt = abilityObservedAt
         end
 
         return
@@ -4018,6 +5126,9 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
 
         self.RecordingSeenTowers[placedTower] = true
 
+        local towerIndex = self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
+        self.RecordedTowerPlacedAt[towerIndex] = tonumber(observedAt) or os.clock()
+
         self:_appendRecordedStep({
             action = "place",
             troop = troopType,
@@ -4027,7 +5138,6 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
             z = roundNumber(position.Z),
             rotation = placementInfo.Rotation,
         })
-        self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
     elseif action == "Upgrade" and args[3] == "Set" then
         local upgradeInfo = args[4] or {}
         local towerIndex = self:_getRecordedTowerIndex(upgradeInfo.Troop)
@@ -4055,7 +5165,7 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults)
     end
 end
 
-function LyraMacro:_processRemoteObservation(args, remoteResults)
+function LyraMacro:_processRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
     local categoryKey = normalizeLookupKey(args[1])
     local actionKey = normalizeLookupKey(args[2])
     local chainObservation = self:_prepareChainCOAObservation(args)
@@ -4074,7 +5184,7 @@ function LyraMacro:_processRemoteObservation(args, remoteResults)
     end
 
     local recorded, recordError = pcall(function()
-        self:_recordRemoteInvoke(args, remoteResults)
+        self:_recordRemoteInvoke(args, remoteResults, observedAt, recordingSessionToken)
     end)
 
     if not recorded then
@@ -4082,31 +5192,56 @@ function LyraMacro:_processRemoteObservation(args, remoteResults)
     end
 end
 
-function LyraMacro:_queueRemoteObservation(args, remoteResults)
-    table.insert(self._remoteObservationQueue, {
+function LyraMacro:_reserveRemoteObservation(args, observedAt, recordingSessionToken)
+    local observation = {
         Args = args,
-        Results = remoteResults,
-    })
+        ObservedAt = observedAt,
+        RecordingSessionToken = recordingSessionToken,
+        Ready = false,
+    }
+    table.insert(self._remoteObservationQueue, observation)
+    return observation
+end
 
+function LyraMacro:_drainRemoteObservations()
     if self._remoteObservationWorkerRunning then
         return
     end
 
     self._remoteObservationWorkerRunning = true
     task.defer(function()
-        while #self._remoteObservationQueue > 0 do
+        while self._remoteObservationQueue[1] and self._remoteObservationQueue[1].Ready do
             local observation = table.remove(self._remoteObservationQueue, 1)
-            local processed, processError = pcall(function()
-                self:_processRemoteObservation(observation.Args, observation.Results)
-            end)
 
-            if not processed then
-                warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
+            if not observation.Skip then
+                local processed, processError = pcall(function()
+                    self:_processRemoteObservation(
+                        observation.Args,
+                        observation.Results,
+                        observation.ObservedAt,
+                        observation.RecordingSessionToken
+                    )
+                end)
+
+                if not processed then
+                    warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
+                end
             end
         end
 
         self._remoteObservationWorkerRunning = false
+
+        if self._remoteObservationQueue[1] and self._remoteObservationQueue[1].Ready then
+            self:_drainRemoteObservations()
+        end
     end)
+end
+
+function LyraMacro:_completeRemoteObservation(observation, remoteResults, skip)
+    observation.Results = remoteResults
+    observation.Skip = skip == true
+    observation.Ready = true
+    self:_drainRemoteObservations()
 end
 
 function LyraMacro:_installRecorder()
@@ -4129,8 +5264,20 @@ function LyraMacro:_installRecorder()
         -- Do not run Instance namecalls before forwarding this call. Some executors
         -- leak nested namecall state and can otherwise dispatch the wrong method.
         local args = table.pack(...)
-        local remoteResults = table.pack(oldNamecall(remote, ...))
-        self:_queueRemoteObservation(args, remoteResults)
+        local recordingSessionToken = self.IsRecording and self._recordingSessionToken or nil
+        local observedAt = recordingSessionToken and os.clock() or nil
+        -- Reserve the queue position before InvokeServer yields so concurrent
+        -- responses cannot reorder a placement and its first ability.
+        local observation = self:_reserveRemoteObservation(args, observedAt, recordingSessionToken)
+        local remoteCall = table.pack(pcall(oldNamecall, remote, ...))
+
+        if not remoteCall[1] then
+            self:_completeRemoteObservation(observation, nil, true)
+            error(remoteCall[2], 0)
+        end
+
+        local remoteResults = table.pack(table.unpack(remoteCall, 2, remoteCall.n))
+        self:_completeRemoteObservation(observation, remoteResults, false)
 
         return table.unpack(remoteResults, 1, remoteResults.n)
     end
@@ -4166,7 +5313,7 @@ function LyraMacro:_watchForMatchResults(watchToken)
             end
 
             if self.ChainCOAEnabled then
-                self:SetChainCOA(false)
+                self:SetChainCOA(false, { Record = false })
             end
 
             print("[LyraMacro] Results are visible. Stopping and exporting the recorded strategy.")
@@ -4234,7 +5381,7 @@ function LyraMacro:_watchForAutoStrategyResults()
             end
 
             if self.ChainCOAEnabled then
-                self:SetChainCOA(false)
+                self:SetChainCOA(false, { Record = false })
             end
 
             self:_releaseReplayOwnership()
@@ -4264,7 +5411,9 @@ function LyraMacro:_watchForAutoStrategyResults()
     if normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode) then
         print("[LyraMacro] Automatic private-lobby return armed for match results.")
     else
-        print("[LyraMacro] Automatic public-lobby return armed for match results.")
+        print(
+            "[LyraMacro] Automatic Return to Lobby flow armed; public TeleportService is used only if the game's route is unavailable."
+        )
     end
     return true
 end
@@ -4284,10 +5433,12 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedStrategy)
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordedTowerUpgradeLevels)
+    table.clear(self.RecordedTowerPlacedAt)
     table.clear(self.PendingRecordedPlacements)
     self.RecordingSeenTowers = snapshotTowers(getTowersFolder())
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
+    self.RecordingLastAbilityAt = nil
     self.SelectedMapFingerprint = ""
     self.SelectedMapFingerprintSource = nil
     self.SelectedMapFingerprintPartCount = 0
@@ -4297,7 +5448,19 @@ function LyraMacro:StartRecording()
         self.LastDetectedMapSource = nil
     end
 
+    self._recordingSessionToken += 1
     self.IsRecording = true
+
+    if self.ChainCOAEnabled then
+        self:_appendRecordedStep({
+            action = "chaincoa",
+            enabled = true,
+            active_duration = self.ChainCOAActiveDuration,
+            handoff_delay = self.ChainCOAHandoffDelay,
+            retry_delay = self.ChainCOARetryDelay,
+        })
+    end
+
     self._resultsWatchToken += 1
     self:DetectMap({ Silent = true })
     self:DetectMapFingerprint({ Silent = true, Force = true })
@@ -4313,6 +5476,8 @@ function LyraMacro:StopRecording()
     end
 
     self.IsRecording = false
+    self._recordingSessionToken += 1
+    self.RecordingLastAbilityAt = nil
     self._resultsWatchToken += 1
 
     for _, connection in ipairs(self.RecordingConnections) do
@@ -4322,6 +5487,7 @@ function LyraMacro:StopRecording()
     table.clear(self.RecordingConnections)
     table.clear(self.PendingRecordedPlacements)
     table.clear(self.RecordingSeenTowers)
+    table.clear(self.RecordedTowerPlacedAt)
 
     if self.SelectedMap == "" then
         self:DetectMap({ Silent = true })
@@ -4332,6 +5498,7 @@ function LyraMacro:StopRecording()
     local recordedStrategy = self:GetRecordedStrategy()
     local actionCounts = {
         ability = 0,
+        chaincoa = 0,
         mode = 0,
         place = 0,
         sell = 0,
@@ -4364,6 +5531,8 @@ function LyraMacro:StopRecording()
             .. " sells, "
             .. tostring(actionCounts.ability)
             .. " abilities, "
+            .. tostring(actionCounts.chaincoa)
+            .. " Chain COA settings, "
             .. tostring(actionCounts.skip)
             .. " skips, "
             .. tostring(actionCounts.mode)
@@ -4586,7 +5755,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
 
     local frame = Instance.new("Frame")
     frame.Name = "RecorderFrame"
-    frame.Size = UDim2.new(0, 280, 0, 120)
+    frame.Size = UDim2.new(0, 280, 0, 140)
     frame.Position = UDim2.new(0, 18, 0, 120)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
     frame.BorderSizePixel = 0
@@ -4614,18 +5783,34 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = frame
 
+    local serverStatusText, serverStatusSource = self:GetServerStatusText()
     local status = Instance.new("TextLabel")
     status.Name = "Status"
-    status.Size = UDim2.new(1, -20, 0, 34)
+    status.Size = UDim2.new(1, -20, 0, 54)
     status.Position = UDim2.new(0, 10, 0, 36)
     status.BackgroundTransparency = 1
-    status.Text = reason and ("Fallback UI: " .. tostring(reason)) or "Ready to record."
+    status.Text = reason
+            and ("Fallback UI: " .. tostring(reason) .. "\n" .. serverStatusText)
+        or (serverStatusText .. " Ready to record.")
     status.TextColor3 = Color3.fromRGB(170, 170, 180)
     status.TextSize = 11
     status.Font = Enum.Font.Gotham
     status.TextWrapped = true
     status.TextXAlignment = Enum.TextXAlignment.Left
     status.Parent = frame
+
+    local initialStatusText = status.Text
+
+    task.spawn(function()
+        self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+
+        if status.Parent and status.Text == initialStatusText then
+            local refreshedServerStatusText = self:GetServerStatusText()
+            status.Text = reason
+                    and ("Fallback UI: " .. tostring(reason) .. "\n" .. refreshedServerStatusText)
+                or (refreshedServerStatusText .. " Ready to record.")
+        end
+    end)
 
     local button = Instance.new("TextButton")
     button.Name = "RecordButton"
@@ -4665,10 +5850,11 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
         isRecording = true
         button.Text = "Stop Recording"
         button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-        status.Text = "Recording mode votes, placements, upgrades, sells, and wave skips."
+        status.Text = "Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips."
     end)
 
     self.RecorderWindow = screenGui
+    print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
     warn("[LyraMacro] Lyra UI failed to load; opened fallback recorder UI instead. " .. tostring(reason))
 
     return screenGui
@@ -4676,6 +5862,16 @@ end
 
 function LyraMacro:CreateRecorderWindow(config)
     config = config or {}
+
+    local configuredManualMapOverride = config.ManualMapOverrideEnabled
+
+    if configuredManualMapOverride == nil then
+        configuredManualMapOverride = config.ManualMapOverride
+    end
+
+    if configuredManualMapOverride ~= nil then
+        self:SetManualMapOverrideEnabled(configuredManualMapOverride ~= false)
+    end
 
     if config.PrivateServerLinkCode ~= nil then
         self:SetPrivateServerLinkCode(config.PrivateServerLinkCode)
@@ -4713,7 +5909,45 @@ function LyraMacro:CreateRecorderWindow(config)
             Name = config.TabName or "Strategy",
             Icon = config.TabIcon or "list-checks",
         })
-        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, sells, and wave skips.")
+        local serverStatusText, serverStatusSource = self:GetServerStatusText()
+        local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
+        local serverStatusLabel = strategyTab:CreateLabel(serverStatusText)
+
+        task.spawn(function()
+            self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+
+            if serverStatusLabel and type(serverStatusLabel.UpdateText) == "function" then
+                local refreshedServerStatusText = self:GetServerStatusText()
+                serverStatusLabel.UpdateText(refreshedServerStatusText)
+            end
+        end)
+
+        print("[LyraMacro] " .. serverStatusText .. " Detection source: " .. tostring(serverStatusSource) .. ".")
+        strategyTab:CreateToggle("Manual map override", self.ManualMapOverrideEnabled ~= false, function(enabled)
+            local overrideChanged = (self.ManualMapOverrideEnabled ~= false) ~= enabled
+            self:SetManualMapOverrideEnabled(enabled)
+
+            if not overrideChanged then
+                return
+            end
+
+            local mapName, mapSource = self:DetectMap({ Silent = true })
+
+            if enabled and mapSource == "manual override" then
+                descriptionLabel.UpdateText("Manual map override: " .. tostring(mapName) .. ".")
+                window:Notify("Map Override Enabled", tostring(mapName), 3)
+            elseif enabled then
+                descriptionLabel.UpdateText(
+                    "Manual map override is enabled by default. Set getgenv().LyraMacroMapName to use it; automatic detection remains the fallback."
+                )
+            else
+                descriptionLabel.UpdateText(
+                    mapName
+                            and ("Manual map override disabled. Detected map: " .. tostring(mapName) .. " (" .. tostring(mapSource) .. ").")
+                        or "Manual map override disabled."
+                )
+            end
+        end)
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
                 self:SetAutoRecordOnTeleport(false)
@@ -4732,14 +5966,14 @@ function LyraMacro:CreateRecorderWindow(config)
             window:Notify("Elevator Watcher Unavailable", message or "Your executor cannot queue scripts across teleports.", 4)
         end)
 
-        strategyTab:CreateTextbox("Private server link code", self.SelectedPrivateServerLinkCode or "Optional privateServerLinkCode", function(linkCode)
+        strategyTab:CreateTextbox("Private return link code (optional)", self.SelectedPrivateServerLinkCode or "Not needed for detection", function(linkCode)
             local configuredCode = self:SetPrivateServerLinkCode(linkCode)
 
             if configuredCode then
-                descriptionLabel.UpdateText("Private server link code will be included in the next AutoStrategy export.")
-                window:Notify("Private Server Code Set", "The next AutoStrategy will include the configured link code.", 3)
+                descriptionLabel.UpdateText("Optional return link saved. Private-server detection remains automatic.")
+                window:Notify("Private Return Link Set", "Used only to target the same lobby after a match.", 3)
             else
-                descriptionLabel.UpdateText("Private server link code cleared. AutoStrategy exports will use the standard format.")
+                descriptionLabel.UpdateText("Return link cleared. Private-server detection still runs automatically.")
             end
         end)
 
@@ -4748,7 +5982,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             if chained then
                 if enabled then
-                    descriptionLabel.UpdateText("Chain COA waits for 3 detected, level 3 commanders, then rotates Call Of Arms every 10.2 seconds.")
+                    descriptionLabel.UpdateText("Chain COA waits for 3 detected level 2 Commanders/Lifeguards, checks each remote response, holds for 6 seconds, then uses a 2 second handoff.")
                     window:Notify("Chain COA Enabled", message, 4)
                 end
 
@@ -4818,7 +6052,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             isRecording = true
             recordButton.UpdateButtonText("Stop Recording")
-            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, sells, and wave skips.")
+            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
             window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
         end)
 
@@ -4856,6 +6090,7 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
         local placementTracker = createPlacementTracker(towersFolder, existingTowers)
         local cash = getCashValue()
         local cashBeforeRequest = cash.Value
+        local placementRequestedAt = os.clock()
         local invoked, responseOrError = pcall(function()
             return RemoteFunction:InvokeServer(
                 "Troops",
@@ -4913,6 +6148,9 @@ function LyraMacro:Place(troopType, x, y, z, rotation, skin)
         if placedTower then
             self.NextTowerIndex += 1
             self.SpawnedTowers[self.NextTowerIndex] = placedTower
+            -- This attempt created the tower; rejected cash-wait retries never
+            -- become the placement anchor for its first timed ability.
+            self.SpawnedTowerPlacedAt[self.NextTowerIndex] = placementRequestedAt
             self.SpawnedTowerUpgradeLevels[self.NextTowerIndex] = getTowerUpgradeLevel(placedTower) or 0
             self.KnownTowerUpgradeLevels[placedTower] = self.SpawnedTowerUpgradeLevels[self.NextTowerIndex]
             self.KnownTowerTroops[placedTower] = troopType
@@ -5126,6 +6364,7 @@ function LyraMacro:Sell(towerIndex)
 
     -- Keep IDs stable: selling #1 never changes the ID of tower #2.
     self.SpawnedTowers[towerIndex] = nil
+    self.SpawnedTowerPlacedAt[towerIndex] = nil
     self.SpawnedTowerUpgradeLevels[towerIndex] = nil
     self.KnownTowerUpgradeLevels[targetTower] = nil
     print("[LyraMacro] Sold tower #" .. towerIndex .. ".")
@@ -5198,6 +6437,145 @@ local function makeGuiDraggable(handle, target)
     end)
 end
 
+local function clampGuiToViewport(target)
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local targetSize = target.AbsoluteSize
+    local currentPosition = target.AbsolutePosition
+    local minX = math.min(0, viewportSize.X - targetSize.X)
+    local maxX = math.max(0, viewportSize.X - targetSize.X)
+    local minY = math.min(0, viewportSize.Y - targetSize.Y)
+    local maxY = math.max(0, viewportSize.Y - targetSize.Y)
+    local nextX = math.clamp(currentPosition.X, minX, maxX)
+    local nextY = math.clamp(currentPosition.Y, minY, maxY)
+
+    target.Position = UDim2.fromOffset(
+        nextX + target.AnchorPoint.X * targetSize.X,
+        nextY + target.AnchorPoint.Y * targetSize.Y
+    )
+end
+
+local STRATEGY_LOGGER_COLORS = {
+    Background = Color3.fromRGB(13, 15, 19),
+    Header = Color3.fromRGB(20, 22, 27),
+    Card = Color3.fromRGB(27, 30, 36),
+    CardStroke = Color3.fromRGB(54, 59, 69),
+    Text = Color3.fromRGB(244, 246, 250),
+    Muted = Color3.fromRGB(151, 157, 170),
+    Faint = Color3.fromRGB(111, 119, 132),
+    Lavender = Color3.fromRGB(201, 171, 255),
+    Cyan = Color3.fromRGB(112, 203, 239),
+    Mint = Color3.fromRGB(91, 224, 168),
+    Amber = Color3.fromRGB(239, 197, 105),
+    Coral = Color3.fromRGB(255, 123, 120),
+}
+
+local function addStrategyLoggerCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = instance
+    return corner
+end
+
+local function addStrategyLoggerStroke(instance, color, transparency, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color
+    stroke.Transparency = transparency or 0
+    stroke.Thickness = thickness or 1
+    stroke.Parent = instance
+    return stroke
+end
+
+local function addStrategyLoggerGradient(instance, firstColor, secondColor, rotation)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, firstColor),
+        ColorSequenceKeypoint.new(1, secondColor),
+    })
+    gradient.Rotation = rotation or 0
+    gradient.Parent = instance
+    return gradient
+end
+
+local function getStrategyLoggerAppearance(message)
+    local normalized = string.upper(tostring(message))
+    local actionText = string.match(normalized, "^%d+%s*/%s*%d+%s+(.+)$") or normalized
+
+    if string.match(normalized, "^STRATEGY FAILED") or string.match(actionText, "^ERROR") then
+        return "ERR", STRATEGY_LOGGER_COLORS.Coral
+    elseif string.match(normalized, "^STRATEGY COMPLETED") then
+        return "DONE", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(normalized, "^STRATEGY STARTED") then
+        return "SYS", STRATEGY_LOGGER_COLORS.Lavender
+    elseif string.match(actionText, "^ENABLE%s+CHAIN%s+COA")
+        or string.match(actionText, "^DISABLE%s+CHAIN%s+COA") then
+        return "COA", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(actionText, "^ACTIVATE%s+") then
+        return "ABL", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(actionText, "^PLACE%s+") then
+        return "PLC", STRATEGY_LOGGER_COLORS.Lavender
+    elseif string.match(actionText, "^UPGRADE%s+") then
+        return "UPG", STRATEGY_LOGGER_COLORS.Cyan
+    elseif string.match(actionText, "^SELL%s+") then
+        return "SEL", STRATEGY_LOGGER_COLORS.Coral
+    elseif string.match(actionText, "^SKIP%s+") then
+        return "SKP", STRATEGY_LOGGER_COLORS.Amber
+    elseif string.match(actionText, "^VOTE%s+") then
+        return "VOTE", STRATEGY_LOGGER_COLORS.Cyan
+    end
+
+    return "LOG", STRATEGY_LOGGER_COLORS.Muted
+end
+
+local function parseStrategyLoggerMessage(message)
+    local text = tostring(message)
+    local stepNumber, totalActions, actionText = string.match(text, "^(%d+)%s*/%s*(%d+)%s+(.+)$")
+    local normalized = string.upper(text)
+    local startedActions = string.match(normalized, "^STRATEGY STARTED%s*%-%s*(%d+)%s+ACTIONS$")
+
+    return {
+        Text = actionText or text,
+        Step = tonumber(stepNumber),
+        Total = tonumber(totalActions),
+        StartedTotal = tonumber(startedActions),
+        Completed = string.match(normalized, "^STRATEGY COMPLETED") ~= nil,
+        Failed = string.match(normalized, "^STRATEGY FAILED") ~= nil,
+    }
+end
+
+local function formatStrategyLoggerTime(startedAt)
+    local elapsed = math.max(0, math.floor(os.clock() - startedAt))
+    local minutes = math.floor(elapsed / 60)
+    local seconds = elapsed % 60
+    return string.format("%02d:%02d", minutes, seconds)
+end
+
+local function setStrategyLoggerProgress(logger, progress)
+    if not logger.ProgressFill or not logger.ProgressFill.Parent then
+        return
+    end
+
+    logger.ProgressFill.Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0)
+end
+
+local function getStrategyLoggerViewportLayout()
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local frameMargin = viewportSize.X < 360 and 8 or 16
+    local topMargin = viewportSize.Y < 400 and 8 or 16
+    local frameWidth = math.max(1, math.min(430, viewportSize.X - frameMargin * 2))
+    local frameHeight = math.max(1, math.min(360, viewportSize.Y - topMargin * 2))
+
+    return {
+        Camera = camera,
+        FrameMargin = frameMargin,
+        TopMargin = topMargin,
+        Width = frameWidth,
+        Height = frameHeight,
+        Compact = frameWidth < 340,
+    }
+end
+
 function LyraMacro:CreateStrategyLogger()
     local parent = game:GetService("CoreGui")
     local parentReady = pcall(function()
@@ -5222,104 +6600,380 @@ function LyraMacro:CreateStrategyLogger()
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     screenGui.Parent = parent
 
-    local topBanner = Instance.new("Frame")
-    topBanner.Name = "TopBanner"
-    topBanner.Position = UDim2.fromOffset(0, 0)
-    topBanner.Size = UDim2.new(0, 370, 0, 42)
-    topBanner.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
-    topBanner.BackgroundTransparency = 0
-    topBanner.BorderSizePixel = 0
-    topBanner.ZIndex = 100000
-    topBanner.Parent = screenGui
-
-    local topBannerCorner = Instance.new("UICorner")
-    topBannerCorner.CornerRadius = UDim.new(0, 6)
-    topBannerCorner.Parent = topBanner
-
-    local topBannerText = Instance.new("TextLabel")
-    topBannerText.Size = UDim2.new(1, -24, 1, 0)
-    topBannerText.Position = UDim2.new(0, 12, 0, 0)
-    topBannerText.BackgroundTransparency = 1
-    topBannerText.Text = "LYRA AUTOSTRATEGIES"
-    topBannerText.TextColor3 = Color3.fromRGB(240, 244, 255)
-    topBannerText.TextSize = 14
-    topBannerText.Font = Enum.Font.MontserratBold
-    topBannerText.TextXAlignment = Enum.TextXAlignment.Left
-    topBannerText.ZIndex = 100001
-    topBannerText.Parent = topBanner
+    local viewportLayout = getStrategyLoggerViewportLayout()
+    local frameWidth = viewportLayout.Width
+    local frameHeight = viewportLayout.Height
+    local compactLayout = viewportLayout.Compact
 
     local frame = Instance.new("Frame")
     frame.Name = "ActionLog"
     frame.AnchorPoint = Vector2.new(1, 0)
-    frame.Position = UDim2.new(1, 0, 0, 52)
-    frame.Size = UDim2.new(0, 400, 0, 360)
-    frame.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
-    frame.BackgroundTransparency = 0.36
+    frame.Position = UDim2.new(1, -viewportLayout.FrameMargin, 0, viewportLayout.TopMargin)
+    frame.Size = UDim2.fromOffset(frameWidth, frameHeight)
+    frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
+    frame.Active = true
     frame.ZIndex = 1000
     frame.Parent = screenGui
 
-    local frameCorner = Instance.new("UICorner")
-    frameCorner.CornerRadius = UDim.new(0, 6)
-    frameCorner.Parent = frame
+    local shadow = Instance.new("Frame")
+    shadow.Name = "Shadow"
+    shadow.Position = UDim2.fromOffset(7, 8)
+    shadow.Size = UDim2.fromScale(1, 1)
+    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.BackgroundTransparency = 0.55
+    shadow.BorderSizePixel = 0
+    shadow.ZIndex = 999
+    shadow.Parent = frame
+    addStrategyLoggerCorner(shadow, 8)
+
+    local panel = Instance.new("Frame")
+    panel.Name = "Panel"
+    panel.Size = UDim2.fromScale(1, 1)
+    panel.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Background
+    panel.BorderSizePixel = 0
+    panel.ClipsDescendants = true
+    panel.ZIndex = 1000
+    panel.Parent = frame
+    addStrategyLoggerCorner(panel, 8)
+    addStrategyLoggerStroke(panel, STRATEGY_LOGGER_COLORS.CardStroke, 0.08, 1)
+
+    local topBanner = Instance.new("Frame")
+    topBanner.Name = "TopBanner"
+    topBanner.Size = UDim2.new(1, 0, 0, 2)
+    topBanner.BackgroundColor3 = Color3.new(1, 1, 1)
+    topBanner.BorderSizePixel = 0
+    topBanner.ZIndex = 1005
+    topBanner.Parent = panel
+    addStrategyLoggerGradient(
+        topBanner,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        0
+    )
 
     local header = Instance.new("Frame")
     header.Name = "Header"
-    header.Size = UDim2.new(1, 0, 0, 36)
-    header.BackgroundColor3 = Color3.fromRGB(20, 29, 39)
-    header.BackgroundTransparency = 0.22
+    header.Size = UDim2.new(1, 0, 0, 54)
+    header.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Header
     header.BorderSizePixel = 0
     header.Active = true
     header.ZIndex = 1001
-    header.Parent = frame
+    header.Parent = panel
 
-    local headerCorner = Instance.new("UICorner")
-    headerCorner.CornerRadius = UDim.new(0, 6)
-    headerCorner.Parent = header
+    local brandBadge = Instance.new("Frame")
+    brandBadge.Name = "BrandBadge"
+    brandBadge.Position = UDim2.fromOffset(14, 13)
+    brandBadge.Size = UDim2.fromOffset(28, 28)
+    brandBadge.BackgroundColor3 = Color3.new(1, 1, 1)
+    brandBadge.BorderSizePixel = 0
+    brandBadge.ZIndex = 1002
+    brandBadge.Parent = header
+    addStrategyLoggerCorner(brandBadge, 6)
+    addStrategyLoggerGradient(
+        brandBadge,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        35
+    )
+
+    local brandText = Instance.new("TextLabel")
+    brandText.Name = "BrandText"
+    brandText.Size = UDim2.fromScale(1, 1)
+    brandText.BackgroundTransparency = 1
+    brandText.Text = "L"
+    brandText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    brandText.TextSize = 13
+    brandText.Font = Enum.Font.MontserratBold
+    brandText.ZIndex = 1003
+    brandText.Parent = brandBadge
 
     local headerText = Instance.new("TextLabel")
-    headerText.Size = UDim2.new(1, -20, 1, 0)
-    headerText.Position = UDim2.new(0, 10, 0, 0)
+    headerText.Name = "Title"
+    headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
+    headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
     headerText.BackgroundTransparency = 1
     headerText.Text = "LYRA AUTOSTRATEGIES"
-    headerText.TextColor3 = Color3.fromRGB(240, 244, 255)
-    headerText.TextSize = 14
+    headerText.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    headerText.TextSize = 11
     headerText.Font = Enum.Font.MontserratBold
     headerText.TextXAlignment = Enum.TextXAlignment.Left
+    headerText.TextTruncate = Enum.TextTruncate.AtEnd
     headerText.ZIndex = 1002
     headerText.Parent = header
 
+    local headerSubtitle = Instance.new("TextLabel")
+    headerSubtitle.Name = "Subtitle"
+    headerSubtitle.Position = UDim2.fromOffset(52, 28)
+    headerSubtitle.Size = UDim2.new(1, -190, 0, 14)
+    headerSubtitle.BackgroundTransparency = 1
+    headerSubtitle.Text = "EXECUTION CONSOLE"
+    headerSubtitle.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    headerSubtitle.TextSize = 9
+    headerSubtitle.Font = Enum.Font.Code
+    headerSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    headerSubtitle.TextTruncate = Enum.TextTruncate.AtEnd
+    headerSubtitle.Visible = not compactLayout
+    headerSubtitle.ZIndex = 1002
+    headerSubtitle.Parent = header
+
+    local liveStatus = Instance.new("Frame")
+    liveStatus.Name = "LiveStatus"
+    liveStatus.AnchorPoint = Vector2.new(1, 0.5)
+    liveStatus.Position = UDim2.new(1, -49, 0.5, 0)
+    liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
+    liveStatus.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    liveStatus.BorderSizePixel = 0
+    liveStatus.ZIndex = 1002
+    liveStatus.Parent = header
+    addStrategyLoggerCorner(liveStatus, 12)
+    addStrategyLoggerStroke(liveStatus, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local liveDot = Instance.new("Frame")
+    liveDot.Name = "Dot"
+    liveDot.AnchorPoint = Vector2.new(0, 0.5)
+    liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+    liveDot.Size = UDim2.fromOffset(6, 6)
+    liveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+    liveDot.BorderSizePixel = 0
+    liveDot.ZIndex = 1003
+    liveDot.Parent = liveStatus
+    addStrategyLoggerCorner(liveDot, 6)
+
+    local liveText = Instance.new("TextLabel")
+    liveText.Name = "Text"
+    liveText.Position = UDim2.fromOffset(22, 0)
+    liveText.Size = UDim2.new(1, -28, 1, 0)
+    liveText.BackgroundTransparency = 1
+    liveText.Text = "LIVE"
+    liveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+    liveText.TextSize = 9
+    liveText.Font = Enum.Font.Code
+    liveText.TextXAlignment = Enum.TextXAlignment.Left
+    liveText.Visible = not compactLayout
+    liveText.ZIndex = 1003
+    liveText.Parent = liveStatus
+
+    local collapseButton = Instance.new("TextButton")
+    collapseButton.Name = "Collapse"
+    collapseButton.AnchorPoint = Vector2.new(1, 0.5)
+    collapseButton.Position = UDim2.new(1, -12, 0.5, 0)
+    collapseButton.Size = UDim2.fromOffset(26, 26)
+    collapseButton.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    collapseButton.BorderSizePixel = 0
+    collapseButton.AutoButtonColor = false
+    collapseButton.Text = "-"
+    collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+    collapseButton.TextSize = 14
+    collapseButton.Font = Enum.Font.MontserratBold
+    collapseButton.ZIndex = 1003
+    collapseButton.Parent = header
+    addStrategyLoggerCorner(collapseButton, 6)
+    addStrategyLoggerStroke(collapseButton, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local headerDivider = Instance.new("Frame")
+    headerDivider.Name = "Divider"
+    headerDivider.AnchorPoint = Vector2.new(0, 1)
+    headerDivider.Position = UDim2.new(0, 0, 1, 0)
+    headerDivider.Size = UDim2.new(1, 0, 0, 1)
+    headerDivider.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    headerDivider.BackgroundTransparency = 0.35
+    headerDivider.BorderSizePixel = 0
+    headerDivider.ZIndex = 1002
+    headerDivider.Parent = header
+
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.Position = UDim2.fromOffset(0, 54)
+    content.Size = UDim2.new(1, 0, 1, -54)
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.ZIndex = 1001
+    content.Parent = panel
+
+    local progressPanel = Instance.new("Frame")
+    progressPanel.Name = "Progress"
+    progressPanel.Size = UDim2.new(1, 0, 0, 52)
+    progressPanel.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Background
+    progressPanel.BorderSizePixel = 0
+    progressPanel.ZIndex = 1001
+    progressPanel.Parent = content
+
+    local statusText = Instance.new("TextLabel")
+    statusText.Name = "Status"
+    statusText.Position = UDim2.fromOffset(14, 8)
+    statusText.Size = UDim2.new(0.6, -14, 0, 17)
+    statusText.BackgroundTransparency = 1
+    statusText.Text = "WAITING FOR ACTIONS"
+    statusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
+    statusText.TextSize = 9
+    statusText.Font = Enum.Font.Code
+    statusText.TextXAlignment = Enum.TextXAlignment.Left
+    statusText.TextTruncate = Enum.TextTruncate.AtEnd
+    statusText.ZIndex = 1002
+    statusText.Parent = progressPanel
+
+    local progressText = Instance.new("TextLabel")
+    progressText.Name = "Count"
+    progressText.AnchorPoint = Vector2.new(1, 0)
+    progressText.Position = UDim2.new(1, -14, 0, 8)
+    progressText.Size = UDim2.new(0.4, -14, 0, 17)
+    progressText.BackgroundTransparency = 1
+    progressText.Text = "0 ACTIONS"
+    progressText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    progressText.TextSize = 9
+    progressText.Font = Enum.Font.Code
+    progressText.TextXAlignment = Enum.TextXAlignment.Right
+    progressText.TextTruncate = Enum.TextTruncate.AtEnd
+    progressText.ZIndex = 1002
+    progressText.Parent = progressPanel
+
+    local progressTrack = Instance.new("Frame")
+    progressTrack.Name = "Track"
+    progressTrack.Position = UDim2.fromOffset(14, 34)
+    progressTrack.Size = UDim2.new(1, -28, 0, 4)
+    progressTrack.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    progressTrack.BackgroundTransparency = 0.3
+    progressTrack.BorderSizePixel = 0
+    progressTrack.ClipsDescendants = true
+    progressTrack.ZIndex = 1002
+    progressTrack.Parent = progressPanel
+    addStrategyLoggerCorner(progressTrack, 4)
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Name = "Fill"
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressFill.BackgroundColor3 = Color3.new(1, 1, 1)
+    progressFill.BorderSizePixel = 0
+    progressFill.ZIndex = 1003
+    progressFill.Parent = progressTrack
+    addStrategyLoggerCorner(progressFill, 4)
+    addStrategyLoggerGradient(
+        progressFill,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        0
+    )
+
     local scroll = Instance.new("ScrollingFrame")
     scroll.Name = "Actions"
-    scroll.Position = UDim2.new(0, 8, 0, 44)
-    scroll.Size = UDim2.new(1, -16, 1, -52)
-    scroll.BackgroundColor3 = Color3.fromRGB(5, 7, 10)
-    scroll.BackgroundTransparency = 0.48
+    scroll.Position = UDim2.new(0, 8, 0, 52)
+    scroll.Size = UDim2.new(1, -16, 1, -60)
+    scroll.BackgroundColor3 = Color3.fromRGB(13, 16, 20)
     scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 4
-    scroll.ScrollBarImageColor3 = Color3.fromRGB(95, 180, 255)
+    scroll.ScrollBarThickness = 3
+    scroll.ScrollBarImageColor3 = STRATEGY_LOGGER_COLORS.Cyan
+    scroll.ScrollBarImageTransparency = 0.15
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
     scroll.ZIndex = 1001
-    scroll.Parent = frame
-
-    local scrollCorner = Instance.new("UICorner")
-    scrollCorner.CornerRadius = UDim.new(0, 5)
-    scrollCorner.Parent = scroll
+    scroll.Parent = content
+    addStrategyLoggerCorner(scroll, 6)
+    addStrategyLoggerStroke(scroll, STRATEGY_LOGGER_COLORS.CardStroke, 0.45, 1)
 
     local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0, 6)
-    padding.PaddingBottom = UDim.new(0, 6)
-    padding.PaddingLeft = UDim.new(0, 6)
-    padding.PaddingRight = UDim.new(0, 6)
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.PaddingBottom = UDim.new(0, 5)
+    padding.PaddingLeft = UDim.new(0, 7)
+    padding.PaddingRight = UDim.new(0, 7)
     padding.Parent = scroll
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 4)
+    layout.Padding = UDim.new(0, 0)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Parent = scroll
 
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
+    end)
+
+    local expandedSize = frame.Size
+    local collapsed = false
+    local viewportConnection
+    local currentCameraConnection
+    local ancestryConnection
+
+    local function applyCompactLayout(nextCompactLayout)
+        compactLayout = nextCompactLayout
+        headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
+        headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
+        headerSubtitle.Visible = not compactLayout
+        liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
+        liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+        liveText.Visible = not compactLayout
+
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") and string.match(child.Name, "^Action%d+$") then
+                local childActionText = child:FindFirstChild("ActionText")
+                local childTimestamp = child:FindFirstChild("Timestamp")
+
+                if childActionText then
+                    childActionText.Size = compactLayout and UDim2.new(1, -100, 1, 0)
+                        or UDim2.new(1, -148, 1, 0)
+                end
+
+                if childTimestamp then
+                    childTimestamp.Visible = not compactLayout
+                end
+            end
+        end
+
+        local activeLogger = self.StrategyLogger
+
+        if activeLogger and activeLogger.Gui == screenGui then
+            activeLogger.CompactLayout = compactLayout
+        end
+    end
+
+    local function applyViewportLayout()
+        local nextLayout = getStrategyLoggerViewportLayout()
+        frameWidth = nextLayout.Width
+        frameHeight = nextLayout.Height
+        expandedSize = UDim2.fromOffset(frameWidth, frameHeight)
+        frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
+        applyCompactLayout(nextLayout.Compact)
+
+        task.defer(function()
+            if frame.Parent then
+                clampGuiToViewport(frame)
+            end
+        end)
+    end
+
+    local function bindCurrentCamera()
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+
+        local currentCamera = workspace.CurrentCamera
+
+        if currentCamera then
+            viewportConnection = currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(applyViewportLayout)
+        end
+
+        applyViewportLayout()
+    end
+
+    collapseButton.MouseButton1Click:Connect(function()
+        collapsed = not collapsed
+        content.Visible = not collapsed
+        collapseButton.Text = collapsed and "+" or "-"
+        frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
+
+        task.defer(function()
+            if frame.Parent then
+                clampGuiToViewport(frame)
+            end
+        end)
+    end)
+
+    collapseButton.MouseEnter:Connect(function()
+        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    end)
+
+    collapseButton.MouseLeave:Connect(function()
+        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
     end)
 
     makeGuiDraggable(header, frame)
@@ -5327,12 +6981,48 @@ function LyraMacro:CreateStrategyLogger()
     self.StrategyLogger = {
         Gui = screenGui,
         Frame = frame,
+        Panel = panel,
         Header = header,
         TopBanner = topBanner,
         Scroll = scroll,
         Layout = layout,
+        Content = content,
+        StatusText = statusText,
+        ProgressText = progressText,
+        ProgressFill = progressFill,
+        LiveText = liveText,
+        LiveDot = liveDot,
         Entries = 0,
+        StartedAt = os.clock(),
+        TotalActions = nil,
+        CurrentStep = 0,
+        CurrentRow = nil,
+        CompactLayout = compactLayout,
     }
+
+    currentCameraConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCurrentCamera)
+    bindCurrentCamera()
+
+    ancestryConnection = screenGui.AncestryChanged:Connect(function(_, nextParent)
+        if nextParent then
+            return
+        end
+
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+
+        if currentCameraConnection then
+            currentCameraConnection:Disconnect()
+            currentCameraConnection = nil
+        end
+
+        if ancestryConnection then
+            ancestryConnection:Disconnect()
+            ancestryConnection = nil
+        end
+    end)
 
     return self.StrategyLogger
 end
@@ -5344,34 +7034,184 @@ function LyraMacro:LogStrategyAction(message)
         logger = self:CreateStrategyLogger()
     end
 
+    local parsed = parseStrategyLoggerMessage(message)
+    local badgeText, accentColor = getStrategyLoggerAppearance(message)
+
+    if logger.CurrentRow and logger.CurrentRow.Parent then
+        logger.CurrentRow.BackgroundTransparency = 1
+
+        local previousAction = logger.CurrentRow:FindFirstChild("ActionText")
+        local previousBadge = logger.CurrentRow:FindFirstChild("TypeBadge")
+        local previousAccent = logger.CurrentRow:FindFirstChild("Accent")
+
+        if previousAction then
+            previousAction.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+        end
+
+        if previousBadge then
+            previousBadge.BackgroundTransparency = 0.84
+        end
+
+        if previousAccent then
+            previousAccent.BackgroundTransparency = 0.45
+        end
+    end
+
+    if parsed.StartedTotal then
+        logger.TotalActions = parsed.StartedTotal
+        logger.CurrentStep = 0
+        logger.StatusText.Text = "STRATEGY RUNNING"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
+        logger.ProgressText.Text = "0 / " .. tostring(parsed.StartedTotal) .. " DONE"
+        logger.LiveText.Text = "LIVE"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+        setStrategyLoggerProgress(logger, 0)
+    elseif parsed.Step then
+        logger.TotalActions = parsed.Total or logger.TotalActions
+        logger.CurrentStep = parsed.Step
+        logger.StatusText.Text = "RUNNING STEP " .. tostring(parsed.Step)
+
+        if logger.TotalActions then
+            local completedActions = math.max(0, parsed.Step - 1)
+            logger.ProgressText.Text = tostring(completedActions) .. " / " .. tostring(logger.TotalActions) .. " DONE"
+            setStrategyLoggerProgress(logger, completedActions / math.max(logger.TotalActions, 1))
+        end
+    elseif parsed.Completed then
+        logger.CurrentStep = logger.TotalActions or logger.CurrentStep
+        logger.StatusText.Text = "STRATEGY COMPLETE"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveText.Text = "DONE"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+
+        if logger.TotalActions then
+            logger.ProgressText.Text = tostring(logger.TotalActions) .. " / " .. tostring(logger.TotalActions) .. " DONE"
+        end
+
+        setStrategyLoggerProgress(logger, 1)
+    elseif parsed.Failed then
+        logger.StatusText.Text = "STRATEGY FAILED"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
+        logger.LiveText.Text = "ERROR"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Coral
+    end
+
     logger.Entries += 1
 
-    local entry = Instance.new("TextLabel")
+    local entry = Instance.new("Frame")
     entry.Name = "Action" .. tostring(logger.Entries)
-    entry.Size = UDim2.new(1, 0, 0, 32)
-    entry.BackgroundColor3 = Color3.fromRGB(30, 42, 56)
-    entry.BackgroundTransparency = 0.46
+    entry.Size = UDim2.new(1, -14, 0, 50)
+    entry.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    entry.BackgroundTransparency = 0.72
     entry.BorderSizePixel = 0
-    entry.Text = tostring(logger.Entries) .. ". " .. tostring(message)
-    entry.TextColor3 = Color3.fromRGB(232, 239, 250)
-    entry.TextSize = 12
-    entry.Font = Enum.Font.MontserratBold
-    entry.TextWrapped = true
-    entry.TextXAlignment = Enum.TextXAlignment.Left
-    entry.TextYAlignment = Enum.TextYAlignment.Center
     entry.LayoutOrder = logger.Entries
     entry.ZIndex = 1002
     entry.Parent = logger.Scroll
 
-    local entryCorner = Instance.new("UICorner")
-    entryCorner.CornerRadius = UDim.new(0, 4)
-    entryCorner.Parent = entry
+    local accent = Instance.new("Frame")
+    accent.Name = "Accent"
+    accent.AnchorPoint = Vector2.new(0, 0.5)
+    accent.Position = UDim2.new(0, 0, 0.5, 0)
+    accent.Size = UDim2.fromOffset(3, 28)
+    accent.BackgroundColor3 = accentColor
+    accent.BorderSizePixel = 0
+    accent.ZIndex = 1003
+    accent.Parent = entry
+    addStrategyLoggerCorner(accent, 3)
+
+    local indexText = Instance.new("TextLabel")
+    indexText.Name = "Index"
+    indexText.Position = UDim2.fromOffset(9, 0)
+    indexText.Size = UDim2.fromOffset(43, 50)
+    indexText.BackgroundTransparency = 1
+    indexText.Text = parsed.Step and string.format("%02d/%02d", parsed.Step, parsed.Total or parsed.Step)
+        or string.format("%02d", logger.Entries)
+    indexText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    indexText.TextSize = 9
+    indexText.Font = Enum.Font.Code
+    indexText.TextXAlignment = Enum.TextXAlignment.Left
+    indexText.ZIndex = 1003
+    indexText.Parent = entry
+
+    local typeBadge = Instance.new("Frame")
+    typeBadge.Name = "TypeBadge"
+    typeBadge.AnchorPoint = Vector2.new(0, 0.5)
+    typeBadge.Position = UDim2.new(0, 52, 0.5, 0)
+    typeBadge.Size = UDim2.fromOffset(31, 26)
+    typeBadge.BackgroundColor3 = accentColor
+    typeBadge.BackgroundTransparency = 0.76
+    typeBadge.BorderSizePixel = 0
+    typeBadge.ZIndex = 1003
+    typeBadge.Parent = entry
+    addStrategyLoggerCorner(typeBadge, 5)
+    addStrategyLoggerStroke(typeBadge, accentColor, 0.35, 1)
+
+    local typeText = Instance.new("TextLabel")
+    typeText.Name = "Text"
+    typeText.Size = UDim2.fromScale(1, 1)
+    typeText.BackgroundTransparency = 1
+    typeText.Text = badgeText
+    typeText.TextColor3 = accentColor
+    typeText.TextSize = 8
+    typeText.Font = Enum.Font.Code
+    typeText.ZIndex = 1004
+    typeText.Parent = typeBadge
+
+    local actionText = Instance.new("TextLabel")
+    actionText.Name = "ActionText"
+    actionText.Position = UDim2.fromOffset(93, 0)
+    actionText.Size = logger.CompactLayout and UDim2.new(1, -100, 1, 0) or UDim2.new(1, -148, 1, 0)
+    actionText.BackgroundTransparency = 1
+    actionText.Text = parsed.Text
+    actionText.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    actionText.TextSize = 10
+    actionText.Font = Enum.Font.Code
+    actionText.TextXAlignment = Enum.TextXAlignment.Left
+    actionText.TextYAlignment = Enum.TextYAlignment.Center
+    actionText.TextTruncate = Enum.TextTruncate.AtEnd
+    actionText.ZIndex = 1003
+    actionText.Parent = entry
+
+    local timeText = Instance.new("TextLabel")
+    timeText.Name = "Timestamp"
+    timeText.AnchorPoint = Vector2.new(1, 0)
+    timeText.Position = UDim2.new(1, -7, 0, 0)
+    timeText.Size = UDim2.fromOffset(45, 50)
+    timeText.BackgroundTransparency = 1
+    timeText.Text = formatStrategyLoggerTime(logger.StartedAt)
+    timeText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    timeText.TextSize = 9
+    timeText.Font = Enum.Font.Code
+    timeText.TextXAlignment = Enum.TextXAlignment.Right
+    timeText.Visible = not logger.CompactLayout
+    timeText.ZIndex = 1003
+    timeText.Parent = entry
+
+    local divider = Instance.new("Frame")
+    divider.Name = "Divider"
+    divider.AnchorPoint = Vector2.new(0, 1)
+    divider.Position = UDim2.new(0, 9, 1, 0)
+    divider.Size = UDim2.new(1, -16, 0, 1)
+    divider.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    divider.BackgroundTransparency = 0.55
+    divider.BorderSizePixel = 0
+    divider.ZIndex = 1002
+    divider.Parent = entry
+
+    logger.CurrentRow = entry
 
     task.defer(function()
         if logger.Scroll and logger.Scroll.Parent then
-            logger.Scroll.CanvasPosition = Vector2.new(0, math.max(0, logger.Layout.AbsoluteContentSize.Y - logger.Scroll.AbsoluteWindowSize.Y + 12))
+            logger.Scroll.CanvasPosition = Vector2.new(
+                0,
+                math.max(0, logger.Layout.AbsoluteContentSize.Y - logger.Scroll.AbsoluteWindowSize.Y + 10)
+            )
         end
     end)
+
+    return entry
 end
 
 local function validateStrategyActions(strategy)
@@ -5464,15 +7304,17 @@ function LyraMacro:Run(strategy)
     self:_watchForAutoStrategyResults()
     self:CreateStrategyLogger()
     self:LogStrategyAction("STRATEGY STARTED - " .. tostring(actionCount) .. " ACTIONS")
+    local lastAbilityDispatchedAt = os.clock()
 
     for stepNumber = 1, actionCount do
         local step = strategy[stepNumber]
         local action = step.action
-        assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
         local actionDescription = describeStrategyStep(step)
         self:LogStrategyAction(tostring(stepNumber) .. "/" .. tostring(actionCount) .. "  " .. actionDescription)
 
         local executed, actionError = xpcall(function()
+            assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
+
             if action == "skip" then
                 self:SkipWave()
             elseif action == "mode" then
@@ -5484,13 +7326,67 @@ function LyraMacro:Run(strategy)
             elseif action == "sell" then
                 self:Sell(step.tower)
             elseif action == "ability" then
+                local targetTower = self.SpawnedTowers[step.tower]
+                assert(
+                    targetTower and targetTower.Parent,
+                    "[LyraMacro] Cannot schedule an ability for tower #"
+                        .. tostring(step.tower)
+                        .. "; it is missing or was sold."
+                )
+
+                local abilityDelay = normalizeAbilityDelay(step.delay)
+
+                if abilityDelay then
+                    local delayAnchor = lastAbilityDispatchedAt
+
+                    if step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
+                        delayAnchor = tonumber(self.SpawnedTowerPlacedAt[step.tower])
+                        assert(
+                            delayAnchor,
+                            "[LyraMacro] Timed ability for tower #"
+                                .. tostring(step.tower)
+                                .. " is missing its replay placement timestamp."
+                        )
+                    end
+
+                    local remainingDelay = delayAnchor + abilityDelay - os.clock()
+
+                    if remainingDelay > 0 then
+                        print(
+                            "[LyraMacro] Waiting "
+                                .. formatNumber(remainingDelay)
+                                .. " seconds for the recorded ability timing."
+                        )
+                        task.wait(remainingDelay)
+                    end
+                end
+
+                -- Anchor start-to-start timing before InvokeServer so remote
+                -- latency does not stretch the next recorded ability interval.
+                lastAbilityDispatchedAt = os.clock()
                 self:ActivateAbility(step.tower, step.ability)
+            elseif action == "chaincoa" then
+                local chained, chainMessage = self:SetChainCOA(step.enabled ~= false, {
+                    ActiveDuration = step.active_duration,
+                    HandoffDelay = step.handoff_delay,
+                    RetryDelay = step.retry_delay,
+                    Record = false,
+                })
+
+                if not chained then
+                    error(chainMessage or "Chain COA could not be configured.")
+                end
             else
                 error("[LyraMacro] Unknown action: " .. action)
             end
         end, debug.traceback)
 
         if not executed then
+            pcall(function()
+                self:LogStrategyAction(
+                    "STRATEGY FAILED - STEP " .. tostring(stepNumber) .. "  " .. actionDescription
+                )
+            end)
             self:_releaseReplayOwnership()
             error("[LyraMacro] Strategy step " .. tostring(stepNumber) .. " (" .. actionDescription .. ") failed: " .. tostring(actionError), 0)
         end
