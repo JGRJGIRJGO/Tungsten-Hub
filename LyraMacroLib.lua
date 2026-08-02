@@ -3416,7 +3416,7 @@ function LyraMacro:ReturnToPrivateServer(results)
     end
 
     local maxAttempts = linkCode and not usesProvider
-            and math.max(LOBBY_RETURN_MAX_ATTEMPTS, #privateLaunchCandidates + 1)
+            and math.max(LOBBY_RETURN_MAX_ATTEMPTS, #privateLaunchCandidates)
         or LOBBY_RETURN_MAX_ATTEMPTS
 
     self:_clearLobbyReturnConnections()
@@ -3528,7 +3528,7 @@ function LyraMacro:ReturnToPrivateServer(results)
             end
 
             local privateLaunchError
-            local returnButton = findResultsLobbyButton(results)
+            local returnButton = not linkCode and findResultsLobbyButton(results) or nil
 
             local function tryReturnButton()
                 local activated, activationMethod = activateResultsLobbyButton(returnButton)
@@ -3540,18 +3540,12 @@ function LyraMacro:ReturnToPrivateServer(results)
                     return false
                 end
 
-                if linkCode then
-                    print(
-                        "[LyraMacro] Using the game's private-context Return to Lobby route; the configured private link remains available as a fallback."
-                    )
-                end
-
                 return true, activationMethod
             end
 
-            -- Try the game's own route once so it can preserve private-lobby
-            -- context. Without a real teleport state, the next attempt uses the
-            -- exact private link or the direct public TeleportService fallback.
+            -- The game's Return to Lobby button targets the ordinary lobby. Only
+            -- use it when no private share code was configured; otherwise launch
+            -- the exact private-server link so a public teleport cannot win first.
             if returnButton and attemptNumber == 1 then
                 local activated, activationMethod = tryReturnButton()
 
