@@ -3429,9 +3429,10 @@ function LyraMacro:ReturnToPrivateServer(results)
                 return true, activationMethod
             end
 
-            -- Let the game preserve its own private-lobby context first. If that
-            -- produces no teleport state, the next attempt launches the exact link.
-            if returnButton and (not linkCode or attemptNumber == 1) then
+            -- Try the game's own route once so it can preserve private-lobby
+            -- context. Without a real teleport state, the next attempt uses the
+            -- exact private link or the direct public TeleportService fallback.
+            if returnButton and attemptNumber == 1 then
                 local activated, activationMethod = tryReturnButton()
 
                 if activated then
@@ -3455,7 +3456,7 @@ function LyraMacro:ReturnToPrivateServer(results)
                 privateLaunchError = "the private-lobby link was already dispatched without an observed teleport"
             end
 
-            if returnButton and not buttonAttempted then
+            if linkCode and returnButton and not buttonAttempted then
                 local activated, activationMethod = tryReturnButton()
 
                 if activated then
@@ -3476,6 +3477,7 @@ function LyraMacro:ReturnToPrivateServer(results)
                 )
             end
 
+            print("[LyraMacro] Using direct public TeleportService lobby fallback.")
             return TeleportService:Teleport(LOBBY_PLACE_ID, LocalPlayer)
         end)
 
@@ -5412,7 +5414,7 @@ function LyraMacro:_watchForAutoStrategyResults()
         print("[LyraMacro] Automatic private-lobby return armed for match results.")
     else
         print(
-            "[LyraMacro] Automatic Return to Lobby flow armed; public TeleportService is used only if the game's route is unavailable."
+            "[LyraMacro] Automatic Return to Lobby flow armed; the game's route is tried once before the direct public TeleportService fallback."
         )
     end
     return true
