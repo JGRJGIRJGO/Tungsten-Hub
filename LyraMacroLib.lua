@@ -19,10 +19,14 @@ local DEFAULT_STRATEGY_FOLDER = "LyraStrategies"
 local MAP_SCAN_LIMIT = 2500
 local LOBBY_PLACE_ID = 113331026373939
 local MATCH_PLACE_ID = 133260551256133
--- A user-owned VIP linkCode is a launcher parameter, not a reserved-server
+-- A user-owned VIP share code is a launcher parameter, not a reserved-server
 -- access code. Never pass it to TeleportToPrivateServer/ReservedServerAccessCode.
-local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/games/start?placeId=113331026373939&linkCode="
-local PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX = "roblox://placeId=113331026373939&linkCode="
+local PRIVATE_SERVER_RETURN_URL_PREFIX = "https://www.roblox.com/share?code="
+local PRIVATE_SERVER_RETURN_URL_SUFFIX = "&type=Server"
+local PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX = "roblox://navigation/share_links?code="
+local PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX = "&type=Server"
+local PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX = "https://www.roblox.com/games/start?placeId=113331026373939&linkCode="
+local PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX = "roblox://placeId=113331026373939&linkCode="
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 
 local MAP_NAME_KEYS = {
@@ -2304,6 +2308,17 @@ local function normalizePrivateServerLinkCode(value)
     local codeFromUrl = linkCode:match("[?&]privateServerLinkCode=([^&#]+)")
         or linkCode:match("[?&]linkCode=([^&#]+)")
 
+    if not codeFromUrl
+        and (linkCode:find("/share", 1, true) or linkCode:find("navigation/share_links", 1, true)) then
+        local shareType = linkCode:match("[?&]type=([^&#]+)")
+
+        if shareType and string.lower(shareType) ~= "server" then
+            return nil
+        end
+
+        codeFromUrl = linkCode:match("[?&]code=([^&#]+)")
+    end
+
     if codeFromUrl then
         linkCode = codeFromUrl
     end
@@ -3027,11 +3042,39 @@ local function getExecutorUrlLaunchers()
                 seenFunctions[candidate] = true
                 table.insert(launchers, {
                     Callback = candidate,
+                    CallStyle = methodFallback and "auto" or "function",
                     Name = label .. "." .. functionName,
                     Owner = methodFallback and container or nil,
+                    WebOnly = false,
                 })
             end
         end
+    end
+
+    local function addServiceLauncher(serviceName)
+        local gotService, service = pcall(function()
+            return game:GetService(serviceName)
+        end)
+
+        if not gotService or not service then
+            return
+        end
+
+        local readMethod, openBrowserWindow = pcall(function()
+            return service.OpenBrowserWindow
+        end)
+
+        if not readMethod or type(openBrowserWindow) ~= "function" then
+            return
+        end
+
+        table.insert(launchers, {
+            Callback = openBrowserWindow,
+            CallStyle = "method",
+            Name = serviceName .. ".OpenBrowserWindow",
+            Owner = service,
+            WebOnly = true,
+        })
     end
 
     local sharedEnvironment = getSharedEnvironment()
@@ -3069,10 +3112,21 @@ local function getExecutorUrlLaunchers()
         addContainer(namespaceName, namespace, true)
     end
 
+    -- Delta iOS may not expose an openurl global, but can grant executor-level
+    -- access to Roblox's browser services. These methods are web-link-only and
+    -- remain unconfirmed until an actual lobby teleport state is observed.
+    addServiceLauncher("BrowserService")
+    addServiceLauncher("GuiService")
+
     return launchers
 end
 
 local function invokeExecutorUrlLauncher(launcher, url)
+    if launcher.CallStyle == "method" then
+        local invoked, result = pcall(launcher.Callback, launcher.Owner, url)
+        return invoked and result ~= false, result
+    end
+
     local invoked, result = pcall(launcher.Callback, url)
 
     if invoked and result ~= false then
@@ -3097,37 +3151,59 @@ local function invokeExecutorUrlLauncher(launcher, url)
     return false, firstError
 end
 
-local function launchPrivateServerUrl(deepLink, webUrl)
+local function getPrivateServerLaunchCandidates(targets)
+    local candidates = {}
     local launchers = getExecutorUrlLaunchers()
-    local errors = {}
 
-    if #launchers == 0 then
-        return false, "executor does not expose an openurl/open_url-style URL launcher"
-    end
-
-    for _, launcher in ipairs(launchers) do
-        for _, target in ipairs({
-            { Kind = "Roblox deep link", Url = deepLink },
-            { Kind = "Roblox web link", Url = webUrl },
-        }) do
-            local launched, result = invokeExecutorUrlLauncher(launcher, target.Url)
-
-            if launched then
-                return true, launcher.Name .. " using " .. target.Kind
+    for _, target in ipairs(targets) do
+        for _, launcher in ipairs(launchers) do
+            if not launcher.WebOnly or target.IsWeb then
+                table.insert(candidates, {
+                    Kind = target.Kind,
+                    Launcher = launcher,
+                    Url = target.Url,
+                })
             end
-
-            table.insert(
-                errors,
-                launcher.Name
-                    .. " rejected "
-                    .. target.Kind
-                    .. ": "
-                    .. tostring(result)
-            )
         end
     end
 
-    return false, table.concat(errors, "; ")
+    return candidates
+end
+
+local function launchPrivateServerUrl(candidates, startIndex)
+    local errors = {}
+    local candidateCount = #candidates
+    local firstIndex = math.clamp(tonumber(startIndex) or 1, 1, candidateCount + 1)
+
+    if candidateCount == 0 then
+        return false, "executor does not expose a usable URL or browser launcher", 1
+    end
+
+    if firstIndex > candidateCount then
+        return false, "all private-server URL and browser launch routes were exhausted", firstIndex
+    end
+
+    for candidateIndex = firstIndex, candidateCount do
+        local candidate = candidates[candidateIndex]
+        local launched, result = invokeExecutorUrlLauncher(candidate.Launcher, candidate.Url)
+
+        if launched then
+            return true,
+                candidate.Launcher.Name .. " using " .. candidate.Kind,
+                candidateIndex + 1
+        end
+
+        table.insert(
+            errors,
+            candidate.Launcher.Name
+                .. " rejected "
+                .. candidate.Kind
+                .. ": "
+                .. tostring(result)
+        )
+    end
+
+    return false, table.concat(errors, "; "), candidateCount + 1
 end
 
 local function copyPrivateServerUrl(url)
@@ -3149,7 +3225,9 @@ function LyraMacro:GetPrivateServerReturnUrl()
         return nil
     end
 
-    return PRIVATE_SERVER_RETURN_URL_PREFIX .. linkCode
+    return PRIVATE_SERVER_RETURN_URL_PREFIX
+        .. HttpService:UrlEncode(linkCode)
+        .. PRIVATE_SERVER_RETURN_URL_SUFFIX
 end
 
 function LyraMacro:GetPrivateServerReturnDeepLink()
@@ -3159,7 +3237,40 @@ function LyraMacro:GetPrivateServerReturnDeepLink()
         return nil
     end
 
-    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX .. linkCode
+    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX
+        .. HttpService:UrlEncode(linkCode)
+        .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX
+end
+
+local function getPrivateServerReturnLaunchTargets(linkCode)
+    local encodedLinkCode = HttpService:UrlEncode(linkCode)
+
+    return {
+        {
+            Kind = "Roblox share deep link",
+            Url = PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX
+                .. encodedLinkCode
+                .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX,
+            IsWeb = false,
+        },
+        {
+            Kind = "Roblox share web link",
+            Url = PRIVATE_SERVER_RETURN_URL_PREFIX
+                .. encodedLinkCode
+                .. PRIVATE_SERVER_RETURN_URL_SUFFIX,
+            IsWeb = true,
+        },
+        {
+            Kind = "legacy Roblox deep link",
+            Url = PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX .. encodedLinkCode,
+            IsWeb = false,
+        },
+        {
+            Kind = "legacy Roblox web link",
+            Url = PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX .. encodedLinkCode,
+            IsWeb = true,
+        },
+    }
 end
 
 function LyraMacro:_clearLobbyReturnConnections()
@@ -3296,6 +3407,17 @@ function LyraMacro:ReturnToPrivateServer(results)
     local deepLink = linkCode and self:GetPrivateServerReturnDeepLink() or nil
     local destinationName = linkCode and "configured private lobby" or "lobby"
     local usesProvider = linkCode and type(self.PrivateServerReturnProvider) == "function"
+    local privateLaunchCandidates = {}
+
+    if linkCode and not usesProvider then
+        privateLaunchCandidates = getPrivateServerLaunchCandidates(
+            getPrivateServerReturnLaunchTargets(linkCode)
+        )
+    end
+
+    local maxAttempts = linkCode and not usesProvider
+            and math.max(LOBBY_RETURN_MAX_ATTEMPTS, #privateLaunchCandidates + 1)
+        or LOBBY_RETURN_MAX_ATTEMPTS
 
     self:_clearLobbyReturnConnections()
     self._privateServerReturnToken += 1
@@ -3307,7 +3429,7 @@ function LyraMacro:ReturnToPrivateServer(results)
     local attempts = 0
     local completed = false
     local retryScheduled = false
-    local privateLinkDispatched = false
+    local nextPrivateLaunchCandidate = 1
     local attemptTeleport
     local scheduleRetry
 
@@ -3356,7 +3478,7 @@ function LyraMacro:ReturnToPrivateServer(results)
             return
         end
 
-        if attempts >= LOBBY_RETURN_MAX_ATTEMPTS then
+        if attempts >= maxAttempts then
             finishFailure(reason)
             return
         end
@@ -3396,7 +3518,7 @@ function LyraMacro:ReturnToPrivateServer(results)
                 .. " (attempt "
                 .. tostring(attemptNumber)
                 .. "/"
-                .. tostring(LOBBY_RETURN_MAX_ATTEMPTS)
+                .. tostring(maxAttempts)
                 .. ")."
         )
 
@@ -3407,11 +3529,8 @@ function LyraMacro:ReturnToPrivateServer(results)
 
             local privateLaunchError
             local returnButton = findResultsLobbyButton(results)
-            local buttonAttempted = false
 
             local function tryReturnButton()
-                buttonAttempted = true
-
                 local activated, activationMethod = activateResultsLobbyButton(returnButton)
 
                 if not activated then
@@ -3441,11 +3560,14 @@ function LyraMacro:ReturnToPrivateServer(results)
                 end
             end
 
-            if linkCode and not privateLinkDispatched then
-                local launched, launchSource = launchPrivateServerUrl(deepLink, url)
+            if linkCode then
+                local launched, launchSource, nextCandidate = launchPrivateServerUrl(
+                    privateLaunchCandidates,
+                    nextPrivateLaunchCandidate
+                )
+                nextPrivateLaunchCandidate = nextCandidate
 
                 if launched then
-                    privateLinkDispatched = true
                     externalLaunchStarted = true
                     return launchSource
                 end
@@ -3453,16 +3575,6 @@ function LyraMacro:ReturnToPrivateServer(results)
                 privateLaunchError = privateLaunchError
                     and (privateLaunchError .. "; " .. tostring(launchSource))
                     or launchSource
-            elseif linkCode then
-                privateLaunchError = "the private-lobby link was already dispatched without an observed teleport"
-            end
-
-            if linkCode and returnButton and not buttonAttempted then
-                local activated, activationMethod = tryReturnButton()
-
-                if activated then
-                    return activationMethod
-                end
             end
 
             if linkCode then
@@ -3483,7 +3595,15 @@ function LyraMacro:ReturnToPrivateServer(results)
         end)
 
         if not invoked or (usesProvider and result == false) then
-            scheduleRetry(invoked and "the configured return provider rejected the request" or result, attemptNumber)
+            local failureReason = invoked and "the configured return provider rejected the request" or result
+
+            if linkCode
+                and not usesProvider
+                and nextPrivateLaunchCandidate > #privateLaunchCandidates then
+                finishFailure(failureReason)
+            else
+                scheduleRetry(failureReason, attemptNumber)
+            end
             return
         end
 
@@ -3500,15 +3620,21 @@ function LyraMacro:ReturnToPrivateServer(results)
             )
             task.delay(LOBBY_RETURN_STATE_TIMEOUT, function()
                 if isCurrentReturn() and attempts == attemptNumber and not retryScheduled then
-                    local copied = copyPrivateServerUrl(url)
-                    finishFailure(
-                        "no teleport state was observed after the private-lobby link was dispatched"
-                            .. (
-                                copied
-                                    and "; the private-lobby URL was copied to the clipboard"
-                                or ""
-                            )
-                    )
+                    local reason = "no teleport state was observed after the private-lobby link was dispatched"
+
+                    if nextPrivateLaunchCandidate > #privateLaunchCandidates then
+                        local copied = copyPrivateServerUrl(url)
+                        finishFailure(
+                            reason
+                                .. (
+                                    copied
+                                        and "; the private-lobby URL was copied to the clipboard"
+                                    or ""
+                                )
+                        )
+                    else
+                        scheduleRetry(reason, attemptNumber)
+                    end
                 end
             end)
             return
