@@ -5926,6 +5926,145 @@ local function makeGuiDraggable(handle, target)
     end)
 end
 
+local function clampGuiToViewport(target)
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local targetSize = target.AbsoluteSize
+    local currentPosition = target.AbsolutePosition
+    local minX = math.min(0, viewportSize.X - targetSize.X)
+    local maxX = math.max(0, viewportSize.X - targetSize.X)
+    local minY = math.min(0, viewportSize.Y - targetSize.Y)
+    local maxY = math.max(0, viewportSize.Y - targetSize.Y)
+    local nextX = math.clamp(currentPosition.X, minX, maxX)
+    local nextY = math.clamp(currentPosition.Y, minY, maxY)
+
+    target.Position = UDim2.fromOffset(
+        nextX + target.AnchorPoint.X * targetSize.X,
+        nextY + target.AnchorPoint.Y * targetSize.Y
+    )
+end
+
+local STRATEGY_LOGGER_COLORS = {
+    Background = Color3.fromRGB(13, 15, 19),
+    Header = Color3.fromRGB(20, 22, 27),
+    Card = Color3.fromRGB(27, 30, 36),
+    CardStroke = Color3.fromRGB(54, 59, 69),
+    Text = Color3.fromRGB(244, 246, 250),
+    Muted = Color3.fromRGB(151, 157, 170),
+    Faint = Color3.fromRGB(111, 119, 132),
+    Lavender = Color3.fromRGB(201, 171, 255),
+    Cyan = Color3.fromRGB(112, 203, 239),
+    Mint = Color3.fromRGB(91, 224, 168),
+    Amber = Color3.fromRGB(239, 197, 105),
+    Coral = Color3.fromRGB(255, 123, 120),
+}
+
+local function addStrategyLoggerCorner(instance, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = instance
+    return corner
+end
+
+local function addStrategyLoggerStroke(instance, color, transparency, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color
+    stroke.Transparency = transparency or 0
+    stroke.Thickness = thickness or 1
+    stroke.Parent = instance
+    return stroke
+end
+
+local function addStrategyLoggerGradient(instance, firstColor, secondColor, rotation)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, firstColor),
+        ColorSequenceKeypoint.new(1, secondColor),
+    })
+    gradient.Rotation = rotation or 0
+    gradient.Parent = instance
+    return gradient
+end
+
+local function getStrategyLoggerAppearance(message)
+    local normalized = string.upper(tostring(message))
+    local actionText = string.match(normalized, "^%d+%s*/%s*%d+%s+(.+)$") or normalized
+
+    if string.match(normalized, "^STRATEGY FAILED") or string.match(actionText, "^ERROR") then
+        return "ERR", STRATEGY_LOGGER_COLORS.Coral
+    elseif string.match(normalized, "^STRATEGY COMPLETED") then
+        return "DONE", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(normalized, "^STRATEGY STARTED") then
+        return "SYS", STRATEGY_LOGGER_COLORS.Lavender
+    elseif string.match(actionText, "^ENABLE%s+CHAIN%s+COA")
+        or string.match(actionText, "^DISABLE%s+CHAIN%s+COA") then
+        return "COA", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(actionText, "^ACTIVATE%s+") then
+        return "ABL", STRATEGY_LOGGER_COLORS.Mint
+    elseif string.match(actionText, "^PLACE%s+") then
+        return "PLC", STRATEGY_LOGGER_COLORS.Lavender
+    elseif string.match(actionText, "^UPGRADE%s+") then
+        return "UPG", STRATEGY_LOGGER_COLORS.Cyan
+    elseif string.match(actionText, "^SELL%s+") then
+        return "SEL", STRATEGY_LOGGER_COLORS.Coral
+    elseif string.match(actionText, "^SKIP%s+") then
+        return "SKP", STRATEGY_LOGGER_COLORS.Amber
+    elseif string.match(actionText, "^VOTE%s+") then
+        return "VOTE", STRATEGY_LOGGER_COLORS.Cyan
+    end
+
+    return "LOG", STRATEGY_LOGGER_COLORS.Muted
+end
+
+local function parseStrategyLoggerMessage(message)
+    local text = tostring(message)
+    local stepNumber, totalActions, actionText = string.match(text, "^(%d+)%s*/%s*(%d+)%s+(.+)$")
+    local normalized = string.upper(text)
+    local startedActions = string.match(normalized, "^STRATEGY STARTED%s*%-%s*(%d+)%s+ACTIONS$")
+
+    return {
+        Text = actionText or text,
+        Step = tonumber(stepNumber),
+        Total = tonumber(totalActions),
+        StartedTotal = tonumber(startedActions),
+        Completed = string.match(normalized, "^STRATEGY COMPLETED") ~= nil,
+        Failed = string.match(normalized, "^STRATEGY FAILED") ~= nil,
+    }
+end
+
+local function formatStrategyLoggerTime(startedAt)
+    local elapsed = math.max(0, math.floor(os.clock() - startedAt))
+    local minutes = math.floor(elapsed / 60)
+    local seconds = elapsed % 60
+    return string.format("%02d:%02d", minutes, seconds)
+end
+
+local function setStrategyLoggerProgress(logger, progress)
+    if not logger.ProgressFill or not logger.ProgressFill.Parent then
+        return
+    end
+
+    logger.ProgressFill.Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0)
+end
+
+local function getStrategyLoggerViewportLayout()
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    local frameMargin = viewportSize.X < 360 and 8 or 16
+    local topMargin = viewportSize.Y < 400 and 8 or 16
+    local frameWidth = math.max(1, math.min(430, viewportSize.X - frameMargin * 2))
+    local frameHeight = math.max(1, math.min(360, viewportSize.Y - topMargin * 2))
+
+    return {
+        Camera = camera,
+        FrameMargin = frameMargin,
+        TopMargin = topMargin,
+        Width = frameWidth,
+        Height = frameHeight,
+        Compact = frameWidth < 340,
+    }
+end
+
 function LyraMacro:CreateStrategyLogger()
     local parent = game:GetService("CoreGui")
     local parentReady = pcall(function()
@@ -5950,104 +6089,380 @@ function LyraMacro:CreateStrategyLogger()
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     screenGui.Parent = parent
 
-    local topBanner = Instance.new("Frame")
-    topBanner.Name = "TopBanner"
-    topBanner.Position = UDim2.fromOffset(0, 0)
-    topBanner.Size = UDim2.new(0, 370, 0, 42)
-    topBanner.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
-    topBanner.BackgroundTransparency = 0
-    topBanner.BorderSizePixel = 0
-    topBanner.ZIndex = 100000
-    topBanner.Parent = screenGui
-
-    local topBannerCorner = Instance.new("UICorner")
-    topBannerCorner.CornerRadius = UDim.new(0, 6)
-    topBannerCorner.Parent = topBanner
-
-    local topBannerText = Instance.new("TextLabel")
-    topBannerText.Size = UDim2.new(1, -24, 1, 0)
-    topBannerText.Position = UDim2.new(0, 12, 0, 0)
-    topBannerText.BackgroundTransparency = 1
-    topBannerText.Text = "LYRA AUTOSTRATEGIES"
-    topBannerText.TextColor3 = Color3.fromRGB(240, 244, 255)
-    topBannerText.TextSize = 14
-    topBannerText.Font = Enum.Font.MontserratBold
-    topBannerText.TextXAlignment = Enum.TextXAlignment.Left
-    topBannerText.ZIndex = 100001
-    topBannerText.Parent = topBanner
+    local viewportLayout = getStrategyLoggerViewportLayout()
+    local frameWidth = viewportLayout.Width
+    local frameHeight = viewportLayout.Height
+    local compactLayout = viewportLayout.Compact
 
     local frame = Instance.new("Frame")
     frame.Name = "ActionLog"
     frame.AnchorPoint = Vector2.new(1, 0)
-    frame.Position = UDim2.new(1, 0, 0, 52)
-    frame.Size = UDim2.new(0, 400, 0, 360)
-    frame.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
-    frame.BackgroundTransparency = 0.36
+    frame.Position = UDim2.new(1, -viewportLayout.FrameMargin, 0, viewportLayout.TopMargin)
+    frame.Size = UDim2.fromOffset(frameWidth, frameHeight)
+    frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
+    frame.Active = true
     frame.ZIndex = 1000
     frame.Parent = screenGui
 
-    local frameCorner = Instance.new("UICorner")
-    frameCorner.CornerRadius = UDim.new(0, 6)
-    frameCorner.Parent = frame
+    local shadow = Instance.new("Frame")
+    shadow.Name = "Shadow"
+    shadow.Position = UDim2.fromOffset(7, 8)
+    shadow.Size = UDim2.fromScale(1, 1)
+    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    shadow.BackgroundTransparency = 0.55
+    shadow.BorderSizePixel = 0
+    shadow.ZIndex = 999
+    shadow.Parent = frame
+    addStrategyLoggerCorner(shadow, 8)
+
+    local panel = Instance.new("Frame")
+    panel.Name = "Panel"
+    panel.Size = UDim2.fromScale(1, 1)
+    panel.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Background
+    panel.BorderSizePixel = 0
+    panel.ClipsDescendants = true
+    panel.ZIndex = 1000
+    panel.Parent = frame
+    addStrategyLoggerCorner(panel, 8)
+    addStrategyLoggerStroke(panel, STRATEGY_LOGGER_COLORS.CardStroke, 0.08, 1)
+
+    local topBanner = Instance.new("Frame")
+    topBanner.Name = "TopBanner"
+    topBanner.Size = UDim2.new(1, 0, 0, 2)
+    topBanner.BackgroundColor3 = Color3.new(1, 1, 1)
+    topBanner.BorderSizePixel = 0
+    topBanner.ZIndex = 1005
+    topBanner.Parent = panel
+    addStrategyLoggerGradient(
+        topBanner,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        0
+    )
 
     local header = Instance.new("Frame")
     header.Name = "Header"
-    header.Size = UDim2.new(1, 0, 0, 36)
-    header.BackgroundColor3 = Color3.fromRGB(20, 29, 39)
-    header.BackgroundTransparency = 0.22
+    header.Size = UDim2.new(1, 0, 0, 54)
+    header.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Header
     header.BorderSizePixel = 0
     header.Active = true
     header.ZIndex = 1001
-    header.Parent = frame
+    header.Parent = panel
 
-    local headerCorner = Instance.new("UICorner")
-    headerCorner.CornerRadius = UDim.new(0, 6)
-    headerCorner.Parent = header
+    local brandBadge = Instance.new("Frame")
+    brandBadge.Name = "BrandBadge"
+    brandBadge.Position = UDim2.fromOffset(14, 13)
+    brandBadge.Size = UDim2.fromOffset(28, 28)
+    brandBadge.BackgroundColor3 = Color3.new(1, 1, 1)
+    brandBadge.BorderSizePixel = 0
+    brandBadge.ZIndex = 1002
+    brandBadge.Parent = header
+    addStrategyLoggerCorner(brandBadge, 6)
+    addStrategyLoggerGradient(
+        brandBadge,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        35
+    )
+
+    local brandText = Instance.new("TextLabel")
+    brandText.Name = "BrandText"
+    brandText.Size = UDim2.fromScale(1, 1)
+    brandText.BackgroundTransparency = 1
+    brandText.Text = "L"
+    brandText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    brandText.TextSize = 13
+    brandText.Font = Enum.Font.MontserratBold
+    brandText.ZIndex = 1003
+    brandText.Parent = brandBadge
 
     local headerText = Instance.new("TextLabel")
-    headerText.Size = UDim2.new(1, -20, 1, 0)
-    headerText.Position = UDim2.new(0, 10, 0, 0)
+    headerText.Name = "Title"
+    headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
+    headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
     headerText.BackgroundTransparency = 1
     headerText.Text = "LYRA AUTOSTRATEGIES"
-    headerText.TextColor3 = Color3.fromRGB(240, 244, 255)
-    headerText.TextSize = 14
+    headerText.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    headerText.TextSize = 11
     headerText.Font = Enum.Font.MontserratBold
     headerText.TextXAlignment = Enum.TextXAlignment.Left
+    headerText.TextTruncate = Enum.TextTruncate.AtEnd
     headerText.ZIndex = 1002
     headerText.Parent = header
 
+    local headerSubtitle = Instance.new("TextLabel")
+    headerSubtitle.Name = "Subtitle"
+    headerSubtitle.Position = UDim2.fromOffset(52, 28)
+    headerSubtitle.Size = UDim2.new(1, -190, 0, 14)
+    headerSubtitle.BackgroundTransparency = 1
+    headerSubtitle.Text = "EXECUTION CONSOLE"
+    headerSubtitle.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    headerSubtitle.TextSize = 9
+    headerSubtitle.Font = Enum.Font.Code
+    headerSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    headerSubtitle.TextTruncate = Enum.TextTruncate.AtEnd
+    headerSubtitle.Visible = not compactLayout
+    headerSubtitle.ZIndex = 1002
+    headerSubtitle.Parent = header
+
+    local liveStatus = Instance.new("Frame")
+    liveStatus.Name = "LiveStatus"
+    liveStatus.AnchorPoint = Vector2.new(1, 0.5)
+    liveStatus.Position = UDim2.new(1, -49, 0.5, 0)
+    liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
+    liveStatus.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    liveStatus.BorderSizePixel = 0
+    liveStatus.ZIndex = 1002
+    liveStatus.Parent = header
+    addStrategyLoggerCorner(liveStatus, 12)
+    addStrategyLoggerStroke(liveStatus, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local liveDot = Instance.new("Frame")
+    liveDot.Name = "Dot"
+    liveDot.AnchorPoint = Vector2.new(0, 0.5)
+    liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+    liveDot.Size = UDim2.fromOffset(6, 6)
+    liveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+    liveDot.BorderSizePixel = 0
+    liveDot.ZIndex = 1003
+    liveDot.Parent = liveStatus
+    addStrategyLoggerCorner(liveDot, 6)
+
+    local liveText = Instance.new("TextLabel")
+    liveText.Name = "Text"
+    liveText.Position = UDim2.fromOffset(22, 0)
+    liveText.Size = UDim2.new(1, -28, 1, 0)
+    liveText.BackgroundTransparency = 1
+    liveText.Text = "LIVE"
+    liveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+    liveText.TextSize = 9
+    liveText.Font = Enum.Font.Code
+    liveText.TextXAlignment = Enum.TextXAlignment.Left
+    liveText.Visible = not compactLayout
+    liveText.ZIndex = 1003
+    liveText.Parent = liveStatus
+
+    local collapseButton = Instance.new("TextButton")
+    collapseButton.Name = "Collapse"
+    collapseButton.AnchorPoint = Vector2.new(1, 0.5)
+    collapseButton.Position = UDim2.new(1, -12, 0.5, 0)
+    collapseButton.Size = UDim2.fromOffset(26, 26)
+    collapseButton.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    collapseButton.BorderSizePixel = 0
+    collapseButton.AutoButtonColor = false
+    collapseButton.Text = "-"
+    collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+    collapseButton.TextSize = 14
+    collapseButton.Font = Enum.Font.MontserratBold
+    collapseButton.ZIndex = 1003
+    collapseButton.Parent = header
+    addStrategyLoggerCorner(collapseButton, 6)
+    addStrategyLoggerStroke(collapseButton, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local headerDivider = Instance.new("Frame")
+    headerDivider.Name = "Divider"
+    headerDivider.AnchorPoint = Vector2.new(0, 1)
+    headerDivider.Position = UDim2.new(0, 0, 1, 0)
+    headerDivider.Size = UDim2.new(1, 0, 0, 1)
+    headerDivider.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    headerDivider.BackgroundTransparency = 0.35
+    headerDivider.BorderSizePixel = 0
+    headerDivider.ZIndex = 1002
+    headerDivider.Parent = header
+
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.Position = UDim2.fromOffset(0, 54)
+    content.Size = UDim2.new(1, 0, 1, -54)
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.ZIndex = 1001
+    content.Parent = panel
+
+    local progressPanel = Instance.new("Frame")
+    progressPanel.Name = "Progress"
+    progressPanel.Size = UDim2.new(1, 0, 0, 52)
+    progressPanel.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Background
+    progressPanel.BorderSizePixel = 0
+    progressPanel.ZIndex = 1001
+    progressPanel.Parent = content
+
+    local statusText = Instance.new("TextLabel")
+    statusText.Name = "Status"
+    statusText.Position = UDim2.fromOffset(14, 8)
+    statusText.Size = UDim2.new(0.6, -14, 0, 17)
+    statusText.BackgroundTransparency = 1
+    statusText.Text = "WAITING FOR ACTIONS"
+    statusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
+    statusText.TextSize = 9
+    statusText.Font = Enum.Font.Code
+    statusText.TextXAlignment = Enum.TextXAlignment.Left
+    statusText.TextTruncate = Enum.TextTruncate.AtEnd
+    statusText.ZIndex = 1002
+    statusText.Parent = progressPanel
+
+    local progressText = Instance.new("TextLabel")
+    progressText.Name = "Count"
+    progressText.AnchorPoint = Vector2.new(1, 0)
+    progressText.Position = UDim2.new(1, -14, 0, 8)
+    progressText.Size = UDim2.new(0.4, -14, 0, 17)
+    progressText.BackgroundTransparency = 1
+    progressText.Text = "0 ACTIONS"
+    progressText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    progressText.TextSize = 9
+    progressText.Font = Enum.Font.Code
+    progressText.TextXAlignment = Enum.TextXAlignment.Right
+    progressText.TextTruncate = Enum.TextTruncate.AtEnd
+    progressText.ZIndex = 1002
+    progressText.Parent = progressPanel
+
+    local progressTrack = Instance.new("Frame")
+    progressTrack.Name = "Track"
+    progressTrack.Position = UDim2.fromOffset(14, 34)
+    progressTrack.Size = UDim2.new(1, -28, 0, 4)
+    progressTrack.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    progressTrack.BackgroundTransparency = 0.3
+    progressTrack.BorderSizePixel = 0
+    progressTrack.ClipsDescendants = true
+    progressTrack.ZIndex = 1002
+    progressTrack.Parent = progressPanel
+    addStrategyLoggerCorner(progressTrack, 4)
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Name = "Fill"
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressFill.BackgroundColor3 = Color3.new(1, 1, 1)
+    progressFill.BorderSizePixel = 0
+    progressFill.ZIndex = 1003
+    progressFill.Parent = progressTrack
+    addStrategyLoggerCorner(progressFill, 4)
+    addStrategyLoggerGradient(
+        progressFill,
+        STRATEGY_LOGGER_COLORS.Lavender,
+        STRATEGY_LOGGER_COLORS.Cyan,
+        0
+    )
+
     local scroll = Instance.new("ScrollingFrame")
     scroll.Name = "Actions"
-    scroll.Position = UDim2.new(0, 8, 0, 44)
-    scroll.Size = UDim2.new(1, -16, 1, -52)
-    scroll.BackgroundColor3 = Color3.fromRGB(5, 7, 10)
-    scroll.BackgroundTransparency = 0.48
+    scroll.Position = UDim2.new(0, 8, 0, 52)
+    scroll.Size = UDim2.new(1, -16, 1, -60)
+    scroll.BackgroundColor3 = Color3.fromRGB(13, 16, 20)
     scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 4
-    scroll.ScrollBarImageColor3 = Color3.fromRGB(95, 180, 255)
+    scroll.ScrollBarThickness = 3
+    scroll.ScrollBarImageColor3 = STRATEGY_LOGGER_COLORS.Cyan
+    scroll.ScrollBarImageTransparency = 0.15
     scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
     scroll.ZIndex = 1001
-    scroll.Parent = frame
-
-    local scrollCorner = Instance.new("UICorner")
-    scrollCorner.CornerRadius = UDim.new(0, 5)
-    scrollCorner.Parent = scroll
+    scroll.Parent = content
+    addStrategyLoggerCorner(scroll, 6)
+    addStrategyLoggerStroke(scroll, STRATEGY_LOGGER_COLORS.CardStroke, 0.45, 1)
 
     local padding = Instance.new("UIPadding")
-    padding.PaddingTop = UDim.new(0, 6)
-    padding.PaddingBottom = UDim.new(0, 6)
-    padding.PaddingLeft = UDim.new(0, 6)
-    padding.PaddingRight = UDim.new(0, 6)
+    padding.PaddingTop = UDim.new(0, 5)
+    padding.PaddingBottom = UDim.new(0, 5)
+    padding.PaddingLeft = UDim.new(0, 7)
+    padding.PaddingRight = UDim.new(0, 7)
     padding.Parent = scroll
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 4)
+    layout.Padding = UDim.new(0, 0)
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Parent = scroll
 
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
+        scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
+    end)
+
+    local expandedSize = frame.Size
+    local collapsed = false
+    local viewportConnection
+    local currentCameraConnection
+    local ancestryConnection
+
+    local function applyCompactLayout(nextCompactLayout)
+        compactLayout = nextCompactLayout
+        headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
+        headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
+        headerSubtitle.Visible = not compactLayout
+        liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
+        liveDot.Position = compactLayout and UDim2.new(0.5, -3, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+        liveText.Visible = not compactLayout
+
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("Frame") and string.match(child.Name, "^Action%d+$") then
+                local childActionText = child:FindFirstChild("ActionText")
+                local childTimestamp = child:FindFirstChild("Timestamp")
+
+                if childActionText then
+                    childActionText.Size = compactLayout and UDim2.new(1, -100, 1, 0)
+                        or UDim2.new(1, -148, 1, 0)
+                end
+
+                if childTimestamp then
+                    childTimestamp.Visible = not compactLayout
+                end
+            end
+        end
+
+        local activeLogger = self.StrategyLogger
+
+        if activeLogger and activeLogger.Gui == screenGui then
+            activeLogger.CompactLayout = compactLayout
+        end
+    end
+
+    local function applyViewportLayout()
+        local nextLayout = getStrategyLoggerViewportLayout()
+        frameWidth = nextLayout.Width
+        frameHeight = nextLayout.Height
+        expandedSize = UDim2.fromOffset(frameWidth, frameHeight)
+        frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
+        applyCompactLayout(nextLayout.Compact)
+
+        task.defer(function()
+            if frame.Parent then
+                clampGuiToViewport(frame)
+            end
+        end)
+    end
+
+    local function bindCurrentCamera()
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+
+        local currentCamera = workspace.CurrentCamera
+
+        if currentCamera then
+            viewportConnection = currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(applyViewportLayout)
+        end
+
+        applyViewportLayout()
+    end
+
+    collapseButton.MouseButton1Click:Connect(function()
+        collapsed = not collapsed
+        content.Visible = not collapsed
+        collapseButton.Text = collapsed and "+" or "-"
+        frame.Size = collapsed and UDim2.fromOffset(frameWidth, 54) or expandedSize
+
+        task.defer(function()
+            if frame.Parent then
+                clampGuiToViewport(frame)
+            end
+        end)
+    end)
+
+    collapseButton.MouseEnter:Connect(function()
+        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    end)
+
+    collapseButton.MouseLeave:Connect(function()
+        collapseButton.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
     end)
 
     makeGuiDraggable(header, frame)
@@ -6055,12 +6470,48 @@ function LyraMacro:CreateStrategyLogger()
     self.StrategyLogger = {
         Gui = screenGui,
         Frame = frame,
+        Panel = panel,
         Header = header,
         TopBanner = topBanner,
         Scroll = scroll,
         Layout = layout,
+        Content = content,
+        StatusText = statusText,
+        ProgressText = progressText,
+        ProgressFill = progressFill,
+        LiveText = liveText,
+        LiveDot = liveDot,
         Entries = 0,
+        StartedAt = os.clock(),
+        TotalActions = nil,
+        CurrentStep = 0,
+        CurrentRow = nil,
+        CompactLayout = compactLayout,
     }
+
+    currentCameraConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCurrentCamera)
+    bindCurrentCamera()
+
+    ancestryConnection = screenGui.AncestryChanged:Connect(function(_, nextParent)
+        if nextParent then
+            return
+        end
+
+        if viewportConnection then
+            viewportConnection:Disconnect()
+            viewportConnection = nil
+        end
+
+        if currentCameraConnection then
+            currentCameraConnection:Disconnect()
+            currentCameraConnection = nil
+        end
+
+        if ancestryConnection then
+            ancestryConnection:Disconnect()
+            ancestryConnection = nil
+        end
+    end)
 
     return self.StrategyLogger
 end
@@ -6072,34 +6523,184 @@ function LyraMacro:LogStrategyAction(message)
         logger = self:CreateStrategyLogger()
     end
 
+    local parsed = parseStrategyLoggerMessage(message)
+    local badgeText, accentColor = getStrategyLoggerAppearance(message)
+
+    if logger.CurrentRow and logger.CurrentRow.Parent then
+        logger.CurrentRow.BackgroundTransparency = 1
+
+        local previousAction = logger.CurrentRow:FindFirstChild("ActionText")
+        local previousBadge = logger.CurrentRow:FindFirstChild("TypeBadge")
+        local previousAccent = logger.CurrentRow:FindFirstChild("Accent")
+
+        if previousAction then
+            previousAction.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+        end
+
+        if previousBadge then
+            previousBadge.BackgroundTransparency = 0.84
+        end
+
+        if previousAccent then
+            previousAccent.BackgroundTransparency = 0.45
+        end
+    end
+
+    if parsed.StartedTotal then
+        logger.TotalActions = parsed.StartedTotal
+        logger.CurrentStep = 0
+        logger.StatusText.Text = "STRATEGY RUNNING"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Lavender
+        logger.ProgressText.Text = "0 / " .. tostring(parsed.StartedTotal) .. " DONE"
+        logger.LiveText.Text = "LIVE"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+        setStrategyLoggerProgress(logger, 0)
+    elseif parsed.Step then
+        logger.TotalActions = parsed.Total or logger.TotalActions
+        logger.CurrentStep = parsed.Step
+        logger.StatusText.Text = "RUNNING STEP " .. tostring(parsed.Step)
+
+        if logger.TotalActions then
+            local completedActions = math.max(0, parsed.Step - 1)
+            logger.ProgressText.Text = tostring(completedActions) .. " / " .. tostring(logger.TotalActions) .. " DONE"
+            setStrategyLoggerProgress(logger, completedActions / math.max(logger.TotalActions, 1))
+        end
+    elseif parsed.Completed then
+        logger.CurrentStep = logger.TotalActions or logger.CurrentStep
+        logger.StatusText.Text = "STRATEGY COMPLETE"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveText.Text = "DONE"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Mint
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Mint
+
+        if logger.TotalActions then
+            logger.ProgressText.Text = tostring(logger.TotalActions) .. " / " .. tostring(logger.TotalActions) .. " DONE"
+        end
+
+        setStrategyLoggerProgress(logger, 1)
+    elseif parsed.Failed then
+        logger.StatusText.Text = "STRATEGY FAILED"
+        logger.StatusText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
+        logger.LiveText.Text = "ERROR"
+        logger.LiveText.TextColor3 = STRATEGY_LOGGER_COLORS.Coral
+        logger.LiveDot.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Coral
+    end
+
     logger.Entries += 1
 
-    local entry = Instance.new("TextLabel")
+    local entry = Instance.new("Frame")
     entry.Name = "Action" .. tostring(logger.Entries)
-    entry.Size = UDim2.new(1, 0, 0, 32)
-    entry.BackgroundColor3 = Color3.fromRGB(30, 42, 56)
-    entry.BackgroundTransparency = 0.46
+    entry.Size = UDim2.new(1, -14, 0, 50)
+    entry.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    entry.BackgroundTransparency = 0.72
     entry.BorderSizePixel = 0
-    entry.Text = tostring(logger.Entries) .. ". " .. tostring(message)
-    entry.TextColor3 = Color3.fromRGB(232, 239, 250)
-    entry.TextSize = 12
-    entry.Font = Enum.Font.MontserratBold
-    entry.TextWrapped = true
-    entry.TextXAlignment = Enum.TextXAlignment.Left
-    entry.TextYAlignment = Enum.TextYAlignment.Center
     entry.LayoutOrder = logger.Entries
     entry.ZIndex = 1002
     entry.Parent = logger.Scroll
 
-    local entryCorner = Instance.new("UICorner")
-    entryCorner.CornerRadius = UDim.new(0, 4)
-    entryCorner.Parent = entry
+    local accent = Instance.new("Frame")
+    accent.Name = "Accent"
+    accent.AnchorPoint = Vector2.new(0, 0.5)
+    accent.Position = UDim2.new(0, 0, 0.5, 0)
+    accent.Size = UDim2.fromOffset(3, 28)
+    accent.BackgroundColor3 = accentColor
+    accent.BorderSizePixel = 0
+    accent.ZIndex = 1003
+    accent.Parent = entry
+    addStrategyLoggerCorner(accent, 3)
+
+    local indexText = Instance.new("TextLabel")
+    indexText.Name = "Index"
+    indexText.Position = UDim2.fromOffset(9, 0)
+    indexText.Size = UDim2.fromOffset(43, 50)
+    indexText.BackgroundTransparency = 1
+    indexText.Text = parsed.Step and string.format("%02d/%02d", parsed.Step, parsed.Total or parsed.Step)
+        or string.format("%02d", logger.Entries)
+    indexText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    indexText.TextSize = 9
+    indexText.Font = Enum.Font.Code
+    indexText.TextXAlignment = Enum.TextXAlignment.Left
+    indexText.ZIndex = 1003
+    indexText.Parent = entry
+
+    local typeBadge = Instance.new("Frame")
+    typeBadge.Name = "TypeBadge"
+    typeBadge.AnchorPoint = Vector2.new(0, 0.5)
+    typeBadge.Position = UDim2.new(0, 52, 0.5, 0)
+    typeBadge.Size = UDim2.fromOffset(31, 26)
+    typeBadge.BackgroundColor3 = accentColor
+    typeBadge.BackgroundTransparency = 0.76
+    typeBadge.BorderSizePixel = 0
+    typeBadge.ZIndex = 1003
+    typeBadge.Parent = entry
+    addStrategyLoggerCorner(typeBadge, 5)
+    addStrategyLoggerStroke(typeBadge, accentColor, 0.35, 1)
+
+    local typeText = Instance.new("TextLabel")
+    typeText.Name = "Text"
+    typeText.Size = UDim2.fromScale(1, 1)
+    typeText.BackgroundTransparency = 1
+    typeText.Text = badgeText
+    typeText.TextColor3 = accentColor
+    typeText.TextSize = 8
+    typeText.Font = Enum.Font.Code
+    typeText.ZIndex = 1004
+    typeText.Parent = typeBadge
+
+    local actionText = Instance.new("TextLabel")
+    actionText.Name = "ActionText"
+    actionText.Position = UDim2.fromOffset(93, 0)
+    actionText.Size = logger.CompactLayout and UDim2.new(1, -100, 1, 0) or UDim2.new(1, -148, 1, 0)
+    actionText.BackgroundTransparency = 1
+    actionText.Text = parsed.Text
+    actionText.TextColor3 = STRATEGY_LOGGER_COLORS.Text
+    actionText.TextSize = 10
+    actionText.Font = Enum.Font.Code
+    actionText.TextXAlignment = Enum.TextXAlignment.Left
+    actionText.TextYAlignment = Enum.TextYAlignment.Center
+    actionText.TextTruncate = Enum.TextTruncate.AtEnd
+    actionText.ZIndex = 1003
+    actionText.Parent = entry
+
+    local timeText = Instance.new("TextLabel")
+    timeText.Name = "Timestamp"
+    timeText.AnchorPoint = Vector2.new(1, 0)
+    timeText.Position = UDim2.new(1, -7, 0, 0)
+    timeText.Size = UDim2.fromOffset(45, 50)
+    timeText.BackgroundTransparency = 1
+    timeText.Text = formatStrategyLoggerTime(logger.StartedAt)
+    timeText.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
+    timeText.TextSize = 9
+    timeText.Font = Enum.Font.Code
+    timeText.TextXAlignment = Enum.TextXAlignment.Right
+    timeText.Visible = not logger.CompactLayout
+    timeText.ZIndex = 1003
+    timeText.Parent = entry
+
+    local divider = Instance.new("Frame")
+    divider.Name = "Divider"
+    divider.AnchorPoint = Vector2.new(0, 1)
+    divider.Position = UDim2.new(0, 9, 1, 0)
+    divider.Size = UDim2.new(1, -16, 0, 1)
+    divider.BackgroundColor3 = STRATEGY_LOGGER_COLORS.CardStroke
+    divider.BackgroundTransparency = 0.55
+    divider.BorderSizePixel = 0
+    divider.ZIndex = 1002
+    divider.Parent = entry
+
+    logger.CurrentRow = entry
 
     task.defer(function()
         if logger.Scroll and logger.Scroll.Parent then
-            logger.Scroll.CanvasPosition = Vector2.new(0, math.max(0, logger.Layout.AbsoluteContentSize.Y - logger.Scroll.AbsoluteWindowSize.Y + 12))
+            logger.Scroll.CanvasPosition = Vector2.new(
+                0,
+                math.max(0, logger.Layout.AbsoluteContentSize.Y - logger.Scroll.AbsoluteWindowSize.Y + 10)
+            )
         end
     end)
+
+    return entry
 end
 
 local function validateStrategyActions(strategy)
@@ -6197,11 +6798,12 @@ function LyraMacro:Run(strategy)
     for stepNumber = 1, actionCount do
         local step = strategy[stepNumber]
         local action = step.action
-        assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
         local actionDescription = describeStrategyStep(step)
         self:LogStrategyAction(tostring(stepNumber) .. "/" .. tostring(actionCount) .. "  " .. actionDescription)
 
         local executed, actionError = xpcall(function()
+            assert(type(action) == "string", "[LyraMacro] Step " .. stepNumber .. " has no action.")
+
             if action == "skip" then
                 self:SkipWave()
             elseif action == "mode" then
@@ -6269,6 +6871,11 @@ function LyraMacro:Run(strategy)
         end, debug.traceback)
 
         if not executed then
+            pcall(function()
+                self:LogStrategyAction(
+                    "STRATEGY FAILED - STEP " .. tostring(stepNumber) .. "  " .. actionDescription
+                )
+            end)
             self:_releaseReplayOwnership()
             error("[LyraMacro] Strategy step " .. tostring(stepNumber) .. " (" .. actionDescription .. ") failed: " .. tostring(actionError), 0)
         end
