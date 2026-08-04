@@ -180,6 +180,9 @@ local SCHEDULED_ABILITY_POLL_INTERVAL = 0.05
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
+local PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT = 60
+local ELEVATOR_MAP_FILTER_POLL_INTERVAL = 0.2
+local ELEVATOR_MAP_CATALOG_REFRESH_INTERVAL = 1
 local PRIVATE_SERVER_CHAT_STATUS_TIMEOUT = 1
 local PRIVATE_SERVER_MARKER_SCAN_INTERVAL = 0.75
 local PRIVATE_SERVER_MARKER_SCAN_LIMIT = 96
@@ -5817,11 +5820,21 @@ function LyraMacro:RefreshAndEnterPrivateElevator(mapName, options)
 
     local targetMapKey = normalizeLookupKey(targetMap)
     local catalogMap
+    local isCustomMap = false
 
     for _, availableMap in ipairs(self:GetElevatorMapOptions()) do
         if normalizeLookupKey(availableMap) == targetMapKey then
             catalogMap = availableMap
             break
+        end
+    end
+
+    if not catalogMap and options.AllowCustomExactMap == true then
+        local customExactMap = normalizeMapCandidate(options.CustomExactMap)
+
+        if customExactMap and normalizeLookupKey(customExactMap) == targetMapKey then
+            catalogMap = customExactMap
+            isCustomMap = true
         end
     end
 
@@ -5964,9 +5977,19 @@ function LyraMacro:RefreshAndEnterPrivateElevator(mapName, options)
         end
 
         publishStatus(
-            "Searching for "
-                .. targetMap
-                .. "; choose another map and confirm again to replace this search."
+            isCustomMap
+                    and (
+                        "Searching for custom map "
+                        .. targetMap
+                        .. " for up to "
+                        .. tostring(PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT)
+                        .. " seconds; confirm another map to replace this search."
+                    )
+                or (
+                    "Searching for "
+                    .. targetMap
+                    .. "; choose another map and confirm again to replace this search."
+                )
         )
 
         local lastRefreshAt = -math.huge
@@ -5975,10 +5998,23 @@ function LyraMacro:RefreshAndEnterPrivateElevator(mapName, options)
         local lastEntryError
         local lockedElevator
         local refreshCount = 0
+        local customMapDeadline = isCustomMap and (os.clock() + PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT) or nil
 
         while isCurrentSelection() and game.PlaceId == LOBBY_PLACE_ID do
             if self.PendingElevatorReplay or self.AutoRecordOnTeleport or self.AutoRecordTeleportArmed then
                 finish(false, "Manual elevator selection stopped because another elevator workflow was armed.")
+                return
+            end
+
+            if customMapDeadline and os.clock() >= customMapDeadline then
+                finish(
+                    false,
+                    "Stopped searching for custom map "
+                        .. targetMap
+                        .. " after "
+                        .. tostring(PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT)
+                        .. " seconds. Check the exact map name and try again."
+                )
                 return
             end
 
@@ -6076,6 +6112,15 @@ function LyraMacro:RefreshAndEnterPrivateElevator(mapName, options)
             finish(false, "Private elevator selection stopped because the lobby changed.")
         end
     end)
+
+    if isCustomMap then
+        return true,
+            "Searching for custom map "
+                .. targetMap
+                .. " for up to "
+                .. tostring(PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT)
+                .. " seconds."
+    end
 
     return true, "Searching for " .. targetMap .. " and refreshing the private lobby until it appears."
 end
@@ -8530,9 +8575,12 @@ function LyraMacro:CreateRecorderWindow(config)
                     Icon = "door-open",
                 })
                 local elevatorStatusLabel = elevatorsTab:CreateLabel(
-                    "Choose a map. Confirming will refresh this private lobby until it appears, enter its elevator, and send !start."
+                    "Type to filter the map list. Press Enter to use an exact custom name, then confirm."
                 )
-                local mapOptions = self:GetElevatorMapOptions()
+                local catalogOptions = self:GetElevatorMapOptions()
+                local filteredOptions = catalogOptions
+                local queryText = ""
+                local customMapCandidate
 
                 local function findMapOption(candidate, availableOptions)
                     local candidateKey = normalizeLookupKey(candidate)
@@ -8550,28 +8598,6 @@ function LyraMacro:CreateRecorderWindow(config)
                     return nil
                 end
 
-                local selectedMap = findMapOption(self.SelectedElevatorMap, mapOptions)
-                    or findMapOption(self.SelectedMap, mapOptions)
-                    or mapOptions[1]
-
-                if selectedMap then
-                    self.SelectedElevatorMap = selectedMap
-                end
-
-                local mapDropdown = elevatorsTab:CreateDropdown({
-                    Name = "Map",
-                    Icon = "map-pinned",
-                    Options = mapOptions,
-                    CurrentOption = selectedMap,
-                    Callback = function(value)
-                        local normalizedMap = normalizeMapCandidate(value)
-
-                        if normalizedMap then
-                            self.SelectedElevatorMap = normalizedMap
-                        end
-                    end,
-                })
-
                 local function updateElevatorStatus(message)
                     if recorderWindowIsAlive()
                         and elevatorStatusLabel
@@ -8588,19 +8614,250 @@ function LyraMacro:CreateRecorderWindow(config)
                     end
                 end
 
+                local selectedMap = findMapOption(self.SelectedElevatorMap, catalogOptions)
+                    or findMapOption(self.SelectedMap, catalogOptions)
+                    or catalogOptions[1]
+                local lastCatalogSelection = selectedMap
+
+                if selectedMap then
+                    self.SelectedElevatorMap = selectedMap
+                end
+
+                local mapDropdown
+                local applyMapFilter
+                local mapInput = elevatorsTab:CreateTextbox({
+                    Name = "Type or search map",
+                    Icon = "search",
+                    PlaceholderText = "Type; Enter for custom",
+                    CurrentValue = "",
+                    Callback = function(value, enterPressed)
+                        if applyMapFilter then
+                            applyMapFilter(value, true, enterPressed == true)
+                        end
+                    end,
+                })
+
+                mapDropdown = elevatorsTab:CreateDropdown({
+                    Name = "Map",
+                    Icon = "map-pinned",
+                    Options = catalogOptions,
+                    CurrentOption = selectedMap,
+                    Callback = function(value)
+                        if mapDropdown and mapDropdown:GetValue() ~= value then
+                            return
+                        end
+
+                        local normalizedMap = normalizeMapCandidate(value)
+                        self.SelectedElevatorMap = normalizedMap or ""
+
+                        local selectedCatalogMap = findMapOption(normalizedMap, catalogOptions)
+
+                        if selectedCatalogMap then
+                            lastCatalogSelection = selectedCatalogMap
+                        end
+                    end,
+                })
+
+                applyMapFilter = function(value, announce, authorizeCustom)
+                    local rawQuery = tostring(value or "")
+                    local trimmedQuery = trimString(rawQuery)
+                    local queryChanged = rawQuery ~= queryText
+                    local normalizedQuery = normalizeMapCandidate(rawQuery)
+                    local previousCustomMapCandidate = customMapCandidate
+                    local exactCatalogMap
+                    local nextFilteredOptions = {}
+                    local searchKey
+
+                    queryText = rawQuery
+                    customMapCandidate = nil
+
+                    if trimmedQuery == "" then
+                        for _, option in ipairs(catalogOptions) do
+                            table.insert(nextFilteredOptions, option)
+                        end
+                    elseif #rawQuery <= 80 and not rawQuery:find("[\r\n]") then
+                        searchKey = normalizeLookupKey(normalizedQuery or trimmedQuery)
+
+                        if searchKey ~= "" then
+                            for _, option in ipairs(catalogOptions) do
+                                local optionKey = normalizeLookupKey(option)
+
+                                if optionKey == searchKey then
+                                    exactCatalogMap = option
+                                end
+
+                                if optionKey:find(searchKey, 1, true) then
+                                    table.insert(nextFilteredOptions, option)
+                                end
+                            end
+
+                            local preserveAuthorizedCustom = not queryChanged
+                                and previousCustomMapCandidate
+                                and normalizedQuery
+                                and normalizeLookupKey(previousCustomMapCandidate)
+                                    == normalizeLookupKey(normalizedQuery)
+
+                            if not exactCatalogMap
+                                and normalizedQuery
+                                and (authorizeCustom == true or preserveAuthorizedCustom) then
+                                customMapCandidate = normalizedQuery
+                                table.insert(nextFilteredOptions, 1, customMapCandidate)
+                            end
+                        end
+                    end
+
+                    filteredOptions = nextFilteredOptions
+                    local currentOption = findMapOption(mapDropdown:GetValue(), filteredOptions)
+                    local desiredOption
+
+                    if trimmedQuery == "" then
+                        desiredOption = currentOption
+                            or findMapOption(lastCatalogSelection, catalogOptions)
+                            or catalogOptions[1]
+                    elseif exactCatalogMap then
+                        desiredOption = exactCatalogMap
+                    elseif customMapCandidate then
+                        local currentCatalogMap = findMapOption(currentOption, catalogOptions)
+                        desiredOption = authorizeCustom == true and customMapCandidate
+                            or currentCatalogMap
+                            or customMapCandidate
+                    elseif #filteredOptions == 1 then
+                        desiredOption = filteredOptions[1]
+                    else
+                        -- A previous selection that merely happens to match a new
+                        -- multi-result query must not be confirmed accidentally.
+                        desiredOption = not queryChanged and currentOption or nil
+                    end
+
+                    mapDropdown:Refresh(filteredOptions)
+
+                    if mapDropdown:GetValue() ~= desiredOption then
+                        mapDropdown:Select(desiredOption)
+                    end
+
+                    self.SelectedElevatorMap = normalizeMapCandidate(desiredOption) or ""
+
+                    local desiredCatalogMap = findMapOption(desiredOption, catalogOptions)
+
+                    if desiredCatalogMap then
+                        lastCatalogSelection = desiredCatalogMap
+                    end
+
+                    if not announce then
+                        return
+                    end
+
+                    if trimmedQuery == "" then
+                        updateElevatorStatus("Map filter cleared. Choose a map from the full list, then confirm.")
+                    elseif not searchKey or searchKey == "" then
+                        updateElevatorStatus("Type letters or numbers from the map name.")
+                    elseif exactCatalogMap then
+                        updateElevatorStatus("Selected " .. exactCatalogMap .. ". Confirm to start searching.")
+                    elseif customMapCandidate and not desiredCatalogMap then
+                        updateElevatorStatus(
+                            "Custom exact name: "
+                                .. customMapCandidate
+                                .. ". Confirm to search for up to "
+                                .. tostring(PRIVATE_SERVER_CUSTOM_MAP_TIMEOUT)
+                                .. " seconds."
+                        )
+                    elseif desiredCatalogMap then
+                        updateElevatorStatus("Selected " .. desiredCatalogMap .. ". Confirm to start searching.")
+                    elseif #filteredOptions == 0 and normalizedQuery then
+                        updateElevatorStatus(
+                            "No known map matches "
+                                .. normalizedQuery
+                                .. ". Press Enter to use that exact custom name."
+                        )
+                    elseif #filteredOptions == 0 then
+                        updateElevatorStatus("No known map matches yet. Keep typing the exact name.")
+                    elseif #filteredOptions == 1 then
+                        updateElevatorStatus("Matched " .. filteredOptions[1] .. ". Confirm to start searching.")
+                    else
+                        updateElevatorStatus(
+                            "Found " .. tostring(#filteredOptions) .. " maps. Choose the one you want, then confirm."
+                        )
+                    end
+                end
+
+                local function resolveRequestedMap()
+                    local latestQuery = mapInput:GetText()
+
+                    if latestQuery ~= queryText then
+                        applyMapFilter(latestQuery, true, false)
+                    end
+
+                    local trimmedQuery = trimString(latestQuery)
+                    local selectedOption = normalizeMapCandidate(mapDropdown:GetValue())
+
+                    if trimmedQuery == "" then
+                        local selectedCatalogMap = findMapOption(selectedOption, catalogOptions)
+
+                        if selectedCatalogMap then
+                            return selectedCatalogMap
+                        end
+
+                        return nil, nil, "Choose a map from the dropdown before confirming."
+                    end
+
+                    local normalizedQuery = normalizeMapCandidate(latestQuery)
+                    local exactCatalogMap = normalizedQuery and findMapOption(normalizedQuery, catalogOptions)
+
+                    if exactCatalogMap then
+                        return exactCatalogMap
+                    end
+
+                    local selectedFilteredMap = findMapOption(selectedOption, filteredOptions)
+
+                    if selectedFilteredMap then
+                        local selectedCatalogMap = findMapOption(selectedFilteredMap, catalogOptions)
+
+                        if selectedCatalogMap then
+                            return selectedCatalogMap
+                        end
+
+                        if customMapCandidate
+                            and normalizeLookupKey(selectedFilteredMap) == normalizeLookupKey(customMapCandidate) then
+                            return customMapCandidate, customMapCandidate
+                        end
+                    end
+
+                    if not normalizedQuery then
+                        if #filteredOptions == 0 then
+                            return nil, nil, "No known map matches yet. Keep typing the exact name."
+                        end
+
+                        return nil, nil, "Choose one of the matching maps before confirming."
+                    end
+
+                    if customMapCandidate then
+                        return customMapCandidate, customMapCandidate
+                    end
+
+                    if #filteredOptions == 0 then
+                        return nil,
+                            nil,
+                            "No known map matches. Press Enter in the map field to use this exact custom name."
+                    end
+
+                    return nil, nil, "Choose one of the matching maps, or finish typing the exact map name."
+                end
+
                 elevatorsTab:CreateButton({
                     Name = "Confirm Map",
                     Icon = "circle-check",
                     Callback = function()
-                        local requestedMap = normalizeMapCandidate(mapDropdown:GetValue())
+                        local requestedMap, customExactMap, resolveError = resolveRequestedMap()
 
                         if not requestedMap then
-                            updateElevatorStatus("Select a valid map before confirming.")
-                            notifyElevator("Map Required", "Choose a map from the dropdown first.", 4)
+                            updateElevatorStatus(resolveError)
+                            notifyElevator("Map Required", resolveError, 4)
                             return
                         end
 
                         local started, message = self:RefreshAndEnterPrivateElevator(requestedMap, {
+                            AllowCustomExactMap = customExactMap ~= nil,
+                            CustomExactMap = customExactMap,
                             OnStatus = function(statusMessage)
                                 updateElevatorStatus(statusMessage)
                             end,
@@ -8649,27 +8906,31 @@ function LyraMacro:CreateRecorderWindow(config)
                 end
 
                 task.spawn(function()
-                    local mapSignature = table.concat(mapOptions, "\0")
+                    local mapSignature = table.concat(catalogOptions, "\0")
+                    local lastCatalogRefreshAt = os.clock()
 
                     while recorderWindowIsAlive() do
-                        task.wait(1)
+                        task.wait(ELEVATOR_MAP_FILTER_POLL_INTERVAL)
 
                         if not recorderWindowIsAlive() then
                             return
                         end
 
-                        local refreshedOptions = self:GetElevatorMapOptions()
-                        local refreshedSignature = table.concat(refreshedOptions, "\0")
+                        local latestQuery = mapInput:GetText()
 
-                        if refreshedSignature ~= mapSignature then
-                            mapSignature = refreshedSignature
-                            local currentSelection = findMapOption(mapDropdown:GetValue(), refreshedOptions)
-                            mapDropdown:Refresh(refreshedOptions)
+                        if latestQuery ~= queryText then
+                            applyMapFilter(latestQuery, true, false)
+                        end
 
-                            if not currentSelection and refreshedOptions[1] then
-                                mapDropdown:Select(refreshedOptions[1])
-                            elseif not currentSelection then
-                                mapDropdown:Select(nil)
+                        if os.clock() - lastCatalogRefreshAt >= ELEVATOR_MAP_CATALOG_REFRESH_INTERVAL then
+                            lastCatalogRefreshAt = os.clock()
+                            local refreshedOptions = self:GetElevatorMapOptions()
+                            local refreshedSignature = table.concat(refreshedOptions, "\0")
+
+                            if refreshedSignature ~= mapSignature then
+                                mapSignature = refreshedSignature
+                                catalogOptions = refreshedOptions
+                                applyMapFilter(latestQuery, false, false)
                             end
                         end
                     end
