@@ -152,12 +152,74 @@ local LOBBY_RETURN_PENDING_TIMEOUT = 30
 local MODE_VOTE_RETRY_INTERVAL = 0.25
 local MODE_VOTE_RETRY_TIMEOUT = 10
 local RECORD_PLACEMENT_CONFIRM_TIMEOUT = 1
+local RECORD_STOP_DRAIN_TIMEOUT = 4
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
 local REPLAY_RETRY_INTERVAL = 0.75
 local REPLAY_PLACEMENT_MATCH_RADIUS = 8
 local DEFAULT_MAX_TOWER_UPGRADE = 5
+local STRATEGY_PERK_STATUS_ATTEMPTS = 2
+local STRATEGY_PERK_STATUS_RETRY_DELAY = 0.15
+local STRATEGY_PERK_TOGGLE_SETTLE_TIME = 0.2
+local STRATEGY_PERK_TOGGLE_TIMEOUT = 2
+local STRATEGY_PERK_TOGGLE_POLL_INTERVAL = 0.1
+local STRATEGY_PERK_DEFINITIONS = {
+    commando = {
+        Tier = "Platinum",
+        Troop = "Commando",
+        StatusAction = "GetPlatinumPerkStatus",
+        ToggleAction = "PlatinumPerks",
+    },
+    militant = {
+        Tier = "Platinum",
+        Troop = "Militant",
+        StatusAction = "GetPlatinumPerkStatus",
+        ToggleAction = "PlatinumPerks",
+    },
+    sniper = {
+        Tier = "Platinum",
+        Troop = "Sniper",
+        StatusAction = "GetPlatinumPerkStatus",
+        ToggleAction = "PlatinumPerks",
+    },
+    shotgunner = {
+        Tier = "Platinum",
+        Troop = "Shotgunner",
+        StatusAction = "GetPlatinumPerkStatus",
+        ToggleAction = "PlatinumPerks",
+    },
+    minigunner = {
+        Tier = "Golden",
+        Troop = "Minigunner",
+        StatusAction = "GetGoldenPerkStatus",
+        ToggleAction = "GoldenPerks",
+    },
+    soldier = {
+        Tier = "Golden",
+        Troop = "Soldier",
+        StatusAction = "GetGoldenPerkStatus",
+        ToggleAction = "GoldenPerks",
+    },
+    scout = {
+        Tier = "Golden",
+        Troop = "Scout",
+        StatusAction = "GetGoldenPerkStatus",
+        ToggleAction = "GoldenPerks",
+    },
+    pyromancer = {
+        Tier = "Golden",
+        Troop = "Pyromancer",
+        StatusAction = "GetGoldenPerkStatus",
+        ToggleAction = "GoldenPerks",
+    },
+    crookboss = {
+        Tier = "Golden",
+        Troop = "Crook Boss",
+        StatusAction = "GetGoldenPerkStatus",
+        ToggleAction = "GoldenPerks",
+    },
+}
 local PRIVATE_SERVER_MARKER_KEYS = {
     isprivateserver = true,
     privateserver = true,
@@ -239,11 +301,13 @@ local LyraMacro = {
     RecordedTowerIndexes = {},
     RecordedTowerUpgradeLevels = {},
     RecordedTowerPlacedAt = {},
+    RecordedTroopPerks = {},
     PendingRecordedPlacements = {},
     RecordingSeenTowers = {},
     RecordingConnections = {},
     NextRecordedTowerIndex = 0,
     RecordingLastAbilityAt = nil,
+    RecordingPerkVerificationError = nil,
     LastStrategyExport = nil,
     LastDetectedMapSource = nil,
     SelectedMapFingerprint = "",
@@ -286,8 +350,10 @@ local LyraMacro = {
     StrategyLogger = nil,
     _recordHookInstalled = false,
     _recordingSessionToken = 0,
+    _recordingStopInProgress = false,
     _originalNamecall = nil,
     _remoteObservationQueue = {},
+    _activeRemoteObservation = nil,
     _remoteObservationWorkerRunning = false,
     _replayOwnershipToken = nil,
 }
@@ -362,6 +428,9 @@ local function formatRecordedStep(step)
         if type(step.skin) == "string" and step.skin ~= "" then
             table.insert(fields, formatField("skin", step.skin))
         end
+        if step.perk ~= nil then
+            table.insert(fields, formatField("perk", step.perk))
+        end
         table.insert(fields, formatField("x", step.x))
         table.insert(fields, formatField("y", step.y))
         table.insert(fields, formatField("z", step.z))
@@ -409,7 +478,9 @@ end
 local function describeStrategyStep(step)
     if step.action == "place" then
         local skinSuffix = type(step.skin) == "string" and step.skin ~= "" and " [" .. step.skin .. "]" or ""
-        return "PLACE " .. tostring(step.troop) .. skinSuffix
+        local perkSuffix = type(step.perk) == "string" and " {" .. step.perk .. " perk}"
+            or (step.perk == false and " {perk off}" or "")
+        return "PLACE " .. tostring(step.troop) .. skinSuffix .. perkSuffix
     elseif step.action == "upgrade" then
         return "UPGRADE TOWER #" .. tostring(step.tower)
     elseif step.action == "sell" then
@@ -1109,6 +1180,260 @@ local function getStrategyTroopNames(strategy)
     return troopNames
 end
 
+local function getStrategyPerkDefinition(troopName)
+    return STRATEGY_PERK_DEFINITIONS[normalizeLookupKey(troopName)]
+end
+
+local function normalizeStrategyPerkTier(value)
+    local lookupKey = normalizeLookupKey(value)
+
+    if lookupKey == "golden" then
+        return "Golden"
+    elseif lookupKey == "platinum" then
+        return "Platinum"
+    end
+
+    return nil
+end
+
+local function getStrategyPerkStates(strategy)
+    local states = {}
+    local statesByTroop = {}
+
+    if type(strategy) ~= "table" then
+        return states
+    end
+
+    for stepNumber, step in ipairs(strategy) do
+        if type(step) ~= "table" then
+            return nil, "Strategy step #" .. tostring(stepNumber) .. " is not a table."
+        end
+
+        if step.action == "place" then
+            local definition = getStrategyPerkDefinition(step.troop)
+            local recordedPerk = step.perk
+
+            if recordedPerk ~= nil then
+                if not definition then
+                    return nil,
+                        "Strategy step #"
+                            .. tostring(stepNumber)
+                            .. " records a perk for unsupported tower "
+                            .. tostring(step.troop)
+                            .. "."
+                end
+
+                local enabled
+
+                if recordedPerk == false then
+                    enabled = false
+                elseif type(recordedPerk) == "string" then
+                    local tier = normalizeStrategyPerkTier(recordedPerk)
+
+                    if not tier then
+                        return nil,
+                            "Strategy step #"
+                                .. tostring(stepNumber)
+                                .. " has an unverified or unknown perk: "
+                                .. tostring(recordedPerk)
+                                .. "."
+                    end
+
+                    if tier ~= definition.Tier then
+                        return nil,
+                            tostring(step.troop)
+                                .. " cannot use the recorded "
+                                .. tostring(tier)
+                                .. " perk."
+                    end
+
+                    enabled = true
+                else
+                    return nil,
+                        "Strategy step #"
+                            .. tostring(stepNumber)
+                            .. " has invalid perk metadata."
+                end
+
+                local troopKey = normalizeLookupKey(definition.Troop)
+                local existingState = statesByTroop[troopKey]
+
+                if existingState and existingState.Enabled ~= enabled then
+                    return nil,
+                        "The strategy records conflicting perk states for "
+                            .. tostring(definition.Troop)
+                            .. "."
+                end
+
+                if not existingState then
+                    local state = {
+                        Definition = definition,
+                        Enabled = enabled,
+                        Tier = definition.Tier,
+                        Troop = definition.Troop,
+                    }
+                    statesByTroop[troopKey] = state
+                    table.insert(states, state)
+                end
+            end
+        end
+    end
+
+    return states
+end
+
+-- The status remotes report whether a perk is currently enabled. Ownership is
+-- checked separately through Inventory.Skins before replay changes this state.
+local function queryStrategyPerkStatus(definition)
+    local lastError = "The server did not return a Boolean perk status."
+
+    for attempt = 1, STRATEGY_PERK_STATUS_ATTEMPTS do
+        local invoked, result = pcall(function()
+            return RemoteFunction:InvokeServer("Troops", definition.StatusAction, definition.Troop)
+        end)
+
+        if invoked and type(result) == "boolean" then
+            return result
+        end
+
+        if invoked then
+            lastError = "The server returned " .. type(result) .. " instead of a Boolean."
+        else
+            lastError = tostring(result)
+        end
+
+        if attempt < STRATEGY_PERK_STATUS_ATTEMPTS then
+            task.wait(STRATEGY_PERK_STATUS_RETRY_DELAY)
+        end
+    end
+
+    return nil, lastError
+end
+
+local function waitForStrategyPerkState(definition, expectedState)
+    local deadline = os.clock() + STRATEGY_PERK_TOGGLE_TIMEOUT
+    local lastResult
+
+    while os.clock() < deadline do
+        local status, statusError = queryStrategyPerkStatus(definition)
+
+        if status == expectedState then
+            return true
+        end
+
+        lastResult = statusError or status
+        task.wait(STRATEGY_PERK_TOGGLE_POLL_INTERVAL)
+    end
+
+    return false, lastResult
+end
+
+local function getNamedInventoryEntry(inventory, name)
+    local wantedKey = normalizeLookupKey(name)
+
+    if type(inventory) ~= "table" or wantedKey == "" then
+        return nil
+    end
+
+    if inventory[name] ~= nil then
+        return inventory[name]
+    end
+
+    for entryName, entry in pairs(inventory) do
+        if normalizeLookupKey(entryName) == wantedKey then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+local function inventoryOwnsTroop(inventory, troopName)
+    local entry = getNamedInventoryEntry(inventory, troopName)
+
+    if entry == true then
+        return true
+    end
+
+    return type(entry) == "table" and entry.Purchased == true
+end
+
+local function inventoryOwnsSkin(skinInventory, troopName, skinName)
+    if normalizeLookupKey(skinName) == "default" then
+        return true
+    end
+
+    local skins = getNamedInventoryEntry(skinInventory, troopName)
+
+    if type(skins) ~= "table" then
+        return false
+    end
+
+    local wantedSkin = normalizeLookupKey(skinName)
+
+    for entryName, value in pairs(skins) do
+        local candidate = type(value) == "string" and value or (type(value) == "table" and value.Name)
+
+        if normalizeLookupKey(candidate) == wantedSkin then
+            return true
+        end
+
+        if type(entryName) == "string"
+            and normalizeLookupKey(entryName) == wantedSkin
+            and value ~= false then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getStrategySkinRequirements(strategy)
+    local requirements = {}
+    local seen = {}
+
+    if type(strategy) ~= "table" then
+        return requirements
+    end
+
+    for _, step in ipairs(strategy) do
+        if step.action == "place"
+            and type(step.troop) == "string"
+            and type(step.skin) == "string"
+            and step.skin ~= ""
+            and normalizeLookupKey(step.skin) ~= "default" then
+            local requirementKey = normalizeLookupKey(step.troop) .. "|" .. normalizeLookupKey(step.skin)
+
+            if not seen[requirementKey] then
+                seen[requirementKey] = true
+                table.insert(requirements, {
+                    Skin = step.skin,
+                    Troop = step.troop,
+                })
+            end
+        end
+    end
+
+    return requirements
+end
+
+local function getMissingTroopNames(requiredTroops, availableTroops)
+    local availableLookup = {}
+    local missing = {}
+
+    for _, troopName in ipairs(getUniqueTroopNames(availableTroops)) do
+        availableLookup[normalizeLookupKey(troopName)] = true
+    end
+
+    for _, troopName in ipairs(getUniqueTroopNames(requiredTroops)) do
+        if not availableLookup[normalizeLookupKey(troopName)] then
+            table.insert(missing, troopName)
+        end
+    end
+
+    return missing
+end
+
 local function loadoutsMatch(left, right)
     local leftNames = getUniqueTroopNames(left)
     local rightNames = getUniqueTroopNames(right)
@@ -1142,7 +1467,7 @@ local function appendLoadoutLines(lines, loadout)
     table.insert(lines, "}")
 end
 
-local function readEquippedTroops(timeout)
+local function readCacheValue(cacheKey, timeout)
     local cacheModule = ReplicatedStorage:FindFirstChild("Client")
     cacheModule = cacheModule and cacheModule:FindFirstChild("Modules")
     cacheModule = cacheModule and cacheModule:FindFirstChild("Universal")
@@ -1150,7 +1475,7 @@ local function readEquippedTroops(timeout)
     cacheModule = cacheModule and cacheModule:FindFirstChild("Cache")
 
     if not cacheModule then
-        return nil, "Could not find the Equipped.Troops cache module."
+        return nil, "Could not find the " .. tostring(cacheKey) .. " cache module."
     end
 
     local loaded, cacheFactoryOrError = pcall(require, cacheModule)
@@ -1170,17 +1495,17 @@ local function readEquippedTroops(timeout)
     end
 
     if not loaded then
-        return nil, "Could not load the Equipped.Troops cache: " .. tostring(cacheFactoryOrError)
+        return nil, "Could not load the " .. tostring(cacheKey) .. " cache: " .. tostring(cacheFactoryOrError)
     end
 
     local cacheFactory = cacheFactoryOrError
 
     local requested, cacheValue = pcall(function()
-        return cacheFactory("Equipped.Troops"):Get()
+        return cacheFactory(cacheKey):Get()
     end)
 
     if not requested then
-        return nil, "Could not request Equipped.Troops: " .. tostring(cacheValue)
+        return nil, "Could not request " .. tostring(cacheKey) .. ": " .. tostring(cacheValue)
     end
 
     if type(cacheValue) == "table" and type(cacheValue.andThen) ~= "function" then
@@ -1201,7 +1526,7 @@ local function readEquippedTroops(timeout)
     end)
 
     if not subscribed then
-        return nil, "Could not read Equipped.Troops: " .. tostring(subscribeError)
+        return nil, "Could not read " .. tostring(cacheKey) .. ": " .. tostring(subscribeError)
     end
 
     local deadline = os.clock() + (timeout or 5)
@@ -1211,14 +1536,18 @@ local function readEquippedTroops(timeout)
     end
 
     if not settled then
-        return nil, "Timed out waiting for Equipped.Troops."
+        return nil, "Timed out waiting for " .. tostring(cacheKey) .. "."
     end
 
     if resolvedError then
-        return nil, "Could not read Equipped.Troops: " .. tostring(resolvedError)
+        return nil, "Could not read " .. tostring(cacheKey) .. ": " .. tostring(resolvedError)
     end
 
     return resolvedValue
+end
+
+local function readEquippedTroops(timeout)
+    return readCacheValue("Equipped.Troops", timeout)
 end
 
 local function waitForEquippedTroops(expectedLoadout, timeout)
@@ -2202,6 +2531,230 @@ function LyraMacro:GetRecordedLoadout()
     return self:GetStrategyLoadout(self.RecordedStrategy)
 end
 
+function LyraMacro:CheckStrategyRequirements(strategy, options)
+    options = options or {}
+
+    local perkStates, perkMetadataError = getStrategyPerkStates(strategy)
+
+    if not perkStates then
+        return false, perkMetadataError
+    end
+
+    local strategyLoadout = self:GetStrategyLoadout(strategy)
+    local loadout = getUniqueTroopNames(options.Loadout or strategyLoadout)
+
+    if #loadout > 5 then
+        return false,
+            "This strategy uses "
+                .. tostring(#loadout)
+                .. " towers, but the lobby loadout only supports five. AutoStrategy aborted."
+    end
+
+    local omittedStrategyTowers = getMissingTroopNames(strategyLoadout, loadout)
+
+    if #omittedStrategyTowers > 0 then
+        return false,
+            "The configured loadout omits required strategy towers: "
+                .. table.concat(omittedStrategyTowers, ", ")
+                .. ". AutoStrategy aborted."
+    end
+
+    local troopInventory, troopInventoryError = readCacheValue("Inventory.Troops")
+
+    if not troopInventory then
+        return false,
+            "Could not verify the required towers: "
+                .. tostring(troopInventoryError)
+                .. " AutoStrategy aborted before changing your loadout."
+    end
+
+    local missingTowers = {}
+
+    for _, troopName in ipairs(loadout) do
+        if not inventoryOwnsTroop(troopInventory, troopName) then
+            table.insert(missingTowers, troopName)
+        end
+    end
+
+    local skinRequirements = getStrategySkinRequirements(strategy)
+    local missingSkins = {}
+    local skinInventory
+
+    if #skinRequirements > 0 or #perkStates > 0 then
+        local skinInventoryError
+        skinInventory, skinInventoryError = readCacheValue("Inventory.Skins")
+
+        if not skinInventory then
+            return false,
+                "Could not verify the required skins and perks: "
+                    .. tostring(skinInventoryError)
+                    .. " AutoStrategy aborted before changing your loadout."
+        end
+
+        for _, requirement in ipairs(skinRequirements) do
+            if not inventoryOwnsSkin(skinInventory, requirement.Troop, requirement.Skin) then
+                table.insert(missingSkins, requirement.Troop .. " [" .. requirement.Skin .. "]")
+            end
+        end
+    end
+
+    local missingPerks = {}
+
+    for _, state in ipairs(perkStates) do
+        state.Owned = inventoryOwnsSkin(skinInventory, state.Troop, state.Tier)
+
+        if state.Enabled and not state.Owned then
+            table.insert(missingPerks, state.Tier .. " " .. state.Troop)
+        end
+    end
+
+    local missingEquipped = {}
+
+    if options.RequireEquipped == true then
+        local equippedTroops, equippedError = readEquippedTroops()
+
+        if not equippedTroops then
+            return false, "Could not verify the equipped strategy towers: " .. tostring(equippedError)
+        end
+
+        missingEquipped = getMissingTroopNames(loadout, equippedTroops)
+    end
+
+    local problems = {}
+
+    if #missingTowers > 0 then
+        table.insert(problems, "Missing required towers: " .. table.concat(missingTowers, ", ") .. ".")
+    end
+
+    if #missingSkins > 0 then
+        table.insert(problems, "Missing required skins: " .. table.concat(missingSkins, ", ") .. ".")
+    end
+
+    if #missingPerks > 0 then
+        table.insert(problems, "Missing required perks: " .. table.concat(missingPerks, ", ") .. ".")
+    end
+
+    if #missingEquipped > 0 then
+        table.insert(problems, "Required towers are not equipped: " .. table.concat(missingEquipped, ", ") .. ".")
+    end
+
+    if #problems > 0 then
+        return false, table.concat(problems, " ") .. " AutoStrategy aborted before its first action."
+    end
+
+    return true, {
+        Loadout = loadout,
+        PerkStates = perkStates,
+    }
+end
+
+function LyraMacro:ApplyStrategyPerks(strategy, perkStates)
+    if not perkStates then
+        local perkMetadataError
+        perkStates, perkMetadataError = getStrategyPerkStates(strategy)
+
+        if not perkStates then
+            return false, perkMetadataError
+        end
+    end
+
+    local needsOwnershipLookup = false
+
+    for _, state in ipairs(perkStates) do
+        if state.Owned == nil then
+            needsOwnershipLookup = true
+            break
+        end
+    end
+
+    if needsOwnershipLookup then
+        local skinInventory, skinInventoryError = readCacheValue("Inventory.Skins")
+
+        if not skinInventory then
+            return false, "Could not verify perk ownership: " .. tostring(skinInventoryError)
+        end
+
+        for _, state in ipairs(perkStates) do
+            state.Owned = inventoryOwnsSkin(skinInventory, state.Troop, state.Tier)
+        end
+    end
+
+    for _, state in ipairs(perkStates) do
+        if state.Enabled and not state.Owned then
+            return false, "Missing required perk: " .. state.Tier .. " " .. state.Troop .. "."
+        end
+
+        if state.Owned ~= false then
+            local currentState, statusError = queryStrategyPerkStatus(state.Definition)
+
+            if currentState == nil then
+                return false,
+                    "Could not read "
+                        .. state.Tier
+                        .. " perk state for "
+                        .. state.Troop
+                        .. ": "
+                        .. tostring(statusError)
+            end
+
+            if currentState ~= state.Enabled then
+                local fired, fireError = pcall(function()
+                    RemoteEvent:FireServer("Inventory", "Execute", "Troops", state.Definition.ToggleAction, {
+                        Troop = state.Troop,
+                        Enabled = state.Enabled,
+                    })
+                end)
+
+                if not fired then
+                    return false,
+                        "Could not set "
+                            .. state.Tier
+                            .. " perk for "
+                            .. state.Troop
+                            .. ": "
+                            .. tostring(fireError)
+                end
+
+                task.wait(STRATEGY_PERK_TOGGLE_SETTLE_TIME)
+
+                local confirmed, confirmationError = waitForStrategyPerkState(state.Definition, state.Enabled)
+
+                if not confirmed then
+                    return false,
+                        "The server did not confirm "
+                            .. state.Tier
+                            .. " perk for "
+                            .. state.Troop
+                            .. ": "
+                            .. tostring(confirmationError)
+                end
+
+                print(
+                    "[LyraMacro] "
+                        .. (state.Enabled and "Enabled" or "Disabled")
+                        .. " "
+                        .. state.Tier
+                        .. " perk for "
+                        .. state.Troop
+                        .. "."
+                )
+            else
+                print(
+                    "[LyraMacro] "
+                        .. state.Tier
+                        .. " perk for "
+                        .. state.Troop
+                        .. " is already "
+                        .. (state.Enabled and "enabled" or "disabled")
+                        .. "."
+                )
+            end
+        end
+    end
+
+    return true
+end
+
 function LyraMacro:SyncLobbyLoadout(loadout)
     if game.PlaceId ~= LOBBY_PLACE_ID then
         return false, "Troop loadouts can only be changed in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
@@ -2220,6 +2773,12 @@ function LyraMacro:SyncLobbyLoadout(loadout)
     end
 
     local currentLoadout = getUniqueTroopNames(equippedLoadout)
+
+    if loadoutsMatch(currentLoadout, desiredLoadout) then
+        self.SelectedLoadout = getUniqueTroopNames(desiredLoadout)
+        print("[LyraMacro] Lobby loadout already matches the strategy.")
+        return true, self.SelectedLoadout
+    end
 
     for _, troopName in ipairs(currentLoadout) do
         RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Remove", {
@@ -2242,7 +2801,13 @@ function LyraMacro:SyncLobbyLoadout(loadout)
     end
 
     if not waitForEquippedTroops(desiredLoadout, 5) then
-        return false, "Timed out while equipping the strategy loadout."
+        local currentAfterFailure = readEquippedTroops(1)
+        local missingAfterFailure = currentAfterFailure and getMissingTroopNames(desiredLoadout, currentAfterFailure) or desiredLoadout
+
+        return false,
+            "Could not equip required strategy towers: "
+                .. table.concat(missingAfterFailure, ", ")
+                .. "."
     end
 
     self.SelectedLoadout = getUniqueTroopNames(desiredLoadout)
@@ -2255,7 +2820,27 @@ function LyraMacro:PrepareStrategyLoadout(strategy, options)
     options = options or {}
     local loadout = options.Loadout or self:GetStrategyLoadout(strategy)
 
-    return self:SyncLobbyLoadout(loadout)
+    local requirementsReady, requirementsOrError = self:CheckStrategyRequirements(strategy, {
+        Loadout = loadout,
+    })
+
+    if not requirementsReady then
+        return false, requirementsOrError
+    end
+
+    local loadoutReady, loadoutOrError = self:SyncLobbyLoadout(requirementsOrError.Loadout)
+
+    if not loadoutReady then
+        return false, loadoutOrError
+    end
+
+    local perksReady, perksError = self:ApplyStrategyPerks(strategy, requirementsOrError.PerkStates)
+
+    if not perksReady then
+        return false, perksError
+    end
+
+    return true, loadoutOrError
 end
 
 function LyraMacro:Mode(modeName)
@@ -5379,6 +5964,12 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
         return false, "Strategy replay requires a table of recorded steps."
     end
 
+    -- A new queue request replaces any older replay immediately. If its
+    -- preflight fails, an earlier strategy must not remain armed in the
+    -- background and enter an elevator unexpectedly.
+    self.PendingElevatorReplay = nil
+    self.AutoRecordTeleportArmed = false
+
     local loadoutReady, loadoutMessage = self:PrepareStrategyLoadout(strategy, options)
 
     if not loadoutReady then
@@ -5970,8 +6561,54 @@ function LyraMacro:_getRecordedTowerIndex(tower)
     return towerIndex
 end
 
+function LyraMacro:_getRecordedTroopPerk(troopType, recordingSessionToken)
+    if recordingSessionToken == nil or recordingSessionToken ~= self._recordingSessionToken then
+        return nil
+    end
+
+    local definition = getStrategyPerkDefinition(troopType)
+
+    if not definition then
+        return nil
+    end
+
+    local troopKey = normalizeLookupKey(definition.Troop)
+    local cachedPerk = self.RecordedTroopPerks[troopKey]
+
+    if cachedPerk ~= nil then
+        return cachedPerk
+    end
+
+    local enabled, statusError = queryStrategyPerkStatus(definition)
+
+    if recordingSessionToken ~= self._recordingSessionToken then
+        return nil
+    end
+
+    if enabled == nil then
+        local message = "Could not verify "
+            .. definition.Tier
+            .. " perk status for "
+            .. definition.Troop
+            .. " while recording: "
+            .. tostring(statusError)
+        self.RecordingPerkVerificationError = message
+        warn("[LyraMacro] " .. message .. ". This recording will fail closed until the perk is verified.")
+        return "Unverified"
+    end
+
+    local recordedPerk = enabled and definition.Tier or false
+    self.RecordedTroopPerks[troopKey] = recordedPerk
+
+    if enabled then
+        print("[LyraMacro] Recording " .. definition.Tier .. " perk for " .. definition.Troop .. ".")
+    end
+
+    return recordedPerk
+end
+
 function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordingSessionToken)
-    if not self.IsRecording or recordingSessionToken ~= self._recordingSessionToken then
+    if recordingSessionToken == nil or recordingSessionToken ~= self._recordingSessionToken then
         return
     end
 
@@ -5979,6 +6616,11 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
     local action = args[2]
     local categoryKey = normalizeLookupKey(category)
     local actionKey = normalizeLookupKey(action)
+
+    if categoryKey == "troops"
+        and (actionKey == "getgoldenperkstatus" or actionKey == "getplatinumperkstatus") then
+        return
+    end
 
     if categoryKey == "troops" and actionKey == "abilities" and normalizeLookupKey(args[3]) == "activate" then
         local abilityInfo = args[4]
@@ -6094,6 +6736,10 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
             RECORD_PLACEMENT_CONFIRM_TIMEOUT
         )
 
+        if recordingSessionToken ~= self._recordingSessionToken then
+            return
+        end
+
         if not placedTower then
             warn("[LyraMacro] Ignored a place remote because the server did not create a new tower.")
             return
@@ -6103,11 +6749,17 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
 
         local towerIndex = self:_trackNextRecordedTower(troopType, position, existingTowers, placedTower)
         self.RecordedTowerPlacedAt[towerIndex] = tonumber(observedAt) or os.clock()
+        local recordedPerk = self:_getRecordedTroopPerk(troopType, recordingSessionToken)
+
+        if recordingSessionToken ~= self._recordingSessionToken then
+            return
+        end
 
         self:_appendRecordedStep({
             action = "place",
             troop = troopType,
             skin = skin,
+            perk = recordedPerk,
             x = roundNumber(position.X),
             y = roundNumber(position.Y),
             z = roundNumber(position.Z),
@@ -6187,6 +6839,7 @@ function LyraMacro:_drainRemoteObservations()
     task.defer(function()
         while self._remoteObservationQueue[1] and self._remoteObservationQueue[1].Ready do
             local observation = table.remove(self._remoteObservationQueue, 1)
+            self._activeRemoteObservation = observation
 
             if not observation.Skip then
                 local processed, processError = pcall(function()
@@ -6202,6 +6855,8 @@ function LyraMacro:_drainRemoteObservations()
                     warn("[LyraMacro] Failed to process a remote observation: " .. tostring(processError))
                 end
             end
+
+            self._activeRemoteObservation = nil
         end
 
         self._remoteObservationWorkerRunning = false
@@ -6217,6 +6872,39 @@ function LyraMacro:_completeRemoteObservation(observation, remoteResults, skip)
     observation.Skip = skip == true
     observation.Ready = true
     self:_drainRemoteObservations()
+end
+
+function LyraMacro:_hasPendingRecordingObservation(recordingSessionToken)
+    local activeObservation = self._activeRemoteObservation
+
+    if activeObservation and activeObservation.RecordingSessionToken == recordingSessionToken then
+        return true
+    end
+
+    for _, observation in ipairs(self._remoteObservationQueue) do
+        if observation.RecordingSessionToken == recordingSessionToken then
+            return true
+        end
+    end
+
+    return false
+end
+
+function LyraMacro:_discardQueuedRecordingObservations(recordingSessionToken)
+    local discarded = 0
+
+    for index = #self._remoteObservationQueue, 1, -1 do
+        if self._remoteObservationQueue[index].RecordingSessionToken == recordingSessionToken then
+            table.remove(self._remoteObservationQueue, index)
+            discarded += 1
+        end
+    end
+
+    if discarded > 0 then
+        self:_drainRemoteObservations()
+    end
+
+    return discarded
 end
 
 function LyraMacro:_installRecorder()
@@ -6394,8 +7082,17 @@ function LyraMacro:_watchForAutoStrategyResults()
 end
 
 function LyraMacro:StartRecording()
+    if self._recordingStopInProgress then
+        return false, "The previous recording is still stopping. Wait for its export to finish."
+    end
+
     if self.IsRecording then
         return true, "Recording is already active."
+    end
+
+    if self._activeRemoteObservation
+        and self._activeRemoteObservation.RecordingSessionToken ~= nil then
+        return false, "The previous recording is still finishing a server action. Try again in a moment."
     end
 
     local recorderReady, recorderMessage = self:_installRecorder()
@@ -6409,11 +7106,13 @@ function LyraMacro:StartRecording()
     table.clear(self.RecordedTowerIndexes)
     table.clear(self.RecordedTowerUpgradeLevels)
     table.clear(self.RecordedTowerPlacedAt)
+    table.clear(self.RecordedTroopPerks)
     table.clear(self.PendingRecordedPlacements)
     self.RecordingSeenTowers = snapshotTowers(getTowersFolder())
     table.clear(self.RecordingConnections)
     self.NextRecordedTowerIndex = 0
     self.RecordingLastAbilityAt = nil
+    self.RecordingPerkVerificationError = nil
     self.SelectedMapFingerprint = ""
     self.SelectedMapFingerprintSource = nil
     self.SelectedMapFingerprintPartCount = 0
@@ -6446,95 +7145,138 @@ function LyraMacro:StartRecording()
 end
 
 function LyraMacro:StopRecording()
+    if self._recordingStopInProgress then
+        while self._recordingStopInProgress do
+            task.wait()
+        end
+
+        return self:GetRecordedStrategy(), self:GetRecordedStrategyScriptSource(), self.LastStrategyExport
+    end
+
     if not self.IsRecording then
         return self:GetRecordedStrategy(), self:GetRecordedStrategyScriptSource(), self.LastStrategyExport
     end
 
-    self.IsRecording = false
-    self._recordingSessionToken += 1
-    self.RecordingLastAbilityAt = nil
-    self._resultsWatchToken += 1
+    self._recordingStopInProgress = true
+    local stopResults = table.pack(xpcall(function()
+        local recordingSessionToken = self._recordingSessionToken
+        self.IsRecording = false
 
-    for _, connection in ipairs(self.RecordingConnections) do
-        connection:Disconnect()
-    end
+        local drainDeadline = os.clock() + RECORD_STOP_DRAIN_TIMEOUT
 
-    table.clear(self.RecordingConnections)
-    table.clear(self.PendingRecordedPlacements)
-    table.clear(self.RecordingSeenTowers)
-    table.clear(self.RecordedTowerPlacedAt)
-
-    if self.SelectedMap == "" then
-        self:DetectMap({ Silent = true })
-    end
-
-    self:DetectMapFingerprint({ Silent = true, Force = true })
-
-    local recordedStrategy = self:GetRecordedStrategy()
-    local actionCounts = {
-        ability = 0,
-        chaincoa = 0,
-        mode = 0,
-        place = 0,
-        sell = 0,
-        skip = 0,
-        upgrade = 0,
-    }
-    local upgradesMissingLevel = 0
-
-    for _, step in ipairs(recordedStrategy) do
-        if actionCounts[step.action] ~= nil then
-            actionCounts[step.action] += 1
+        while self:_hasPendingRecordingObservation(recordingSessionToken) and os.clock() < drainDeadline do
+            task.wait()
         end
 
-        if step.action == "upgrade" and type(step.level) ~= "number" then
-            upgradesMissingLevel += 1
+        local observationsDrained = not self:_hasPendingRecordingObservation(recordingSessionToken)
+
+        if not observationsDrained then
+            self:_discardQueuedRecordingObservations(recordingSessionToken)
         end
-    end
 
-    local exportResult = self:SaveRecordedStrategy()
-    local strategySource = exportResult.Source
+        self._recordingSessionToken += 1
+        self.RecordingLastAbilityAt = nil
+        self._resultsWatchToken += 1
 
-    print("[LyraMacro] Strategy recording stopped. Recorded " .. #recordedStrategy .. " steps.")
-    print(
-        "[LyraMacro] Recorder integrity: "
-            .. tostring(actionCounts.place)
-            .. " placements, "
-            .. tostring(actionCounts.upgrade)
-            .. " upgrades, "
-            .. tostring(actionCounts.sell)
-            .. " sells, "
-            .. tostring(actionCounts.ability)
-            .. " abilities, "
-            .. tostring(actionCounts.chaincoa)
-            .. " Chain COA settings, "
-            .. tostring(actionCounts.skip)
-            .. " skips, "
-            .. tostring(actionCounts.mode)
-            .. " mode votes."
-    )
+        if not observationsDrained then
+            warn(
+                "[LyraMacro] Timed out waiting for the final recorded action; "
+                    .. "it was discarded to keep the exported strategy consistent."
+            )
+        end
 
-    if upgradesMissingLevel > 0 then
-        warn(
-            "[LyraMacro] Recorder integrity warning: "
-                .. tostring(upgradesMissingLevel)
-                .. " upgrade actions are missing levels."
+        for _, connection in ipairs(self.RecordingConnections) do
+            connection:Disconnect()
+        end
+
+        table.clear(self.RecordingConnections)
+        table.clear(self.PendingRecordedPlacements)
+        table.clear(self.RecordingSeenTowers)
+        table.clear(self.RecordedTowerPlacedAt)
+
+        if self.SelectedMap == "" then
+            self:DetectMap({ Silent = true })
+        end
+
+        self:DetectMapFingerprint({ Silent = true, Force = true })
+
+        local recordedStrategy = self:GetRecordedStrategy()
+        local actionCounts = {
+            ability = 0,
+            chaincoa = 0,
+            mode = 0,
+            place = 0,
+            sell = 0,
+            skip = 0,
+            upgrade = 0,
+        }
+        local upgradesMissingLevel = 0
+
+        for _, step in ipairs(recordedStrategy) do
+            if actionCounts[step.action] ~= nil then
+                actionCounts[step.action] += 1
+            end
+
+            if step.action == "upgrade" and type(step.level) ~= "number" then
+                upgradesMissingLevel += 1
+            end
+        end
+
+        local exportResult = self:SaveRecordedStrategy()
+        local strategySource = exportResult.Source
+
+        print("[LyraMacro] Strategy recording stopped. Recorded " .. #recordedStrategy .. " steps.")
+        print(
+            "[LyraMacro] Recorder integrity: "
+                .. tostring(actionCounts.place)
+                .. " placements, "
+                .. tostring(actionCounts.upgrade)
+                .. " upgrades, "
+                .. tostring(actionCounts.sell)
+                .. " sells, "
+                .. tostring(actionCounts.ability)
+                .. " abilities, "
+                .. tostring(actionCounts.chaincoa)
+                .. " Chain COA settings, "
+                .. tostring(actionCounts.skip)
+                .. " skips, "
+                .. tostring(actionCounts.mode)
+                .. " mode votes."
         )
+
+        if upgradesMissingLevel > 0 then
+            warn(
+                "[LyraMacro] Recorder integrity warning: "
+                    .. tostring(upgradesMissingLevel)
+                    .. " upgrade actions are missing levels."
+            )
+        end
+
+        if self.RecordingPerkVerificationError then
+            warn("[LyraMacro] Recorder perk verification warning: " .. tostring(self.RecordingPerkVerificationError))
+        end
+
+        print(strategySource)
+
+        if exportResult.Saved then
+            print("[LyraMacro] Saved recorded strategy to " .. exportResult.Path)
+        else
+            warn("[LyraMacro] " .. exportResult.Message)
+        end
+
+        if type(setclipboard) == "function" then
+            pcall(setclipboard, strategySource)
+        end
+
+        return recordedStrategy, strategySource, exportResult
+    end, debug.traceback))
+    self._recordingStopInProgress = false
+
+    if not stopResults[1] then
+        error(stopResults[2], 0)
     end
 
-    print(strategySource)
-
-    if exportResult.Saved then
-        print("[LyraMacro] Saved recorded strategy to " .. exportResult.Path)
-    else
-        warn("[LyraMacro] " .. exportResult.Message)
-    end
-
-    if type(setclipboard) == "function" then
-        pcall(setclipboard, strategySource)
-    end
-
-    return recordedStrategy, strategySource, exportResult
+    return table.unpack(stopResults, 2, stopResults.n)
 end
 
 function LyraMacro:GetRecordedStrategy()
@@ -6833,7 +7575,7 @@ function LyraMacro:_createFallbackRecorderWindow(reason)
         isRecording = true
         button.Text = "Stop Recording"
         button.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-        status.Text = "Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips."
+        status.Text = "Recording placements with skins/perks, upgrades, timed abilities, Chain COA, sells, and wave skips."
     end)
 
     self.RecorderWindow = screenGui
@@ -7035,7 +7777,7 @@ function LyraMacro:CreateRecorderWindow(config)
 
             isRecording = true
             recordButton.UpdateButtonText("Stop Recording")
-            descriptionLabel.UpdateText("Recording mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
+            descriptionLabel.UpdateText("Recording placements with skins/perks, upgrades, timed abilities, Chain COA, sells, and wave skips.")
             window:Notify("Recording Started", "Your strategy actions are now being recorded.", 3)
         end)
 
@@ -8471,6 +9213,10 @@ local function validateStrategyActions(strategy)
             "[LyraMacro] Strategy action #" .. tostring(index) .. " is missing or is not a table. Replay cannot continue across a sparse action queue."
         )
     end
+
+    local perkStates, perkMetadataError = getStrategyPerkStates(strategy)
+
+    assert(perkStates, "[LyraMacro] " .. tostring(perkMetadataError))
 
     return highestIndex
 end
