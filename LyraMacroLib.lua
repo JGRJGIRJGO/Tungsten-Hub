@@ -177,6 +177,9 @@ local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
 local ABILITY_DELAY_FROM_TOWER_PLACEMENT = "tower_placement"
 local SCHEDULED_ABILITY_POLL_INTERVAL = 0.05
+local SCHEDULED_COA_RECOVERY_TIMEOUT = CHAIN_COA_ACTIVE_DURATION
+    + CHAIN_COA_HANDOFF_DELAY
+    + CHAIN_COA_RETRY_DELAY
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
@@ -10701,7 +10704,7 @@ function LyraMacro:Run(strategy)
         return nil
     end
 
-    local function waitForScheduledDeadline(job)
+    local function waitForScheduledDeadline(job, deadline)
         while not scheduledAbilities.Cancelled do
             if schedulerLostReplayOwnership() then
                 recordScheduledAbilityFailure(
@@ -10711,13 +10714,151 @@ function LyraMacro:Run(strategy)
                 return false
             end
 
-            local remaining = job.DueAt - os.clock()
+            local remaining = (deadline or job.DueAt) - os.clock()
 
             if remaining <= 0 then
                 return true
             end
 
             task.wait(math.min(remaining, SCHEDULED_ABILITY_POLL_INTERVAL))
+        end
+
+        return false
+    end
+
+    local function activateScheduledCallOfArms(job, targetTower)
+        local readinessDeadline
+        local rejectionDeadline
+        local attemptCount = 0
+        local lastFailure = "the commander was not ready"
+
+        while not scheduledAbilities.Cancelled do
+            if schedulerLostReplayOwnership() then
+                recordScheduledAbilityFailure(
+                    job,
+                    "Replay ownership ended before the scheduled ability could run."
+                )
+                return false
+            end
+
+            if not targetTower.Parent then
+                error(
+                    "[LyraMacro] Cannot activate Call Of Arms for tower #"
+                        .. tostring(job.TowerIndex)
+                        .. "; it is missing or was sold.",
+                    0
+                )
+            end
+
+            local ready, readinessReason = getCallOfArmsTowerReadiness(
+                targetTower,
+                self.KnownTowerUpgradeLevels[targetTower]
+            )
+
+            if ready then
+                attemptCount += 1
+                local attemptStartedAt = os.clock()
+                local attempt = table.pack(pcall(function()
+                    return self:ActivateAbilityForTower(targetTower, job.Ability)
+                end))
+                local resultCount = attempt.n or #attempt
+
+                if not attempt[1] then
+                    error(
+                        "[LyraMacro] Call Of Arms remote failed for tower #"
+                            .. tostring(job.TowerIndex)
+                            .. ": "
+                            .. tostring(attempt[2]),
+                        0
+                    )
+                end
+
+                if schedulerLostReplayOwnership() then
+                    recordScheduledAbilityFailure(
+                        job,
+                        "Replay ownership ended during the scheduled ability request."
+                    )
+                    return false
+                end
+
+                if scheduledAbilities.Cancelled then
+                    return false
+                end
+
+                local remoteResults = {
+                    n = math.max(0, resultCount - 1),
+                }
+
+                for index = 2, resultCount do
+                    remoteResults[index - 1] = attempt[index]
+                end
+
+                if not remoteResultsWereRejected(remoteResults) then
+                    -- Dependent abilities anchor to the accepted attempt's
+                    -- start, never to a rejected request or response latency.
+                    job.DispatchedAt = attemptStartedAt
+                    print(
+                        "[LyraMacro] Activated "
+                            .. tostring(job.Ability)
+                            .. " for tower #"
+                            .. tostring(job.TowerIndex)
+                            .. (attemptCount > 1 and " after " .. tostring(attemptCount) .. " attempts." or ".")
+                    )
+                    return true
+                end
+
+                lastFailure = "server response: " .. summarizeRemoteResults(remoteResults)
+                rejectionDeadline = rejectionDeadline
+                    or (attemptStartedAt + SCHEDULED_COA_RECOVERY_TIMEOUT)
+            else
+                lastFailure = "commander readiness: " .. tostring(readinessReason)
+
+                -- Keep the timer nonblocking while earlier recorded upgrades
+                -- are still progressing. Once the replay reaches this ability
+                -- row, bound any remaining replication/stun wait.
+                if job.StepReached and not rejectionDeadline then
+                    readinessDeadline = readinessDeadline
+                        or (os.clock() + SCHEDULED_COA_RECOVERY_TIMEOUT)
+                end
+            end
+
+            local now = os.clock()
+            local recoveryDeadline = rejectionDeadline or readinessDeadline
+
+            if recoveryDeadline and now >= recoveryDeadline then
+                error(
+                    "[LyraMacro] Call Of Arms for tower #"
+                        .. tostring(job.TowerIndex)
+                        .. " was not accepted during its "
+                        .. tostring(SCHEDULED_COA_RECOVERY_TIMEOUT)
+                        .. "-second recovery window ("
+                        .. lastFailure
+                        .. ").",
+                    0
+                )
+            end
+
+            if ready then
+                warn(
+                    "[LyraMacro] Call Of Arms for tower #"
+                        .. tostring(job.TowerIndex)
+                        .. " was rejected; retrying in "
+                        .. tostring(CHAIN_COA_RETRY_DELAY)
+                        .. " seconds. "
+                        .. lastFailure
+                )
+
+                local retryAt = math.min(rejectionDeadline, now + CHAIN_COA_RETRY_DELAY)
+
+                if not waitForScheduledDeadline(job, retryAt) then
+                    return false
+                end
+            else
+                local readinessWait = recoveryDeadline
+                        and math.min(SCHEDULED_ABILITY_POLL_INTERVAL, recoveryDeadline - now)
+                    or SCHEDULED_ABILITY_POLL_INTERVAL
+                task.wait(readinessWait)
+            end
         end
 
         return false
@@ -10779,11 +10920,15 @@ function LyraMacro:Run(strategy)
                     return
                 end
 
-                -- Publish the actual dispatch start before InvokeServer. The
-                -- next recorded ability keeps this global start-to-start due
-                -- time, then waits here if the previous remote is still active.
-                job.DispatchedAt = os.clock()
-                self:ActivateAbility(job.TowerIndex, job.Ability)
+                if TRACKED_ABILITIES[normalizeLookupKey(job.Ability)] == "Call Of Arms" then
+                    activateScheduledCallOfArms(job, targetTower)
+                else
+                    -- Non-COA abilities keep their existing single-attempt
+                    -- behavior because retrying an ambiguous request could
+                    -- duplicate a server-accepted activation.
+                    job.DispatchedAt = os.clock()
+                    self:ActivateAbility(job.TowerIndex, job.Ability)
+                end
             end, debug.traceback)
 
             if not activated and not scheduledAbilities.Cancelled then
@@ -10908,6 +11053,7 @@ function LyraMacro:Run(strategy)
                 Delay = abilityDelay,
                 DelayFrom = step.delay_from,
                 Previous = previousAbilityJob,
+                StepReached = false,
                 Completed = false,
                 Counted = abilityDelay ~= nil,
             }
@@ -10957,6 +11103,7 @@ function LyraMacro:Run(strategy)
                         .. tostring(step.tower)
                         .. "; it is missing or was sold."
                 )
+                abilityJob.StepReached = true
 
                 if abilityJob.Counted then
                     if abilityJob.DelayFrom == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
