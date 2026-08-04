@@ -38,6 +38,7 @@ local PRIVATE_SERVER_RETURN_RELAY_TTL = 300
 local PRIVATE_SERVER_RETURN_PERMISSION_KEY = "__LyraMacroPrivateServerReturnPermissionPrompted"
 local PRIVATE_SERVER_RETURN_ROUTE_SETTING = "__LyraMacroPrivateServerReturnRoute"
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
+local ANTI_AFK_STATE_KEY = "__LyraMacroAntiAFKState"
 
 local MAP_NAME_KEYS = {
     currentmap = true,
@@ -283,6 +284,32 @@ end
 
 LocalPlayer:WaitForChild("PlayerGui")
 
+local AntiAFKSharedEnvironment
+
+if type(getgenv) == "function" then
+    local gotEnvironment, environment = pcall(getgenv)
+
+    if gotEnvironment and type(environment) == "table" then
+        AntiAFKSharedEnvironment = environment
+    end
+end
+
+local AntiAFKState = AntiAFKSharedEnvironment and AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] or nil
+
+if type(AntiAFKState) ~= "table" then
+    AntiAFKState = {}
+end
+
+if AntiAFKSharedEnvironment and AntiAFKSharedEnvironment.LyraMacroAntiAFK ~= nil then
+    AntiAFKState.Enabled = AntiAFKSharedEnvironment.LyraMacroAntiAFK ~= false
+elseif AntiAFKState.Enabled == nil then
+    AntiAFKState.Enabled = true
+end
+
+if AntiAFKSharedEnvironment then
+    AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
+end
+
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
 local RemoteEvent = ReplicatedStorage:WaitForChild("RemoteEvent")
 local TowersFolder = workspace:FindFirstChild("Towers")
@@ -299,6 +326,7 @@ local LyraMacro = {
     SelectedMode = "Normal",
     SelectedMap = "",
     ManualMapOverrideEnabled = true,
+    AntiAFKEnabled = AntiAFKState.Enabled ~= false,
     SelectedPrivateServerLinkCode = nil,
     SelectedPrivateServerLinkType = nil,
     PrivateServerStatusProvider = nil,
@@ -368,6 +396,7 @@ local LyraMacro = {
     _activeRemoteObservation = nil,
     _remoteObservationWorkerRunning = false,
     _replayOwnershipToken = nil,
+    _antiAFKConnection = nil,
 }
 
 local function getValueKind(value)
@@ -6337,6 +6366,144 @@ function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
     return false, "Timed out waiting for the destination client and map to finish loading."
 end
 
+local function isAntiAFKConnectionAlive(connection)
+    if not connection then
+        return false
+    end
+
+    local checked, connected = pcall(function()
+        return connection.Connected
+    end)
+
+    return checked and connected == true
+end
+
+local function disconnectAntiAFKConnection()
+    local connection = AntiAFKState.Connection
+
+    if connection then
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+
+    AntiAFKState.Connection = nil
+    AntiAFKState.Player = nil
+    AntiAFKState.JobId = nil
+end
+
+local function sendAntiAFKInput()
+    local gotVirtualUser, virtualUser = pcall(function()
+        return game:GetService("VirtualUser")
+    end)
+
+    if not gotVirtualUser or not virtualUser then
+        return false, virtualUser or "VirtualUser is unavailable."
+    end
+
+    local cameraCFrame = CFrame.new()
+    local currentCamera = workspace.CurrentCamera
+
+    if currentCamera then
+        local gotCamera, cameraValue = pcall(function()
+            return currentCamera.CFrame
+        end)
+
+        if gotCamera then
+            cameraCFrame = cameraValue
+        end
+    end
+
+    local position = Vector2.new(0, 0)
+    local pressed, pressError = pcall(function()
+        virtualUser:Button2Down(position, cameraCFrame)
+        task.wait(0.1)
+        virtualUser:Button2Up(position, cameraCFrame)
+    end)
+
+    if pressed then
+        return true
+    end
+
+    pcall(function()
+        virtualUser:Button2Up(position, cameraCFrame)
+    end)
+
+    local clicked, clickError = pcall(function()
+        virtualUser:CaptureController()
+        virtualUser:ClickButton2(position, cameraCFrame)
+    end)
+
+    if clicked then
+        return true
+    end
+
+    return false, tostring(clickError or pressError)
+end
+
+function LyraMacro:SetAntiAFK(enabled)
+    enabled = enabled ~= false
+    self.AntiAFKEnabled = enabled
+    AntiAFKState.Enabled = enabled
+
+    if AntiAFKSharedEnvironment then
+        AntiAFKSharedEnvironment.LyraMacroAntiAFK = enabled
+        AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
+    end
+
+    if not enabled then
+        disconnectAntiAFKConnection()
+        self._antiAFKConnection = nil
+        print("[LyraMacro] Anti-AFK disabled.")
+        return true, "Anti-AFK disabled."
+    end
+
+    local sameClient = AntiAFKState.Player == LocalPlayer and AntiAFKState.JobId == game.JobId
+
+    if sameClient and isAntiAFKConnectionAlive(AntiAFKState.Connection) then
+        self._antiAFKConnection = AntiAFKState.Connection
+        return true, "Anti-AFK is already enabled."
+    end
+
+    disconnectAntiAFKConnection()
+
+    local connected, connectionOrError = pcall(function()
+        return LocalPlayer.Idled:Connect(function()
+            if not AntiAFKState.Enabled then
+                return
+            end
+
+            local sent, sendError = sendAntiAFKInput()
+
+            if sent then
+                AntiAFKState.WarningShown = false
+            elseif not AntiAFKState.WarningShown then
+                AntiAFKState.WarningShown = true
+                warn("[LyraMacro] Anti-AFK input failed: " .. tostring(sendError))
+            end
+        end)
+    end)
+
+    if not connected or not connectionOrError then
+        self.AntiAFKEnabled = false
+        AntiAFKState.Enabled = false
+
+        if AntiAFKSharedEnvironment then
+            AntiAFKSharedEnvironment.LyraMacroAntiAFK = false
+        end
+
+        return false, "Could not enable Anti-AFK: " .. tostring(connectionOrError)
+    end
+
+    AntiAFKState.Connection = connectionOrError
+    AntiAFKState.Player = LocalPlayer
+    AntiAFKState.JobId = game.JobId
+    AntiAFKState.WarningShown = false
+    self._antiAFKConnection = connectionOrError
+    print("[LyraMacro] Anti-AFK enabled.")
+    return true, "Anti-AFK enabled."
+end
+
 function LyraMacro:SetManualMapOverrideEnabled(enabled)
     self.ManualMapOverrideEnabled = enabled ~= false
 
@@ -7805,6 +7972,16 @@ end
 function LyraMacro:CreateRecorderWindow(config)
     config = config or {}
 
+    local configuredAntiAFK = config.AntiAFKEnabled
+
+    if configuredAntiAFK == nil then
+        configuredAntiAFK = config.AntiAFK
+    end
+
+    if configuredAntiAFK ~= nil then
+        self:SetAntiAFK(configuredAntiAFK ~= false)
+    end
+
     local configuredManualMapOverride = config.ManualMapOverrideEnabled
 
     if configuredManualMapOverride == nil then
@@ -7889,6 +8066,23 @@ function LyraMacro:CreateRecorderWindow(config)
                         or "Manual map override disabled."
                 )
             end
+        end)
+        strategyTab:CreateToggle("Anti-AFK", self.AntiAFKEnabled ~= false, function(enabled)
+            local antiAFKChanged = (self.AntiAFKEnabled ~= false) ~= enabled
+            local configured, message = self:SetAntiAFK(enabled)
+
+            if not configured then
+                descriptionLabel.UpdateText(message or "Anti-AFK could not be enabled by this executor.")
+                window:Notify("Anti-AFK Unavailable", message or "Virtual input is unavailable.", 4)
+                return
+            end
+
+            if not antiAFKChanged then
+                return
+            end
+
+            descriptionLabel.UpdateText(message)
+            window:Notify(enabled and "Anti-AFK Enabled" or "Anti-AFK Disabled", message, 3)
         end)
         strategyTab:CreateToggle("Auto-record after elevator", self.AutoRecordOnTeleport, function(enabled)
             if not enabled then
@@ -9599,6 +9793,12 @@ function LyraMacro:Run(strategy)
 
     print("[LyraMacro] Strategy completed.")
     self:LogStrategyAction("STRATEGY COMPLETED")
+end
+
+local antiAFKConfigured, antiAFKMessage = LyraMacro:SetAntiAFK(LyraMacro.AntiAFKEnabled ~= false)
+
+if not antiAFKConfigured then
+    warn("[LyraMacro] " .. tostring(antiAFKMessage))
 end
 
 local function shouldAutoOpenRecorderWindow()
