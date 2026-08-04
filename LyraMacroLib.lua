@@ -1224,6 +1224,7 @@ local function getStrategyPerkStates(strategy)
                 end
 
                 local enabled
+                local unverified = false
 
                 if recordedPerk == false then
                     enabled = false
@@ -1231,23 +1232,25 @@ local function getStrategyPerkStates(strategy)
                     local tier = normalizeStrategyPerkTier(recordedPerk)
 
                     if not tier then
-                        return nil,
-                            "Strategy step #"
-                                .. tostring(stepNumber)
-                                .. " has an unverified or unknown perk: "
-                                .. tostring(recordedPerk)
-                                .. "."
-                    end
-
-                    if tier ~= definition.Tier then
+                        if normalizeLookupKey(recordedPerk) == "unverified" then
+                            unverified = true
+                        else
+                            return nil,
+                                "Strategy step #"
+                                    .. tostring(stepNumber)
+                                    .. " has an unknown perk: "
+                                    .. tostring(recordedPerk)
+                                    .. "."
+                        end
+                    elseif tier ~= definition.Tier then
                         return nil,
                             tostring(step.troop)
                                 .. " cannot use the recorded "
                                 .. tostring(tier)
                                 .. " perk."
+                    else
+                        enabled = true
                     end
-
-                    enabled = true
                 else
                     return nil,
                         "Strategy step #"
@@ -1258,19 +1261,23 @@ local function getStrategyPerkStates(strategy)
                 local troopKey = normalizeLookupKey(definition.Troop)
                 local existingState = statesByTroop[troopKey]
 
-                if existingState and existingState.Enabled ~= enabled then
-                    return nil,
-                        "The strategy records conflicting perk states for "
-                            .. tostring(definition.Troop)
-                            .. "."
-                end
-
-                if not existingState then
+                if existingState then
+                    if not existingState.Unverified and not unverified and existingState.Enabled ~= enabled then
+                        return nil,
+                            "The strategy records conflicting perk states for "
+                                .. tostring(definition.Troop)
+                                .. "."
+                    elseif existingState.Unverified and not unverified then
+                        existingState.Enabled = enabled
+                        existingState.Unverified = false
+                    end
+                else
                     local state = {
                         Definition = definition,
                         Enabled = enabled,
                         Tier = definition.Tier,
                         Troop = definition.Troop,
+                        Unverified = unverified,
                     }
                     statesByTroop[troopKey] = state
                     table.insert(states, state)
@@ -1356,6 +1363,22 @@ local function inventoryOwnsTroop(inventory, troopName)
     end
 
     return type(entry) == "table" and entry.Purchased == true
+end
+
+local function getCachedStrategyPerkStatus(troopInventory, definition)
+    local entry = definition and getNamedInventoryEntry(troopInventory, definition.Troop)
+
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local enabled = entry[definition.ToggleAction]
+
+    if type(enabled) == "boolean" then
+        return enabled
+    end
+
+    return nil
 end
 
 local function inventoryOwnsSkin(skinInventory, troopName, skinName)
@@ -1544,6 +1567,64 @@ local function readCacheValue(cacheKey, timeout)
     end
 
     return resolvedValue
+end
+
+local function resolveUnverifiedStrategyPerks(perkStates, troopInventory)
+    local needsResolution = false
+
+    for _, state in ipairs(perkStates or {}) do
+        if state.Unverified then
+            needsResolution = true
+            break
+        end
+    end
+
+    if not needsResolution then
+        return true
+    end
+
+    local inventoryError
+
+    if not troopInventory then
+        troopInventory, inventoryError = readCacheValue("Inventory.Troops")
+    end
+
+    for _, state in ipairs(perkStates) do
+        if state.Unverified then
+            local enabled = getCachedStrategyPerkStatus(troopInventory, state.Definition)
+            local statusError
+
+            if enabled == nil then
+                enabled, statusError = queryStrategyPerkStatus(state.Definition)
+            end
+
+            if enabled == nil then
+                return false,
+                    "Could not resolve the current "
+                        .. state.Tier
+                        .. " perk state for "
+                        .. state.Troop
+                        .. ": "
+                        .. (inventoryError and ("Inventory.Troops: " .. tostring(inventoryError) .. "; ") or "")
+                        .. "status remote: "
+                        .. tostring(statusError)
+            end
+
+            state.Enabled = enabled
+            state.Unverified = false
+            warn(
+                "[LyraMacro] "
+                    .. state.Troop
+                    .. " has legacy unverified perk metadata; preserving its current "
+                    .. state.Tier
+                    .. " perk state ("
+                    .. (enabled and "enabled" or "disabled")
+                    .. "). Re-record this strategy to store the exact state."
+            )
+        end
+    end
+
+    return true
 end
 
 local function readEquippedTroops(timeout)
@@ -2568,6 +2649,14 @@ function LyraMacro:CheckStrategyRequirements(strategy, options)
                 .. " AutoStrategy aborted before changing your loadout."
     end
 
+    local perksResolved, perkResolutionError = resolveUnverifiedStrategyPerks(perkStates, troopInventory)
+
+    if not perksResolved then
+        return false,
+            tostring(perkResolutionError)
+                .. " AutoStrategy aborted before changing your loadout."
+    end
+
     local missingTowers = {}
 
     for _, troopName in ipairs(loadout) do
@@ -2656,6 +2745,12 @@ function LyraMacro:ApplyStrategyPerks(strategy, perkStates)
         if not perkStates then
             return false, perkMetadataError
         end
+    end
+
+    local perksResolved, perkResolutionError = resolveUnverifiedStrategyPerks(perkStates)
+
+    if not perksResolved then
+        return false, perkResolutionError
     end
 
     local needsOwnershipLookup = false
@@ -6579,10 +6674,33 @@ function LyraMacro:_getRecordedTroopPerk(troopType, recordingSessionToken)
         return cachedPerk
     end
 
-    local enabled, statusError = queryStrategyPerkStatus(definition)
+    -- The status RemoteFunction is not consistently available in match servers.
+    -- Inventory.Troops replicates the same enabled Boolean and remains readable
+    -- there, so record from it first and keep the server query as a fallback.
+    local troopInventory, cacheError = readCacheValue("Inventory.Troops", 3)
 
     if recordingSessionToken ~= self._recordingSessionToken then
         return nil
+    end
+
+    local enabled = getCachedStrategyPerkStatus(troopInventory, definition)
+    local statusError
+
+    if enabled == nil then
+        enabled, statusError = queryStrategyPerkStatus(definition)
+
+        if recordingSessionToken ~= self._recordingSessionToken then
+            return nil
+        end
+
+        if enabled == nil then
+            statusError = "Inventory.Troops: "
+                .. tostring(cacheError or (definition.ToggleAction .. " was unavailable"))
+                .. "; status remote: "
+                .. tostring(statusError)
+        end
+    else
+        print("[LyraMacro] Recording " .. definition.Troop .. " perk state from Inventory.Troops.")
     end
 
     if enabled == nil then
@@ -6593,7 +6711,11 @@ function LyraMacro:_getRecordedTroopPerk(troopType, recordingSessionToken)
             .. " while recording: "
             .. tostring(statusError)
         self.RecordingPerkVerificationError = message
-        warn("[LyraMacro] " .. message .. ". This recording will fail closed until the perk is verified.")
+        warn(
+            "[LyraMacro] "
+                .. message
+                .. ". Replay will preserve the current perk state; re-record after verification to store it exactly."
+        )
         return "Unverified"
     end
 
