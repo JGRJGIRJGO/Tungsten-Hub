@@ -129,6 +129,7 @@ local CHAIN_COA_MIN_UPGRADE = 2
 local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
 local ABILITY_DELAY_FROM_TOWER_PLACEMENT = "tower_placement"
+local SCHEDULED_ABILITY_POLL_INTERVAL = 0.05
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
 local PRIVATE_SERVER_ENTRY_RETRY_INTERVAL = 0.1
@@ -2326,8 +2327,22 @@ function LyraMacro:ActivateAbility(towerIndex, abilityName)
         "[LyraMacro] Cannot activate an ability for tower #" .. tostring(towerIndex) .. "; it is missing or was sold."
     )
 
-    self:ActivateAbilityForTower(targetTower, abilityName)
+    local remoteResults = table.pack(self:ActivateAbilityForTower(targetTower, abilityName))
+
+    if remoteResultsWereRejected(remoteResults) then
+        error(
+            "[LyraMacro] Ability "
+                .. tostring(abilityName)
+                .. " for tower #"
+                .. tostring(towerIndex)
+                .. " was rejected: "
+                .. summarizeRemoteResults(remoteResults),
+            2
+        )
+    end
+
     print("[LyraMacro] Activated " .. tostring(abilityName) .. " for tower #" .. tostring(towerIndex) .. ".")
+    return table.unpack(remoteResults, 1, remoteResults.n)
 end
 
 function LyraMacro:_getCallOfArmsTowers()
@@ -9703,9 +9718,296 @@ function LyraMacro:Run(strategy)
     self:_watchForAutoStrategyResults()
     self:CreateStrategyLogger()
     self:LogStrategyAction("STRATEGY STARTED - " .. tostring(actionCount) .. " ACTIONS")
-    local lastAbilityDispatchedAt = os.clock()
+    local replayStartedAt = os.clock()
+    local replayOwnershipToken = self._replayOwnershipToken
+    local replayJobId = game.JobId
+    local scheduledAbilities = {
+        Cancelled = false,
+        Failure = nil,
+        Pending = 0,
+        Jobs = {},
+        JobsByStep = {},
+    }
+
+    local function completeScheduledAbility(job)
+        if job.Completed then
+            return
+        end
+
+        job.Completed = true
+
+        if job.Counted then
+            scheduledAbilities.Pending = math.max(0, scheduledAbilities.Pending - 1)
+        end
+    end
+
+    local function recordScheduledAbilityFailure(job, failure)
+        if not scheduledAbilities.Failure then
+            scheduledAbilities.Failure = {
+                StepNumber = job.StepNumber,
+                Description = job.Description,
+                Error = failure,
+            }
+            scheduledAbilities.Cancelled = true
+        end
+    end
+
+    local function schedulerLostReplayOwnership()
+        if game.JobId ~= replayJobId then
+            return true
+        end
+
+        return replayOwnershipToken ~= nil and self._replayOwnershipToken ~= replayOwnershipToken
+    end
+
+    local function waitForSchedulerValue(job, valueProvider)
+        while not scheduledAbilities.Cancelled do
+            if schedulerLostReplayOwnership() then
+                recordScheduledAbilityFailure(
+                    job,
+                    "Replay ownership ended before the scheduled ability could run."
+                )
+                return nil
+            end
+
+            local value = valueProvider()
+
+            if value ~= nil then
+                return value
+            end
+
+            task.wait(SCHEDULED_ABILITY_POLL_INTERVAL)
+        end
+
+        return nil
+    end
+
+    local function waitForScheduledDeadline(job)
+        while not scheduledAbilities.Cancelled do
+            if schedulerLostReplayOwnership() then
+                recordScheduledAbilityFailure(
+                    job,
+                    "Replay ownership ended before the scheduled ability could run."
+                )
+                return false
+            end
+
+            local remaining = job.DueAt - os.clock()
+
+            if remaining <= 0 then
+                return true
+            end
+
+            task.wait(math.min(remaining, SCHEDULED_ABILITY_POLL_INTERVAL))
+        end
+
+        return false
+    end
+
+    local function startScheduledAbility(job)
+        task.spawn(function()
+            local activated, activationError = xpcall(function()
+                local delayAnchor
+
+                if job.DelayFrom == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
+                    delayAnchor = waitForSchedulerValue(job, function()
+                        return tonumber(self.SpawnedTowerPlacedAt[job.TowerIndex])
+                    end)
+                elseif job.Previous then
+                    delayAnchor = waitForSchedulerValue(job, function()
+                        return tonumber(job.Previous.DispatchedAt)
+                    end)
+                else
+                    delayAnchor = replayStartedAt
+                end
+
+                if delayAnchor == nil or scheduledAbilities.Cancelled then
+                    return
+                end
+
+                job.DueAt = delayAnchor + job.Delay
+                local remainingDelay = math.max(0, job.DueAt - os.clock())
+                print(
+                    "[LyraMacro] Scheduled "
+                        .. tostring(job.Ability)
+                        .. " for tower #"
+                        .. tostring(job.TowerIndex)
+                        .. " in "
+                        .. formatNumber(remainingDelay)
+                        .. " seconds; replay will continue with placements and upgrades."
+                )
+
+                if not waitForScheduledDeadline(job) or scheduledAbilities.Cancelled then
+                    return
+                end
+
+                if job.Previous then
+                    local previousCompleted = waitForSchedulerValue(job, function()
+                        return job.Previous.Completed and true or nil
+                    end)
+
+                    if not previousCompleted or scheduledAbilities.Cancelled then
+                        return
+                    end
+                end
+
+                local targetTower = waitForSchedulerValue(job, function()
+                    local tower = self.SpawnedTowers[job.TowerIndex]
+                    return tower and tower.Parent and tower or nil
+                end)
+
+                if not targetTower or scheduledAbilities.Cancelled then
+                    return
+                end
+
+                -- Publish the actual dispatch start before InvokeServer. The
+                -- next recorded ability keeps this global start-to-start due
+                -- time, then waits here if the previous remote is still active.
+                job.DispatchedAt = os.clock()
+                self:ActivateAbility(job.TowerIndex, job.Ability)
+            end, debug.traceback)
+
+            if not activated and not scheduledAbilities.Cancelled then
+                recordScheduledAbilityFailure(job, activationError)
+            end
+
+            completeScheduledAbility(job)
+        end)
+    end
+
+    local function waitForScheduledAbilities(towerIndex, beforeStepNumber, reason)
+        local function getPendingCount()
+            if towerIndex == nil and beforeStepNumber == nil then
+                return scheduledAbilities.Pending
+            end
+
+            local count = 0
+
+            for _, job in ipairs(scheduledAbilities.Jobs) do
+                if job.Counted
+                    and not job.Completed
+                    and (towerIndex == nil or job.TowerIndex == towerIndex)
+                    and (beforeStepNumber == nil or job.StepNumber < beforeStepNumber) then
+                    count += 1
+                end
+            end
+
+            return count
+        end
+
+        local pendingCount = getPendingCount()
+
+        if pendingCount <= 0 then
+            return scheduledAbilities.Failure == nil
+        end
+
+        if towerIndex ~= nil then
+            print(
+                "[LyraMacro] Waiting for "
+                    .. tostring(pendingCount)
+                    .. " scheduled ability action(s) before selling tower #"
+                    .. tostring(towerIndex)
+                    .. "."
+            )
+        else
+            print(
+                "[LyraMacro] Waiting for "
+                    .. tostring(pendingCount)
+                    .. " scheduled ability action(s) before "
+                    .. tostring(reason or "completing the strategy")
+                    .. "."
+            )
+        end
+
+        while getPendingCount() > 0 do
+            if scheduledAbilities.Failure then
+                return false
+            end
+
+            task.wait(SCHEDULED_ABILITY_POLL_INTERVAL)
+        end
+
+        return scheduledAbilities.Failure == nil
+    end
+
+    local function waitForScheduledAbilityJob(job)
+        while not job.Completed do
+            if scheduledAbilities.Failure then
+                return false
+            end
+
+            task.wait(SCHEDULED_ABILITY_POLL_INTERVAL)
+        end
+
+        return scheduledAbilities.Failure == nil
+    end
+
+    local function failReplay(stepNumber, actionDescription, actionError)
+        scheduledAbilities.Cancelled = true
+        if self.ChainCOAEnabled then
+            pcall(function()
+                self:SetChainCOA(false, { Record = false })
+            end)
+        end
+        pcall(function()
+            self:LogStrategyAction(
+                "STRATEGY FAILED - STEP " .. tostring(stepNumber) .. "  " .. actionDescription
+            )
+        end)
+        self:_releaseReplayOwnership()
+        error(
+            "[LyraMacro] Strategy step "
+                .. tostring(stepNumber)
+                .. " ("
+                .. actionDescription
+                .. ") failed: "
+                .. tostring(actionError),
+            0
+        )
+    end
+
+    local function failScheduledAbilityIfNeeded()
+        local failure = scheduledAbilities.Failure
+
+        if failure then
+            failReplay(failure.StepNumber, failure.Description, failure.Error)
+        end
+    end
+
+    local previousAbilityJob
 
     for stepNumber = 1, actionCount do
+        local step = strategy[stepNumber]
+
+        if step.action == "ability" then
+            local abilityDelay = normalizeAbilityDelay(step.delay)
+            local job = {
+                StepNumber = stepNumber,
+                Description = describeStrategyStep(step),
+                TowerIndex = step.tower,
+                Ability = step.ability,
+                Delay = abilityDelay,
+                DelayFrom = step.delay_from,
+                Previous = previousAbilityJob,
+                Completed = false,
+                Counted = abilityDelay ~= nil,
+            }
+
+            table.insert(scheduledAbilities.Jobs, job)
+            scheduledAbilities.JobsByStep[stepNumber] = job
+
+            if job.Counted then
+                scheduledAbilities.Pending += 1
+                startScheduledAbility(job)
+            end
+
+            previousAbilityJob = job
+        end
+    end
+
+    for stepNumber = 1, actionCount do
+        failScheduledAbilityIfNeeded()
+
         local step = strategy[stepNumber]
         local action = step.action
         local actionDescription = describeStrategyStep(step)
@@ -9723,8 +10025,12 @@ function LyraMacro:Run(strategy)
             elseif action == "upgrade" then
                 self:Upgrade(step.tower, step.level)
             elseif action == "sell" then
-                self:Sell(step.tower)
+                if waitForScheduledAbilities(step.tower, stepNumber) then
+                    self:Sell(step.tower)
+                end
             elseif action == "ability" then
+                local abilityJob = scheduledAbilities.JobsByStep[stepNumber]
+                assert(abilityJob, "[LyraMacro] Scheduled ability metadata is missing.")
                 local targetTower = self.SpawnedTowers[step.tower]
                 assert(
                     targetTower and targetTower.Parent,
@@ -9733,47 +10039,38 @@ function LyraMacro:Run(strategy)
                         .. "; it is missing or was sold."
                 )
 
-                local abilityDelay = normalizeAbilityDelay(step.delay)
-
-                if abilityDelay then
-                    local delayAnchor = lastAbilityDispatchedAt
-
-                    if step.delay_from == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
-                        delayAnchor = tonumber(self.SpawnedTowerPlacedAt[step.tower])
+                if abilityJob.Counted then
+                    if abilityJob.DelayFrom == ABILITY_DELAY_FROM_TOWER_PLACEMENT then
                         assert(
-                            delayAnchor,
+                            tonumber(self.SpawnedTowerPlacedAt[step.tower]),
                             "[LyraMacro] Timed ability for tower #"
                                 .. tostring(step.tower)
                                 .. " is missing its replay placement timestamp."
                         )
                     end
 
-                    local remainingDelay = delayAnchor + abilityDelay - os.clock()
-
-                    if remainingDelay > 0 then
-                        print(
-                            "[LyraMacro] Waiting "
-                                .. formatNumber(remainingDelay)
-                                .. " seconds for the recorded ability timing."
-                        )
-                        task.wait(remainingDelay)
+                    waitForScheduledAbilityJob(abilityJob)
+                else
+                    -- Legacy abilities without timing metadata remain ordered
+                    -- and synchronous at their original strategy step.
+                    if waitForScheduledAbilities(nil, stepNumber, "running an immediate ability") then
+                        abilityJob.DispatchedAt = os.clock()
+                        self:ActivateAbility(step.tower, step.ability)
+                        completeScheduledAbility(abilityJob)
                     end
                 end
-
-                -- Anchor start-to-start timing before InvokeServer so remote
-                -- latency does not stretch the next recorded ability interval.
-                lastAbilityDispatchedAt = os.clock()
-                self:ActivateAbility(step.tower, step.ability)
             elseif action == "chaincoa" then
-                local chained, chainMessage = self:SetChainCOA(step.enabled ~= false, {
-                    ActiveDuration = step.active_duration,
-                    HandoffDelay = step.handoff_delay,
-                    RetryDelay = step.retry_delay,
-                    Record = false,
-                })
+                if waitForScheduledAbilities(nil, stepNumber, "changing Chain COA") then
+                    local chained, chainMessage = self:SetChainCOA(step.enabled ~= false, {
+                        ActiveDuration = step.active_duration,
+                        HandoffDelay = step.handoff_delay,
+                        RetryDelay = step.retry_delay,
+                        Record = false,
+                    })
 
-                if not chained then
-                    error(chainMessage or "Chain COA could not be configured.")
+                    if not chained then
+                        error(chainMessage or "Chain COA could not be configured.")
+                    end
                 end
             else
                 error("[LyraMacro] Unknown action: " .. action)
@@ -9781,16 +10078,14 @@ function LyraMacro:Run(strategy)
         end, debug.traceback)
 
         if not executed then
-            pcall(function()
-                self:LogStrategyAction(
-                    "STRATEGY FAILED - STEP " .. tostring(stepNumber) .. "  " .. actionDescription
-                )
-            end)
-            self:_releaseReplayOwnership()
-            error("[LyraMacro] Strategy step " .. tostring(stepNumber) .. " (" .. actionDescription .. ") failed: " .. tostring(actionError), 0)
+            failReplay(stepNumber, actionDescription, actionError)
         end
+
+        failScheduledAbilityIfNeeded()
     end
 
+    waitForScheduledAbilities()
+    failScheduledAbilityIfNeeded()
     print("[LyraMacro] Strategy completed.")
     self:LogStrategyAction("STRATEGY COMPLETED")
 end
