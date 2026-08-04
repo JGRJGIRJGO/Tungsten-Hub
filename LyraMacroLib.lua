@@ -27,6 +27,10 @@ local PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX = "roblox://navigation/share_links?
 local PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX = "&type=Server"
 local PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX = "https://www.roblox.com/games/start?placeId=113331026373939&linkCode="
 local PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX = "roblox://placeId=113331026373939&linkCode="
+local PRIVATE_SERVER_LINK_TYPE_SHARE = "share"
+local PRIVATE_SERVER_LINK_TYPE_LEGACY = "legacy"
+local PRIVATE_SERVER_RETURN_RELAY_MAX_HOPS = 3
+local PRIVATE_SERVER_RETURN_RELAY_TTL = 300
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 
 local MAP_NAME_KEYS = {
@@ -219,6 +223,7 @@ local LyraMacro = {
     SelectedMap = "",
     ManualMapOverrideEnabled = true,
     SelectedPrivateServerLinkCode = nil,
+    SelectedPrivateServerLinkType = nil,
     PrivateServerStatusProvider = nil,
     PrivateServerReturnProvider = nil,
     PrivateServerReturnUrl = nil,
@@ -2298,6 +2303,46 @@ function LyraMacro:VoteMode(modeName, confirmed)
     )
 end
 
+local function normalizePrivateServerLinkType(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local linkType = string.lower(trimString(value))
+
+    if linkType == PRIVATE_SERVER_LINK_TYPE_SHARE or linkType == "modern" then
+        return PRIVATE_SERVER_LINK_TYPE_SHARE
+    end
+
+    if linkType == PRIVATE_SERVER_LINK_TYPE_LEGACY
+        or linkType == "linkcode"
+        or linkType == "privateserverlinkcode" then
+        return PRIVATE_SERVER_LINK_TYPE_LEGACY
+    end
+
+    return nil
+end
+
+local function detectPrivateServerLinkType(value)
+    if value == nil then
+        return nil
+    end
+
+    local linkValue = string.lower(trimString(value))
+
+    if linkValue:find("/share", 1, true)
+        or linkValue:find("navigation/share_links", 1, true) then
+        return PRIVATE_SERVER_LINK_TYPE_SHARE
+    end
+
+    if linkValue:find("privateserverlinkcode=", 1, true)
+        or linkValue:find("linkcode=", 1, true) then
+        return PRIVATE_SERVER_LINK_TYPE_LEGACY
+    end
+
+    return nil
+end
+
 local function normalizePrivateServerLinkCode(value)
     if value == nil then
         return nil
@@ -2330,16 +2375,27 @@ local function normalizePrivateServerLinkCode(value)
     return linkCode
 end
 
-function LyraMacro:SetPrivateServerLinkCode(linkCode)
+function LyraMacro:SetPrivateServerLinkCode(linkCode, linkType)
     self.SelectedPrivateServerLinkCode = normalizePrivateServerLinkCode(linkCode)
+    self.SelectedPrivateServerLinkType = self.SelectedPrivateServerLinkCode
+            and (
+                normalizePrivateServerLinkType(linkType)
+                or detectPrivateServerLinkType(linkCode)
+                or PRIVATE_SERVER_LINK_TYPE_SHARE
+            )
+        or nil
 
     if self.SelectedPrivateServerLinkCode then
-        print("[LyraMacro] Private server link code configured.")
+        print(
+            "[LyraMacro] Private server "
+                .. tostring(self.SelectedPrivateServerLinkType)
+                .. " link code configured."
+        )
     else
         print("[LyraMacro] Private server link code cleared.")
     end
 
-    return self.SelectedPrivateServerLinkCode
+    return self.SelectedPrivateServerLinkCode, self.SelectedPrivateServerLinkType
 end
 
 function LyraMacro:SetPrivateServerStatusProvider(provider)
@@ -2977,7 +3033,13 @@ function LyraMacro:GameInfo(mapName, privateServerLinkCodeOrOptions, maybeOption
     local normalizedMapName = normalizeMapCandidate(mapName) or tostring(mapName or "")
     self.SelectedMap = normalizedMapName
     self.LastDetectedMapSource = options.Source or "manual"
-    self:SetPrivateServerLinkCode(privateServerLinkCode)
+    self:SetPrivateServerLinkCode(
+        privateServerLinkCode,
+        options.PrivateServerLinkType
+            or options.PrivateServerCodeType
+            or options.privateServerLinkType
+            or options.privateServerCodeType
+    )
     print("[LyraMacro] Match configured for map: " .. normalizedMapName)
 end
 
@@ -3007,6 +3069,94 @@ local function getTeleportQueueFunction()
     end
 
     return nil
+end
+
+local function getPrivateServerReturnRelaySource(linkCode, linkType, attemptsRemaining, expiresAt)
+    local lines = {
+        "if not game:IsLoaded() then",
+        "    game.Loaded:Wait()",
+        "end",
+        "",
+        "local LOBBY_PLACE_ID = " .. tostring(LOBBY_PLACE_ID),
+        "local PRIVATE_SERVER_LINK_CODE = " .. formatLuaValue(linkCode),
+        "local PRIVATE_SERVER_LINK_TYPE = " .. formatLuaValue(linkType),
+        "local RELAY_ATTEMPTS_REMAINING = " .. tostring(attemptsRemaining),
+        "local RELAY_EXPIRES_AT = " .. tostring(expiresAt),
+        "",
+        "if os.time() > RELAY_EXPIRES_AT then",
+        "    warn(\"[LyraMacro] Private-lobby return relay expired.\")",
+        "    return",
+        "end",
+        "",
+        "if game.PlaceId ~= LOBBY_PLACE_ID then",
+        "    warn(\"[LyraMacro] Private-lobby return relay ignored a non-lobby destination.\")",
+        "    return",
+        "end",
+        "",
+        "if game.PrivateServerId ~= \"\" and (tonumber(game.PrivateServerOwnerId) or 0) > 0 then",
+        "    print(\"[LyraMacro] Private-lobby arrival confirmed.\")",
+        "    return",
+        "end",
+        "",
+        "warn(\"[LyraMacro] Public lobby detected after match; retrying the configured private-server link.\")",
+        "local previousAutoUI",
+        "local hasSharedEnvironment = type(getgenv) == \"function\"",
+        "",
+        "if hasSharedEnvironment then",
+        "    previousAutoUI = getgenv().LyraMacroAutoUI",
+        "    getgenv().LyraMacroAutoUI = false",
+        "end",
+        "",
+        "local loaded, LyraMacro = pcall(function()",
+        "    return loadstring(game:HttpGet("
+            .. formatLuaValue(getCacheBustedUrlPrefix(DEFAULT_MACRO_LIBRARY_URL))
+            .. " .. tostring(os.time())))()",
+        "end)",
+        "",
+        "if hasSharedEnvironment then",
+        "    getgenv().LyraMacroAutoUI = previousAutoUI",
+        "end",
+        "",
+        "if not loaded then",
+        "    warn(\"[LyraMacro] Private-lobby return relay could not load the library: \" .. tostring(LyraMacro))",
+        "    return",
+        "end",
+        "",
+        "LyraMacro:SetPrivateServerLinkCode(PRIVATE_SERVER_LINK_CODE, PRIVATE_SERVER_LINK_TYPE)",
+        "local returned, message = LyraMacro:ReturnToPrivateServer(nil, {",
+        "    RelayAttemptsRemaining = RELAY_ATTEMPTS_REMAINING,",
+        "    RelayExpiresAt = RELAY_EXPIRES_AT,",
+        "})",
+        "",
+        "if not returned then",
+        "    warn(\"[LyraMacro] Private-lobby return relay failed: \" .. tostring(message))",
+        "end",
+    }
+
+    return table.concat(lines, "\n")
+end
+
+local function queuePrivateServerReturnRelay(linkCode, linkType, attemptsRemaining, expiresAt)
+    if attemptsRemaining < 0 then
+        return false, "private-lobby return relay limit reached"
+    end
+
+    local queueTeleport = getTeleportQueueFunction()
+
+    if not queueTeleport then
+        return false, "executor does not expose queue_on_teleport"
+    end
+
+    local queued, queueError = pcall(
+        queueTeleport,
+        getPrivateServerReturnRelaySource(linkCode, linkType, attemptsRemaining, expiresAt)
+    )
+
+    if not queued then
+        return false, tostring(queueError)
+    end
+
+    return true
 end
 
 local EXECUTOR_URL_LAUNCHER_NAMES = {
@@ -3225,9 +3375,13 @@ function LyraMacro:GetPrivateServerReturnUrl()
         return nil
     end
 
-    return PRIVATE_SERVER_RETURN_URL_PREFIX
-        .. HttpService:UrlEncode(linkCode)
-        .. PRIVATE_SERVER_RETURN_URL_SUFFIX
+    local encodedLinkCode = HttpService:UrlEncode(linkCode)
+
+    if self.SelectedPrivateServerLinkType == PRIVATE_SERVER_LINK_TYPE_LEGACY then
+        return PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX .. encodedLinkCode
+    end
+
+    return PRIVATE_SERVER_RETURN_URL_PREFIX .. encodedLinkCode .. PRIVATE_SERVER_RETURN_URL_SUFFIX
 end
 
 function LyraMacro:GetPrivateServerReturnDeepLink()
@@ -3237,22 +3391,36 @@ function LyraMacro:GetPrivateServerReturnDeepLink()
         return nil
     end
 
-    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX
-        .. HttpService:UrlEncode(linkCode)
-        .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX
-end
-
-local function getPrivateServerReturnLaunchTargets(linkCode)
     local encodedLinkCode = HttpService:UrlEncode(linkCode)
 
+    if self.SelectedPrivateServerLinkType == PRIVATE_SERVER_LINK_TYPE_LEGACY then
+        return PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX .. encodedLinkCode
+    end
+
+    return PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX .. encodedLinkCode .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX
+end
+
+local function getPrivateServerReturnLaunchTargets(linkCode, linkType)
+    local encodedLinkCode = HttpService:UrlEncode(linkCode)
+
+    if linkType == PRIVATE_SERVER_LINK_TYPE_LEGACY then
+        return {
+            {
+                Kind = "legacy Roblox web link",
+                Url = PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX .. encodedLinkCode,
+                IsWeb = true,
+            },
+            {
+                Kind = "legacy Roblox deep link",
+                Url = PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX .. encodedLinkCode,
+                IsWeb = false,
+            },
+        }
+    end
+
+    -- The HTTPS share link is Roblox's canonical iOS-compatible entry point.
+    -- Do not reuse its share token as a legacy linkCode; they are different IDs.
     return {
-        {
-            Kind = "Roblox share deep link",
-            Url = PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX
-                .. encodedLinkCode
-                .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX,
-            IsWeb = false,
-        },
         {
             Kind = "Roblox share web link",
             Url = PRIVATE_SERVER_RETURN_URL_PREFIX
@@ -3261,14 +3429,11 @@ local function getPrivateServerReturnLaunchTargets(linkCode)
             IsWeb = true,
         },
         {
-            Kind = "legacy Roblox deep link",
-            Url = PRIVATE_SERVER_RETURN_LEGACY_DEEP_LINK_PREFIX .. encodedLinkCode,
+            Kind = "Roblox share deep link",
+            Url = PRIVATE_SERVER_RETURN_DEEP_LINK_PREFIX
+                .. encodedLinkCode
+                .. PRIVATE_SERVER_RETURN_DEEP_LINK_SUFFIX,
             IsWeb = false,
-        },
-        {
-            Kind = "legacy Roblox web link",
-            Url = PRIVATE_SERVER_RETURN_LEGACY_URL_PREFIX .. encodedLinkCode,
-            IsWeb = true,
         },
     }
 end
@@ -3397,12 +3562,20 @@ local function activateResultsLobbyButton(button)
     return false, "executor does not expose firesignal or usable getconnections"
 end
 
-function LyraMacro:ReturnToPrivateServer(results)
+function LyraMacro:ReturnToPrivateServer(results, options)
+    options = options or {}
+
     if self._privateServerReturnStarted then
         return true, "Lobby return is already in progress."
     end
 
     local linkCode = normalizePrivateServerLinkCode(self.SelectedPrivateServerLinkCode)
+    local linkType = linkCode
+            and (
+                normalizePrivateServerLinkType(self.SelectedPrivateServerLinkType)
+                or PRIVATE_SERVER_LINK_TYPE_SHARE
+            )
+        or nil
     local url = linkCode and self:GetPrivateServerReturnUrl() or nil
     local deepLink = linkCode and self:GetPrivateServerReturnDeepLink() or nil
     local destinationName = linkCode and "configured private lobby" or "lobby"
@@ -3411,7 +3584,7 @@ function LyraMacro:ReturnToPrivateServer(results)
 
     if linkCode and not usesProvider then
         privateLaunchCandidates = getPrivateServerLaunchCandidates(
-            getPrivateServerReturnLaunchTargets(linkCode)
+            getPrivateServerReturnLaunchTargets(linkCode, linkType)
         )
     end
 
@@ -3425,6 +3598,39 @@ function LyraMacro:ReturnToPrivateServer(results)
     self._privateServerReturnStarted = true
     self.PrivateServerReturnUrl = url
     self.PrivateServerReturnDeepLink = deepLink
+
+    if linkCode and not usesProvider then
+        local relayAttemptsRemaining = math.clamp(
+            math.floor(tonumber(options.RelayAttemptsRemaining) or PRIVATE_SERVER_RETURN_RELAY_MAX_HOPS),
+            0,
+            PRIVATE_SERVER_RETURN_RELAY_MAX_HOPS
+        )
+        local relayExpiresAt = math.floor(
+            tonumber(options.RelayExpiresAt) or (os.time() + PRIVATE_SERVER_RETURN_RELAY_TTL)
+        )
+
+        if relayAttemptsRemaining > 0 and relayExpiresAt > os.time() then
+            local relayQueued, relayError = queuePrivateServerReturnRelay(
+                linkCode,
+                linkType,
+                relayAttemptsRemaining - 1,
+                relayExpiresAt
+            )
+
+            if relayQueued then
+                print(
+                    "[LyraMacro] Private-lobby destination verification queued with "
+                        .. tostring(relayAttemptsRemaining)
+                        .. " hop(s) remaining."
+                )
+            else
+                warn(
+                    "[LyraMacro] Private-lobby destination verification could not be queued: "
+                        .. tostring(relayError)
+                )
+            end
+        end
+    end
 
     local attempts = 0
     local completed = false
@@ -4458,16 +4664,28 @@ function LyraMacro:_getStrategyReplayTeleportSource(replay, mapTitle)
 
     local replayMapName = normalizeMapCandidate(mapTitle or replay.TargetMap)
     local privateServerLinkCode = normalizePrivateServerLinkCode(replay.PrivateServerLinkCode)
+    local privateServerLinkType = privateServerLinkCode
+            and (
+                normalizePrivateServerLinkType(replay.PrivateServerLinkType)
+                or detectPrivateServerLinkType(replay.PrivateServerLinkCode)
+                or PRIVATE_SERVER_LINK_TYPE_SHARE
+            )
+        or nil
 
     if replayMapName then
         if privateServerLinkCode then
+            local gameInfoOptions = "{ Source = \"elevator\", PrivateServerLinkType = "
+                .. formatLuaValue(privateServerLinkType)
+                .. " }"
             table.insert(
                 lines,
                 "LyraMacro:GameInfo("
                     .. formatLuaValue(replayMapName)
                     .. ", "
                     .. formatLuaValue(privateServerLinkCode)
-                    .. ", { Source = \"elevator\" })"
+                    .. ", "
+                    .. gameInfoOptions
+                    .. ")"
             )
         else
             table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(replayMapName) .. ", { Source = \"elevator\" })")
@@ -4475,7 +4693,14 @@ function LyraMacro:_getStrategyReplayTeleportSource(replay, mapTitle)
 
         table.insert(lines, "")
     elseif privateServerLinkCode then
-        table.insert(lines, "LyraMacro:SetPrivateServerLinkCode(" .. formatLuaValue(privateServerLinkCode) .. ")")
+        table.insert(
+            lines,
+            "LyraMacro:SetPrivateServerLinkCode("
+                .. formatLuaValue(privateServerLinkCode)
+                .. ", "
+                .. formatLuaValue(privateServerLinkType)
+                .. ")"
+        )
         table.insert(lines, "")
     end
 
@@ -4574,13 +4799,25 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
     end
 
     local targetMap = normalizeMapCandidate(options.MapName or self.SelectedMap)
-    local privateServerLinkCode = normalizePrivateServerLinkCode(
-        options.PrivateServerLinkCode
-            or options.PrivateServerCode
-            or options.privateServerLinkCode
-            or options.privateServerCode
-            or self.SelectedPrivateServerLinkCode
-    )
+    local explicitPrivateServerLink = options.PrivateServerLinkCode
+        or options.PrivateServerCode
+        or options.privateServerLinkCode
+        or options.privateServerCode
+    local privateServerLinkValue = explicitPrivateServerLink or self.SelectedPrivateServerLinkCode
+    local privateServerLinkCode = normalizePrivateServerLinkCode(privateServerLinkValue)
+    local privateServerLinkType = privateServerLinkCode
+            and (
+                normalizePrivateServerLinkType(
+                    options.PrivateServerLinkType
+                        or options.PrivateServerCodeType
+                        or options.privateServerLinkType
+                        or options.privateServerCodeType
+                )
+                or detectPrivateServerLinkType(privateServerLinkValue)
+                or (not explicitPrivateServerLink and self.SelectedPrivateServerLinkType)
+                or PRIVATE_SERVER_LINK_TYPE_SHARE
+            )
+        or nil
     self.PendingElevatorReplay = {
         Strategy = cloneStrategy(strategy),
         ExpectedFingerprint = type(expectedFingerprint) == "string" and expectedFingerprint or nil,
@@ -4588,6 +4825,7 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
         Timeout = options.Timeout or self.AutoRecordTimeout,
         TargetMap = targetMap,
         PrivateServerLinkCode = privateServerLinkCode,
+        PrivateServerLinkType = privateServerLinkType,
     }
     self.AutoRecordTeleportArmed = false
 
@@ -5724,7 +5962,15 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
     }
 
     if type(self.SelectedMap) == "string" and self.SelectedMap ~= "" then
-        local gameInfoOptions = "{ Source = " .. formatLuaValue(self.LastDetectedMapSource or "recorded") .. " }"
+        local gameInfoOptions = "{ Source = " .. formatLuaValue(self.LastDetectedMapSource or "recorded")
+
+        if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
+            gameInfoOptions = gameInfoOptions
+                .. ", PrivateServerLinkType = "
+                .. formatLuaValue(self.SelectedPrivateServerLinkType or PRIVATE_SERVER_LINK_TYPE_SHARE)
+        end
+
+        gameInfoOptions = gameInfoOptions .. " }"
 
         if type(self.SelectedPrivateServerLinkCode) == "string" and self.SelectedPrivateServerLinkCode ~= "" then
             table.insert(lines, "LyraMacro:GameInfo(" .. formatLuaValue(self.SelectedMap) .. ", " .. formatLuaValue(self.SelectedPrivateServerLinkCode) .. ", " .. gameInfoOptions .. ")")
