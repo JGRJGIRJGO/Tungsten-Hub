@@ -177,8 +177,8 @@ local CHAIN_COA_RETRY_DELAY = 2
 local CHAIN_COA_POLL_INTERVAL = 0.15
 local ABILITY_DELAY_FROM_TOWER_PLACEMENT = "tower_placement"
 local SCHEDULED_ABILITY_POLL_INTERVAL = 0.05
-local SCHEDULED_COA_RECOVERY_TIMEOUT = CHAIN_COA_ACTIVE_DURATION
-    + CHAIN_COA_HANDOFF_DELAY
+local SCHEDULED_COA_MINIMUM_GAP = CHAIN_COA_ACTIVE_DURATION + CHAIN_COA_HANDOFF_DELAY
+local SCHEDULED_COA_RECOVERY_TIMEOUT = SCHEDULED_COA_MINIMUM_GAP
     + CHAIN_COA_RETRY_DELAY
 local PRIVATE_SERVER_REFRESH_INTERVAL = 0.5
 local PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL = 0.03
@@ -422,6 +422,10 @@ local LyraMacro = {
     ChainCOARetryDelay = CHAIN_COA_RETRY_DELAY,
     ChainCOANextIndex = 0,
     ChainCOASeenTowers = {},
+    _callOfArmsJobId = game.JobId,
+    _lastAcceptedCallOfArmsAt = nil,
+    _callOfArmsAttemptOwner = nil,
+    _scheduledCallOfArmsWaiters = 0,
     _chainCOAInternalAbilityRequests = setmetatable({}, { __mode = "k" }),
     _chainCOAToken = 0,
     _chainCOAConnections = {},
@@ -2359,6 +2363,84 @@ local function getCallOfArmsTowerReadiness(tower, knownUpgradeLevel)
     return true
 end
 
+local function waitForCallOfArmsAttemptSlot(macro, options)
+    options = type(options) == "table" and options or {}
+    local isActive = assert(options.IsActive, "Call Of Arms attempt slots require an activity check.")
+    local isScheduled = options.IsScheduled == true
+    local pollInterval = math.max(0.01, tonumber(options.PollInterval) or SCHEDULED_ABILITY_POLL_INTERVAL)
+    local reportedMinimumAt
+    local slotJobId = game.JobId
+
+    if macro._callOfArmsJobId ~= slotJobId then
+        macro._callOfArmsJobId = slotJobId
+        macro._lastAcceptedCallOfArmsAt = nil
+        macro._callOfArmsAttemptOwner = nil
+        macro._scheduledCallOfArmsWaiters = 0
+    end
+
+    if isScheduled then
+        macro._scheduledCallOfArmsWaiters += 1
+    end
+
+    local function stopWaiting()
+        if isScheduled then
+            if macro._callOfArmsJobId == slotJobId then
+                macro._scheduledCallOfArmsWaiters = math.max(0, macro._scheduledCallOfArmsWaiters - 1)
+            end
+
+            isScheduled = false
+        end
+    end
+
+    while isActive() do
+        local now = os.clock()
+        local lastAcceptedAt = tonumber(macro._lastAcceptedCallOfArmsAt)
+        local minimumAt = lastAcceptedAt and (lastAcceptedAt + SCHEDULED_COA_MINIMUM_GAP) or nil
+        local scheduledAbilityHasPriority = options.IsScheduled ~= true
+            and macro._scheduledCallOfArmsWaiters > 0
+
+        if macro._callOfArmsAttemptOwner == nil
+            and not scheduledAbilityHasPriority
+            and (not minimumAt or now >= minimumAt) then
+            stopWaiting()
+            local attemptOwner = {}
+            macro._callOfArmsAttemptOwner = attemptOwner
+            return attemptOwner
+        end
+
+        if minimumAt and now < minimumAt and minimumAt ~= reportedMinimumAt then
+            reportedMinimumAt = minimumAt
+
+            if type(options.OnMinimumWait) == "function" then
+                options.OnMinimumWait(minimumAt, minimumAt - now)
+            end
+        end
+
+        local waitDuration = pollInterval
+
+        if minimumAt and now < minimumAt then
+            waitDuration = math.min(waitDuration, minimumAt - now)
+        end
+
+        task.wait(waitDuration)
+    end
+
+    stopWaiting()
+    return false
+end
+
+local function finishCallOfArmsAttempt(macro, attemptOwner, attemptStartedAt, accepted)
+    if macro._callOfArmsJobId ~= game.JobId or macro._callOfArmsAttemptOwner ~= attemptOwner then
+        return
+    end
+
+    if accepted then
+        macro._lastAcceptedCallOfArmsAt = attemptStartedAt
+    end
+
+    macro._callOfArmsAttemptOwner = nil
+end
+
 function LyraMacro:ActivateAbilityForTower(tower, abilityName, options)
     assert(tower and tower.Parent, "[LyraMacro] Cannot activate an ability for a missing tower.")
 
@@ -2456,12 +2538,14 @@ function LyraMacro:SetChainCOA(enabled, options)
     local configuredHandoffDelay = tonumber(options.HandoffDelay)
     local configuredRetryDelay = tonumber(options.RetryDelay)
 
-    if configuredActiveDuration then
-        self.ChainCOAActiveDuration = math.max(0, configuredActiveDuration)
-    end
-    if configuredHandoffDelay then
-        self.ChainCOAHandoffDelay = math.max(0, configuredHandoffDelay)
-    end
+    self.ChainCOAActiveDuration = math.max(
+        CHAIN_COA_ACTIVE_DURATION,
+        configuredActiveDuration or tonumber(self.ChainCOAActiveDuration) or CHAIN_COA_ACTIVE_DURATION
+    )
+    self.ChainCOAHandoffDelay = math.max(
+        CHAIN_COA_HANDOFF_DELAY,
+        configuredHandoffDelay or tonumber(self.ChainCOAHandoffDelay) or CHAIN_COA_HANDOFF_DELAY
+    )
     if configuredRetryDelay then
         self.ChainCOARetryDelay = math.max(0, configuredRetryDelay)
     end
@@ -2667,6 +2751,21 @@ function LyraMacro:SetChainCOA(enabled, options)
                         activationInFlight = true
 
                         task.spawn(function()
+                            local reservedAttempt = waitForCallOfArmsAttemptSlot(self, {
+                                PollInterval = CHAIN_COA_POLL_INTERVAL,
+                                IsActive = function()
+                                    return self.ChainCOAEnabled
+                                        and self._chainCOAToken == chainToken
+                                        and targetTower.Parent ~= nil
+                                end,
+                            })
+
+                            if not reservedAttempt then
+                                activationInFlight = false
+                                return
+                            end
+
+                            local attemptStartedAt = os.clock()
                             local attempt = table.pack(pcall(function()
                                 assert(
                                     self.ChainCOAEnabled and self._chainCOAToken == chainToken and targetTower.Parent,
@@ -2687,13 +2786,15 @@ function LyraMacro:SetChainCOA(enabled, options)
                                 remoteResults[index - 1] = attempt[index]
                             end
 
+                            local accepted = invoked and not remoteResultsWereRejected(remoteResults)
+                            finishCallOfArmsAttempt(self, reservedAttempt, attemptStartedAt, accepted)
                             activationInFlight = false
 
                             if not self.ChainCOAEnabled or self._chainCOAToken ~= chainToken then
                                 return
                             end
 
-                            if not invoked or remoteResultsWereRejected(remoteResults) then
+                            if not accepted then
                                 pendingTower = targetTower.Parent and targetTower or nil
                                 nextAttemptAt = os.clock() + self.ChainCOARetryDelay
                                 warn(
@@ -2706,7 +2807,7 @@ function LyraMacro:SetChainCOA(enabled, options)
                                 lastSuccessfulTower = targetTower
                                 pendingTower = nil
                                 self.ChainCOANextIndex = towerOrder[targetTower] or self.ChainCOANextIndex
-                                nextAttemptAt = os.clock()
+                                nextAttemptAt = attemptStartedAt
                                     + self.ChainCOAActiveDuration
                                     + self.ChainCOAHandoffDelay
                                 print(
@@ -10732,6 +10833,19 @@ function LyraMacro:Run(strategy)
         local attemptCount = 0
         local lastFailure = "the commander was not ready"
 
+        local function failRecoveryWindow()
+            error(
+                "[LyraMacro] Call Of Arms for tower #"
+                    .. tostring(job.TowerIndex)
+                    .. " was not accepted during its "
+                    .. tostring(SCHEDULED_COA_RECOVERY_TIMEOUT)
+                    .. "-second recovery window ("
+                    .. lastFailure
+                    .. ").",
+                0
+            )
+        end
+
         while not scheduledAbilities.Cancelled do
             if schedulerLostReplayOwnership() then
                 recordScheduledAbilityFailure(
@@ -10756,12 +10870,72 @@ function LyraMacro:Run(strategy)
             )
 
             if ready then
+                local reservedAttempt = waitForCallOfArmsAttemptSlot(self, {
+                    IsScheduled = true,
+                    PollInterval = SCHEDULED_ABILITY_POLL_INTERVAL,
+                    IsActive = function()
+                        if scheduledAbilities.Cancelled then
+                            return false
+                        end
+
+                        local recoveryDeadline = rejectionDeadline or readinessDeadline
+
+                        if recoveryDeadline and os.clock() > recoveryDeadline then
+                            return false
+                        end
+
+                        if schedulerLostReplayOwnership() then
+                            recordScheduledAbilityFailure(
+                                job,
+                                "Replay ownership ended before the scheduled ability could run."
+                            )
+                            return false
+                        end
+
+                        return true
+                    end,
+                    OnMinimumWait = function(minimumDispatchAt, addedWait)
+                        local recordedDueAt = tonumber(job.DueAt)
+
+                        if not recordedDueAt or minimumDispatchAt > recordedDueAt then
+                            job.DueAt = minimumDispatchAt
+                            print(
+                                "[LyraMacro] Delaying Call Of Arms for tower #"
+                                    .. tostring(job.TowerIndex)
+                                    .. " by "
+                                    .. formatNumber(addedWait)
+                                    .. " seconds to preserve its 6-second active window and 2-second handoff."
+                            )
+                        end
+                    end,
+                })
+
+                if not reservedAttempt then
+                    local recoveryDeadline = rejectionDeadline or readinessDeadline
+
+                    if recoveryDeadline and os.clock() > recoveryDeadline then
+                        failRecoveryWindow()
+                    end
+
+                    return false
+                end
+
                 attemptCount += 1
                 local attemptStartedAt = os.clock()
                 local attempt = table.pack(pcall(function()
                     return self:ActivateAbilityForTower(targetTower, job.Ability)
                 end))
                 local resultCount = attempt.n or #attempt
+                local remoteResults = {
+                    n = math.max(0, resultCount - 1),
+                }
+
+                for index = 2, resultCount do
+                    remoteResults[index - 1] = attempt[index]
+                end
+
+                local attemptAccepted = attempt[1] == true and not remoteResultsWereRejected(remoteResults)
+                finishCallOfArmsAttempt(self, reservedAttempt, attemptStartedAt, attemptAccepted)
 
                 if not attempt[1] then
                     error(
@@ -10785,15 +10959,7 @@ function LyraMacro:Run(strategy)
                     return false
                 end
 
-                local remoteResults = {
-                    n = math.max(0, resultCount - 1),
-                }
-
-                for index = 2, resultCount do
-                    remoteResults[index - 1] = attempt[index]
-                end
-
-                if not remoteResultsWereRejected(remoteResults) then
+                if attemptAccepted then
                     -- Dependent abilities anchor to the accepted attempt's
                     -- start, never to a rejected request or response latency.
                     job.DispatchedAt = attemptStartedAt
@@ -10826,16 +10992,7 @@ function LyraMacro:Run(strategy)
             local recoveryDeadline = rejectionDeadline or readinessDeadline
 
             if recoveryDeadline and now >= recoveryDeadline then
-                error(
-                    "[LyraMacro] Call Of Arms for tower #"
-                        .. tostring(job.TowerIndex)
-                        .. " was not accepted during its "
-                        .. tostring(SCHEDULED_COA_RECOVERY_TIMEOUT)
-                        .. "-second recovery window ("
-                        .. lastFailure
-                        .. ").",
-                    0
-                )
+                failRecoveryWindow()
             end
 
             if ready then
@@ -10849,8 +11006,15 @@ function LyraMacro:Run(strategy)
                 )
 
                 local retryAt = math.min(rejectionDeadline, now + CHAIN_COA_RETRY_DELAY)
+                local retryJobId = game.JobId
+                self._scheduledCallOfArmsWaiters += 1
+                local retryWaitCompleted = waitForScheduledDeadline(job, retryAt)
 
-                if not waitForScheduledDeadline(job, retryAt) then
+                if self._callOfArmsJobId == retryJobId then
+                    self._scheduledCallOfArmsWaiters = math.max(0, self._scheduledCallOfArmsWaiters - 1)
+                end
+
+                if not retryWaitCompleted then
                     return false
                 end
             else
@@ -11120,8 +11284,13 @@ function LyraMacro:Run(strategy)
                     -- Legacy abilities without timing metadata remain ordered
                     -- and synchronous at their original strategy step.
                     if waitForScheduledAbilities(nil, stepNumber, "running an immediate ability") then
-                        abilityJob.DispatchedAt = os.clock()
-                        self:ActivateAbility(step.tower, step.ability)
+                        if TRACKED_ABILITIES[normalizeLookupKey(step.ability)] == "Call Of Arms" then
+                            activateScheduledCallOfArms(abilityJob, targetTower)
+                        else
+                            abilityJob.DispatchedAt = os.clock()
+                            self:ActivateAbility(step.tower, step.ability)
+                        end
+
                         completeScheduledAbility(abilityJob)
                     end
                 end
