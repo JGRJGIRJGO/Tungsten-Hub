@@ -6,6 +6,10 @@
     proof that a placement, upgrade, or sell reached the intended tower.
 ]]
 
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
@@ -271,6 +275,14 @@ local COA_ATTRIBUTE_NAMES = {
 }
 
 local LocalPlayer = Players.LocalPlayer
+
+while not LocalPlayer do
+    task.wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+LocalPlayer:WaitForChild("PlayerGui")
+
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
 local RemoteEvent = ReplicatedStorage:WaitForChild("RemoteEvent")
 local TowersFolder = workspace:FindFirstChild("Towers")
@@ -1490,12 +1502,36 @@ local function appendLoadoutLines(lines, loadout)
     table.insert(lines, "}")
 end
 
+local function appendClientReadyBootstrapLines(lines)
+    table.insert(lines, "if not game:IsLoaded() then")
+    table.insert(lines, "    game.Loaded:Wait()")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local Players = game:GetService(\"Players\")")
+    table.insert(lines, "local LocalPlayer = Players.LocalPlayer")
+    table.insert(lines, "while not LocalPlayer do")
+    table.insert(lines, "    task.wait()")
+    table.insert(lines, "    LocalPlayer = Players.LocalPlayer")
+    table.insert(lines, "end")
+    table.insert(lines, "LocalPlayer:WaitForChild(\"PlayerGui\")")
+    table.insert(lines, "")
+end
+
 local function readCacheValue(cacheKey, timeout)
-    local cacheModule = ReplicatedStorage:FindFirstChild("Client")
-    cacheModule = cacheModule and cacheModule:FindFirstChild("Modules")
-    cacheModule = cacheModule and cacheModule:FindFirstChild("Universal")
-    cacheModule = cacheModule and cacheModule:FindFirstChild("Utilities")
-    cacheModule = cacheModule and cacheModule:FindFirstChild("Cache")
+    local deadline = os.clock() + math.max(0.1, tonumber(timeout) or 5)
+    local cacheModule
+
+    repeat
+        cacheModule = ReplicatedStorage:FindFirstChild("Client")
+        cacheModule = cacheModule and cacheModule:FindFirstChild("Modules")
+        cacheModule = cacheModule and cacheModule:FindFirstChild("Universal")
+        cacheModule = cacheModule and cacheModule:FindFirstChild("Utilities")
+        cacheModule = cacheModule and cacheModule:FindFirstChild("Cache")
+
+        if not cacheModule and os.clock() < deadline then
+            task.wait(0.1)
+        end
+    until cacheModule or os.clock() >= deadline
 
     if not cacheModule then
         return nil, "Could not find the " .. tostring(cacheKey) .. " cache module."
@@ -1551,8 +1587,6 @@ local function readCacheValue(cacheKey, timeout)
     if not subscribed then
         return nil, "Could not read " .. tostring(cacheKey) .. ": " .. tostring(subscribeError)
     end
-
-    local deadline = os.clock() + (timeout or 5)
 
     while not settled and os.clock() < deadline do
         task.wait()
@@ -3815,6 +3849,14 @@ local function getPrivateServerReturnRelaySource(linkCode, linkType, attemptsRem
         "    game.Loaded:Wait()",
         "end",
         "",
+        "local Players = game:GetService(\"Players\")",
+        "local LocalPlayer = Players.LocalPlayer",
+        "while not LocalPlayer do",
+        "    task.wait()",
+        "    LocalPlayer = Players.LocalPlayer",
+        "end",
+        "LocalPlayer:WaitForChild(\"PlayerGui\")",
+        "",
         "local LOBBY_PLACE_ID = " .. tostring(LOBBY_PLACE_ID),
         "local PRIVATE_SERVER_LINK_CODE = " .. formatLuaValue(linkCode),
         "local PRIVATE_SERVER_LINK_TYPE = " .. formatLuaValue(linkType),
@@ -5799,16 +5841,16 @@ end
 function LyraMacro:_getAutoRecordTeleportSource(mapTitle)
     local libraryUrl = self.AutoRecordLibraryUrl or DEFAULT_MACRO_LIBRARY_URL
     local timeout = math.max(10, math.floor(tonumber(self.AutoRecordTimeout) or 45))
-    local lines = {
-        "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then",
-        "    warn(\"[LyraMacro] Auto-record skipped: this is not the match place.\")",
-        "    return",
-        "end",
-        "",
-        "local hasSharedEnvironment = type(getgenv) == \"function\"",
-        "if hasSharedEnvironment then",
-        "    getgenv().LyraMacroAutoUI = false",
-    }
+    local lines = {}
+    appendClientReadyBootstrapLines(lines)
+    table.insert(lines, "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then")
+    table.insert(lines, "    warn(\"[LyraMacro] Auto-record skipped: this is not the match place.\")")
+    table.insert(lines, "    return")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local hasSharedEnvironment = type(getgenv) == \"function\"")
+    table.insert(lines, "if hasSharedEnvironment then")
+    table.insert(lines, "    getgenv().LyraMacroAutoUI = false")
 
     if mapTitle then
         table.insert(lines, "    getgenv().LyraMacroMapName = " .. formatLuaValue(mapTitle))
@@ -5860,16 +5902,16 @@ end
 function LyraMacro:_getStrategyReplayTeleportSource(replay, mapTitle)
     local libraryUrl = replay.LibraryUrl or DEFAULT_MACRO_LIBRARY_URL
     local timeout = math.max(10, math.floor(tonumber(replay.Timeout) or 45))
-    local lines = {
-        "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then",
-        "    warn(\"[LyraMacro] Strategy replay skipped: this is not the match place.\")",
-        "    return",
-        "end",
-        "",
-        "local hasSharedEnvironment = type(getgenv) == \"function\"",
-        "if hasSharedEnvironment then",
-        "    getgenv().LyraMacroAutoUI = false",
-    }
+    local lines = {}
+    appendClientReadyBootstrapLines(lines)
+    table.insert(lines, "if game.PlaceId ~= " .. tostring(MATCH_PLACE_ID) .. " then")
+    table.insert(lines, "    warn(\"[LyraMacro] Strategy replay skipped: this is not the match place.\")")
+    table.insert(lines, "    return")
+    table.insert(lines, "end")
+    table.insert(lines, "")
+    table.insert(lines, "local hasSharedEnvironment = type(getgenv) == \"function\"")
+    table.insert(lines, "if hasSharedEnvironment then")
+    table.insert(lines, "    getgenv().LyraMacroAutoUI = false")
 
     if mapTitle then
         table.insert(lines, "    getgenv().LyraMacroMapName = " .. formatLuaValue(mapTitle))
@@ -6176,6 +6218,17 @@ function LyraMacro:SetAutoRecordOnTeleport(enabled, options)
     return true, "Enter an elevator to queue recording for its selected map."
 end
 
+local function isMatchClientReady()
+    local cash = LocalPlayer:FindFirstChild("Cash")
+
+    return game:IsLoaded()
+        and LocalPlayer.Parent == Players
+        and LocalPlayer:FindFirstChild("PlayerGui") ~= nil
+        and cash ~= nil
+        and (cash:IsA("IntValue") or cash:IsA("NumberValue"))
+        and workspace:FindFirstChild("Towers") ~= nil
+end
+
 function LyraMacro:StartRecordingWhenMapReady(options)
     options = options or {}
 
@@ -6187,22 +6240,31 @@ function LyraMacro:StartRecordingWhenMapReady(options)
     local pollInterval = math.max(0.1, tonumber(options.PollInterval) or 0.25)
     local settleTime = math.max(0, tonumber(options.SettleTime) or 1)
     local deadline = os.clock() + timeout
+    local stableFingerprint
+    local stableSince
 
     while os.clock() < deadline do
-        local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+        if isMatchClientReady() then
+            local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+            local now = os.clock()
 
-        if fingerprint then
-            if settleTime > 0 then
-                task.wait(settleTime)
+            if fingerprint ~= stableFingerprint then
+                stableFingerprint = fingerprint
+                stableSince = fingerprint and now or nil
             end
 
-            return self:StartRecording()
+            if fingerprint and stableSince and now - stableSince >= settleTime then
+                return self:StartRecording()
+            end
+        else
+            stableFingerprint = nil
+            stableSince = nil
         end
 
         task.wait(pollInterval)
     end
 
-    return false, "Timed out waiting for the destination map to load."
+    return false, "Timed out waiting for the destination client and map to finish loading."
 end
 
 function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
@@ -6220,40 +6282,59 @@ function LyraMacro:RunWhenMapReady(strategy, expectedFingerprint, options)
     local pollInterval = math.max(0.1, tonumber(options.PollInterval) or 0.25)
     local settleTime = math.max(0, tonumber(options.SettleTime) or 1)
     local deadline = os.clock() + timeout
+    local skipMapCheck = type(getgenv) == "function" and getgenv().LyraMacroSkipMapCheck == true
+    local requiresFingerprintMatch = type(expectedFingerprint) == "string"
+        and expectedFingerprint ~= ""
+        and not skipMapCheck
+    local stableFingerprint
+    local stableSince
+    local sawMismatchedFingerprint = false
 
     while os.clock() < deadline do
-        local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+        if isMatchClientReady() then
+            local fingerprint = self:DetectMapFingerprint({ Force = true, Silent = true })
+            local fingerprintReady = fingerprint ~= nil
+                and (not requiresFingerprintMatch or fingerprint == expectedFingerprint)
+            local now = os.clock()
 
-        if fingerprint then
-            if settleTime > 0 then
-                task.wait(settleTime)
+            if fingerprint and requiresFingerprintMatch and fingerprint ~= expectedFingerprint then
+                sawMismatchedFingerprint = true
             end
 
-            local skipMapCheck = type(getgenv) == "function" and getgenv().LyraMacroSkipMapCheck == true
+            if not fingerprintReady then
+                stableFingerprint = nil
+                stableSince = nil
+            else
+                if fingerprint ~= stableFingerprint then
+                    stableFingerprint = fingerprint
+                    stableSince = now
+                end
 
-            if type(expectedFingerprint) == "string" and expectedFingerprint ~= "" and not skipMapCheck then
-                local matches = self:AssertMapFingerprint(expectedFingerprint, { Silent = true, WarnOnly = true })
+                if stableSince and now - stableSince >= settleTime then
+                    local ran, runError = pcall(function()
+                        self:Run(strategy)
+                    end)
 
-                if not matches then
-                    return false, "The destination map does not match this recorded strategy."
+                    if not ran then
+                        return false, runError
+                    end
+
+                    return true
                 end
             end
-
-            local ran, runError = pcall(function()
-                self:Run(strategy)
-            end)
-
-            if not ran then
-                return false, runError
-            end
-
-            return true
+        else
+            stableFingerprint = nil
+            stableSince = nil
         end
 
         task.wait(pollInterval)
     end
 
-    return false, "Timed out waiting for the destination map to load."
+    if sawMismatchedFingerprint then
+        return false, "Timed out waiting for the destination map to finish loading and match this recorded strategy."
+    end
+
+    return false, "Timed out waiting for the destination client and map to finish loading."
 end
 
 function LyraMacro:SetManualMapOverrideEnabled(enabled)
@@ -6369,7 +6450,9 @@ function LyraMacro:DetectMapFingerprint(options)
     self.SelectedMapFingerprintSource = source
     self.SelectedMapFingerprintPartCount = partCount
 
-    print("[LyraMacro] Map fingerprint: " .. fingerprint .. " (" .. tostring(source) .. ", " .. tostring(partCount) .. " parts)")
+    if not options.Silent then
+        print("[LyraMacro] Map fingerprint: " .. fingerprint .. " (" .. tostring(source) .. ", " .. tostring(partCount) .. " parts)")
+    end
 
     return fingerprint, source, partCount
 end
@@ -7418,6 +7501,18 @@ function LyraMacro:GetRecordedStrategyScriptSource(options)
     local lines = {
         "-- Generated by Lyra Strategy Recorder.",
         "-- Execute this file to replay the recorded strategy.",
+        "",
+        "if not game:IsLoaded() then",
+        "    game.Loaded:Wait()",
+        "end",
+        "",
+        "local Players = game:GetService(\"Players\")",
+        "local LocalPlayer = Players.LocalPlayer",
+        "while not LocalPlayer do",
+        "    task.wait()",
+        "    LocalPlayer = Players.LocalPlayer",
+        "end",
+        "LocalPlayer:WaitForChild(\"PlayerGui\")",
         "",
         "local previousAutoUI",
         "local hasSharedEnvironment = type(getgenv) == \"function\"",
