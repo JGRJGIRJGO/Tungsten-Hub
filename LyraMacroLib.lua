@@ -4279,6 +4279,57 @@ local function getElevatorMapTitle(elevator)
     return nil
 end
 
+local function isLocalPlayerInsideElevator(elevator)
+    if getValueKind(elevator) ~= "Instance" then
+        return false
+    end
+
+    local state = elevator:FindFirstChild("State")
+    local playersValue = state and state:FindFirstChild("Players")
+    local playerCount
+
+    if playersValue and playersValue:IsA("ValueBase") then
+        local readCount, count = pcall(function()
+            return tonumber(playersValue.Value)
+        end)
+
+        if readCount then
+            playerCount = count
+        end
+    end
+
+    if not playerCount or playerCount <= 0 then
+        return false
+    end
+
+    local character = LocalPlayer.Character
+    local rootPart = character
+        and (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart)
+    local lift = elevator:FindFirstChild("Lift")
+    local liftMain = lift and lift:FindFirstChild("Main")
+
+    if not rootPart
+        or not rootPart:IsA("BasePart")
+        or not liftMain
+        or not liftMain:IsA("BasePart") then
+        return false
+    end
+
+    local measured, relativePosition = pcall(function()
+        return liftMain.CFrame:PointToObjectSpace(rootPart.Position)
+    end)
+
+    if not measured then
+        return false
+    end
+
+    local halfSize = liftMain.Size * 0.5
+    return math.abs(relativePosition.X) <= halfSize.X + 4
+        and math.abs(relativePosition.Z) <= halfSize.Z + 4
+        and relativePosition.Y >= -halfSize.Y - 6
+        and relativePosition.Y <= halfSize.Y + 14
+end
+
 function LyraMacro:FindElevatorForMap(mapName)
     local targetMapKey = normalizeLookupKey(mapName)
 
@@ -4436,6 +4487,58 @@ function LyraMacro:_autoEnterPendingReplay(replay)
         local lockedElevator
         local announcedPrivateWorkflow = false
 
+        local function startPrivateElevatorAfterJoin(joinDescription)
+            local currentServerType = self:GetServerType()
+            local directoryContext = self._serverDirectoryContext
+
+            if currentServerType == "unknown" or (directoryContext and directoryContext.Pending) then
+                -- Elevator membership is already secure, so this bounded wait
+                -- cannot rotate the selected map away while private-server
+                -- detection finishes.
+                self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+            end
+
+            local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+            if privateServer and not announcedPrivateWorkflow then
+                announcedPrivateWorkflow = true
+                print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
+            end
+
+            if not privateServer then
+                warn(
+                    "[LyraMacro] "
+                        .. tostring(joinDescription)
+                        .. ", but !start was not sent: "
+                        .. tostring(privateServerReason)
+                        .. "."
+                )
+                return false
+            end
+
+            print("[LyraMacro] " .. tostring(joinDescription) .. "; sending !start now.")
+            local started, startMessage, startAttempts = self:_startPrivateServerElevator()
+
+            if started then
+                print(
+                    "[LyraMacro] Sent !start via "
+                        .. tostring(startMessage)
+                        .. " (attempt "
+                        .. tostring(startAttempts)
+                        .. ")."
+                )
+            else
+                warn(
+                    "[LyraMacro] Could not confirm private-server !start after "
+                        .. tostring(startAttempts)
+                        .. " attempts: "
+                        .. tostring(startMessage)
+                )
+            end
+
+            return started
+        end
+
         while self.PendingElevatorReplay == replay and game.PlaceId == LOBBY_PLACE_ID and not self.AutoRecordTeleportArmed do
             local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
 
@@ -4469,6 +4572,29 @@ function LyraMacro:_autoEnterPendingReplay(replay)
 
             if elevator then
                 lockedElevator = elevator
+            end
+
+            if lockedElevator and isLocalPlayerInsideElevator(lockedElevator) then
+                local elevatorMapTitle = getElevatorMapTitle(lockedElevator) or replay.TargetMap
+                print(
+                    "[LyraMacro] Local player is already inside the elevator for "
+                        .. tostring(elevatorMapTitle)
+                        .. "."
+                )
+                self:_setDetectedMap(elevatorMapTitle, "elevator", true)
+
+                local queued, queueMessage = self:_queueStrategyReplayAfterTeleport(
+                    replay,
+                    elevatorMapTitle
+                )
+
+                if not queued then
+                    warn("[LyraMacro] " .. tostring(queueMessage))
+                    return
+                end
+
+                startPrivateElevatorAfterJoin("Existing elevator membership confirmed")
+                return
             end
 
             if refreshDue then
@@ -4520,49 +4646,8 @@ function LyraMacro:_autoEnterPendingReplay(replay)
             end
 
             if entered then
-                local currentServerType = self:GetServerType()
-                local directoryContext = self._serverDirectoryContext
-
-                if currentServerType == "unknown" or (directoryContext and directoryContext.Pending) then
-                    -- Entry itself is already complete, so this bounded wait
-                    -- cannot make an available map rotate away. In a private
-                    -- lobby it gives the confirmation scan time to enable !start.
-                    self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
-                end
-
-                -- Recompute even when an earlier strict marker said private;
-                -- a completed directory lookup may have disproved it meanwhile.
-                privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
-
-                if privateServer and not announcedPrivateWorkflow then
-                    announcedPrivateWorkflow = true
-                    print("[LyraMacro] Private server elevator workflow enabled by " .. tostring(privateServerReason) .. ".")
-                end
-
                 print("[LyraMacro] Entered elevator for " .. tostring(elevatorMapTitle) .. ".")
-
-                if privateServer then
-                    print("[LyraMacro] Elevator entry confirmed; sending !start now.")
-                    local started, startMessage, startAttempts = self:_startPrivateServerElevator()
-
-                    if started then
-                        print(
-                            "[LyraMacro] Sent !start via "
-                                .. tostring(startMessage)
-                                .. " immediately after elevator entry (attempt "
-                                .. tostring(startAttempts)
-                                .. ")."
-                        )
-                    else
-                        warn(
-                            "[LyraMacro] Could not confirm private-server !start after "
-                                .. tostring(startAttempts)
-                                .. " attempts: "
-                                .. tostring(startMessage)
-                        )
-                    end
-                end
-
+                startPrivateElevatorAfterJoin("Elevator entry confirmed")
                 return
             end
 
