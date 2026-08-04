@@ -108,6 +108,53 @@ local MAP_CONTAINER_NAMES = {
     "SelectedMap",
 }
 
+-- The lobby does not expose one canonical client-side catalog in every build.
+-- Merge this known Reanimated rotation with the live elevator titles below so
+-- the dropdown can select a map before !refresh rotates it into view.
+local ELEVATOR_MAP_FALLBACKS = {
+    "Abandoned City",
+    "Abyssal Trench",
+    "Autumn Falling",
+    "Candy Valley",
+    "Cataclysm",
+    "Construction Crazy",
+    "Crossroads",
+    "Cyber City",
+    "Dead Ahead",
+    "Deserted Village",
+    "Dusty Bridges",
+    "Farm Lands",
+    "Forest Camp",
+    "Forgotten Docks",
+    "Four Seasons",
+    "Fungi Island",
+    "Grass Isle",
+    "Harbor",
+    "Iceville",
+    "Infernal Abyss",
+    "Lay By",
+    "Marshlands",
+    "Mason Arch",
+    "Medieval Times",
+    "Moon Base",
+    "Necropolis",
+    "Nether",
+    "Night Station",
+    "Portland",
+    "Retro Zone",
+    "Rocket Arena",
+    "Simplicity",
+    "Space City",
+    "Spring Fever",
+    "Sunken Sea",
+    "The Heights",
+    "Toyboard",
+    "Tropical Isles",
+    "Winter Abyss",
+    "Winter Bridges",
+    "Wrecked Battlefield",
+}
+
 local DYNAMIC_CONTAINER_NAMES = {
     cameras = true,
     characters = true,
@@ -356,10 +403,12 @@ local LyraMacro = {
     SelectedMapFingerprintPartCount = 0,
     AutoRecordOnTeleport = false,
     AutoRecordTeleportArmed = false,
+    _autoRecordSessionToken = 0,
     AutoRecordLibraryUrl = nil,
     AutoRecordTimeout = 45,
     LastDetectedElevator = nil,
     PendingElevatorReplay = nil,
+    SelectedElevatorMap = "",
     PendingLegacyReplayFingerprint = nil,
     ChainCOAEnabled = false,
     ChainCOAActiveDuration = CHAIN_COA_ACTIVE_DURATION,
@@ -388,6 +437,8 @@ local LyraMacro = {
     _lastChatFloodcheckAt = -math.huge,
     _lastPrivateServerCommand = nil,
     _lastPrivateServerMessageId = nil,
+    _privateElevatorSelectionToken = 0,
+    _privateElevatorSelectionActiveMap = nil,
     StrategyLogger = nil,
     _recordHookInstalled = false,
     _recordingSessionToken = 0,
@@ -5440,12 +5491,22 @@ function LyraMacro:_sendPrivateServerCommand(command, options)
     return false, "No sendable Roblox chat channel is available."
 end
 
-function LyraMacro:_startPrivateServerElevator()
+function LyraMacro:_startPrivateServerElevator(options)
+    options = type(options) == "table" and options or {}
     local deadline = os.clock() + PRIVATE_SERVER_START_TIMEOUT
     local attempt = 0
     local lastError = "No !start attempt was made."
 
-    while game.PlaceId == LOBBY_PLACE_ID and os.clock() < deadline do
+    local function wasCancelled()
+        if type(options.IsCancelled) ~= "function" then
+            return false
+        end
+
+        local checked, cancelled = pcall(options.IsCancelled)
+        return checked and cancelled == true
+    end
+
+    while game.PlaceId == LOBBY_PLACE_ID and os.clock() < deadline and not wasCancelled() do
         attempt += 1
         print("[LyraMacro] Sending !start attempt #" .. tostring(attempt) .. ".")
 
@@ -5472,6 +5533,10 @@ function LyraMacro:_startPrivateServerElevator()
         end
 
         task.wait(math.min(retryDelay, timeRemaining))
+    end
+
+    if wasCancelled() then
+        return false, "The !start request was replaced by a newer elevator selection.", attempt
     end
 
     return false, lastError, attempt
@@ -5503,6 +5568,41 @@ local function getElevatorMapTitle(elevator)
     end
 
     return nil
+end
+
+function LyraMacro:GetElevatorMapOptions()
+    local options = {}
+    local seen = {}
+
+    local function addOption(value)
+        local mapName = normalizeMapCandidate(value)
+        local mapKey = normalizeLookupKey(mapName)
+
+        if mapName and mapKey ~= "" and not seen[mapKey] then
+            seen[mapKey] = true
+            table.insert(options, mapName)
+        end
+    end
+
+    for _, mapName in ipairs(ELEVATOR_MAP_FALLBACKS) do
+        addOption(mapName)
+    end
+
+    local elevators = workspace:FindFirstChild("Elevators")
+
+    if elevators then
+        for _, elevator in ipairs(safeGetChildren(elevators)) do
+            addOption(getElevatorMapTitle(elevator))
+        end
+    end
+
+    table.sort(options, function(left, right)
+        local leftKey = string.lower(left)
+        local rightKey = string.lower(right)
+        return leftKey == rightKey and left < right or leftKey < rightKey
+    end)
+
+    return options
 end
 
 local function isLocalPlayerInsideElevator(elevator)
@@ -5673,6 +5773,14 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
         end
     end
 
+    if type(options.IsCancelled) == "function" then
+        local checked, cancelled = pcall(options.IsCancelled)
+
+        if checked and cancelled == true then
+            return false, "Elevator entry was cancelled before the server request."
+        end
+    end
+
     local args = {
         "Elevators",
         "Enter",
@@ -5697,6 +5805,293 @@ function LyraMacro:EnterElevatorForMap(mapName, options)
     end
 
     return true, elevatorMapTitle
+end
+
+function LyraMacro:RefreshAndEnterPrivateElevator(mapName, options)
+    options = type(options) == "table" and options or {}
+    local targetMap = normalizeMapCandidate(mapName)
+
+    if not targetMap then
+        return false, "Select a valid map before confirming the elevator search."
+    end
+
+    local targetMapKey = normalizeLookupKey(targetMap)
+    local catalogMap
+
+    for _, availableMap in ipairs(self:GetElevatorMapOptions()) do
+        if normalizeLookupKey(availableMap) == targetMapKey then
+            catalogMap = availableMap
+            break
+        end
+    end
+
+    if not catalogMap then
+        return false, "The selected map is not in the known or currently replicated elevator rotation."
+    end
+
+    targetMap = catalogMap
+
+    if game.PlaceId ~= LOBBY_PLACE_ID then
+        return false, "Private elevator selection is only available in the lobby."
+    end
+
+    if self.PendingElevatorReplay then
+        return false, "A strategy replay is already controlling the elevators."
+    end
+
+    if self.AutoRecordOnTeleport or self.AutoRecordTeleportArmed then
+        return false, "Disable Auto-record after elevator before starting a manual elevator search."
+    end
+
+    local currentServerType = self:GetServerType()
+
+    if currentServerType ~= "unknown" then
+        local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+        if not privateServer then
+            return false, "Private elevator selection is unavailable: " .. tostring(privateServerReason) .. "."
+        end
+    end
+
+    self._privateElevatorSelectionToken += 1
+    local selectionToken = self._privateElevatorSelectionToken
+    self._privateElevatorSelectionActiveMap = targetMap
+    self.SelectedElevatorMap = targetMap
+
+    task.spawn(function()
+        local lastStatus
+        local completed = false
+
+        local function isCurrentSelection()
+            return self._privateElevatorSelectionToken == selectionToken
+        end
+
+        local function canContinueSelection()
+            return isCurrentSelection()
+                and game.PlaceId == LOBBY_PLACE_ID
+                and self.PendingElevatorReplay == nil
+                and not self.AutoRecordOnTeleport
+                and not self.AutoRecordTeleportArmed
+        end
+
+        local function publishStatus(message, warning)
+            if not isCurrentSelection() or message == lastStatus then
+                return
+            end
+
+            lastStatus = message
+
+            if warning then
+                warn("[LyraMacro] " .. tostring(message))
+            else
+                print("[LyraMacro] " .. tostring(message))
+            end
+
+            if type(options.OnStatus) == "function" then
+                pcall(options.OnStatus, message, warning == true)
+            end
+        end
+
+        local function finish(success, message)
+            if completed or not isCurrentSelection() then
+                return
+            end
+
+            completed = true
+            self._privateElevatorSelectionActiveMap = nil
+            publishStatus(message, not success)
+
+            if type(options.OnComplete) == "function" then
+                pcall(options.OnComplete, success == true, message)
+            end
+        end
+
+        if self:GetServerType() == "unknown" then
+            publishStatus("Checking whether this lobby is a private server before refreshing maps.")
+            self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
+        end
+
+        if not isCurrentSelection() then
+            return
+        end
+
+        local privateServer, privateServerReason = self:ShouldUsePrivateServerWorkflow()
+
+        if not privateServer then
+            finish(false, "Private elevator selection stopped: " .. tostring(privateServerReason) .. ".")
+            return
+        end
+
+        local function startSelectedElevator(actualMapTitle, alreadyInside)
+            self:_setDetectedMap(actualMapTitle, "elevator selection", true)
+            publishStatus(
+                (alreadyInside and "Already inside the elevator for " or "Entered the elevator for ")
+                    .. actualMapTitle
+                    .. "; sending !start."
+            )
+            local started, startMessage, startAttempts = self:_startPrivateServerElevator({
+                IsCancelled = function()
+                    return not canContinueSelection()
+                end,
+            })
+
+            if not isCurrentSelection() then
+                return
+            end
+
+            if started then
+                finish(
+                    true,
+                    "Sent !start for "
+                        .. actualMapTitle
+                        .. " via "
+                        .. tostring(startMessage)
+                        .. " after "
+                        .. tostring(startAttempts)
+                        .. " attempt(s)."
+                )
+            else
+                finish(
+                    false,
+                    "Could not confirm !start for "
+                        .. actualMapTitle
+                        .. " after "
+                        .. tostring(startAttempts)
+                        .. " attempt(s): "
+                        .. tostring(startMessage)
+                )
+            end
+        end
+
+        publishStatus(
+            "Searching for "
+                .. targetMap
+                .. "; choose another map and confirm again to replace this search."
+        )
+
+        local lastRefreshAt = -math.huge
+        local lastRefreshError
+        local lastEntryAttemptAt = -math.huge
+        local lastEntryError
+        local lockedElevator
+        local refreshCount = 0
+
+        while isCurrentSelection() and game.PlaceId == LOBBY_PLACE_ID do
+            if self.PendingElevatorReplay or self.AutoRecordOnTeleport or self.AutoRecordTeleportArmed then
+                finish(false, "Manual elevator selection stopped because another elevator workflow was armed.")
+                return
+            end
+
+            if lockedElevator
+                and normalizeLookupKey(getElevatorMapTitle(lockedElevator)) ~= normalizeLookupKey(targetMap) then
+                lockedElevator = nil
+            end
+
+            if not lockedElevator then
+                lockedElevator = self:FindElevatorForMap(targetMap)
+            end
+
+            local refreshDue = not lockedElevator
+                and os.clock() - lastRefreshAt >= PRIVATE_SERVER_REFRESH_INTERVAL
+                and self:_getPrivateChatFloodcheckRemaining() <= 0
+
+            if refreshDue then
+                -- Scan again immediately before chatting so a newly rotated map
+                -- is never refreshed away during the small command race window.
+                lockedElevator = self:FindElevatorForMap(targetMap)
+                refreshDue = not lockedElevator
+            end
+
+            if lockedElevator and isLocalPlayerInsideElevator(lockedElevator) then
+                local actualMapTitle = getElevatorMapTitle(lockedElevator) or targetMap
+
+                if normalizeLookupKey(actualMapTitle) == normalizeLookupKey(targetMap) then
+                    startSelectedElevator(actualMapTitle, true)
+                    return
+                end
+
+                lockedElevator = nil
+            end
+
+            if refreshDue then
+                lastRefreshAt = os.clock()
+                local refreshed, refreshMessage = self:_sendPrivateServerCommand("!refresh")
+
+                if refreshed then
+                    refreshCount += 1
+                    lastRefreshError = nil
+                    publishStatus(
+                        "Refreshed elevators "
+                            .. tostring(refreshCount)
+                            .. " time(s); waiting for "
+                            .. targetMap
+                            .. "."
+                    )
+                elseif refreshMessage ~= lastRefreshError then
+                    lastRefreshError = refreshMessage
+                    publishStatus("Could not refresh elevators yet: " .. tostring(refreshMessage), true)
+                end
+            end
+
+            if lockedElevator and os.clock() - lastEntryAttemptAt >= PRIVATE_SERVER_ENTRY_RETRY_INTERVAL then
+                lastEntryAttemptAt = os.clock()
+                local actualMapTitle = getElevatorMapTitle(lockedElevator) or targetMap
+                publishStatus("Found " .. actualMapTitle .. "; entering its elevator.")
+                local entered, entryMessage = self:EnterElevatorForMap(targetMap, {
+                    Elevator = lockedElevator,
+                    TeleportImmediately = true,
+                    UseTouch = false,
+                    IsCancelled = function()
+                        return not canContinueSelection()
+                    end,
+                })
+
+                if not canContinueSelection() then
+                    if isCurrentSelection() then
+                        finish(false, "Manual elevator selection stopped because another elevator workflow was armed.")
+                    end
+                    return
+                end
+
+                if entered then
+                    actualMapTitle = entryMessage or actualMapTitle
+                    startSelectedElevator(actualMapTitle, false)
+                    return
+                end
+
+                if entryMessage ~= lastEntryError then
+                    lastEntryError = entryMessage
+                    publishStatus("Elevator entry retry: " .. tostring(entryMessage), true)
+                end
+
+                if normalizeLookupKey(getElevatorMapTitle(lockedElevator)) ~= normalizeLookupKey(targetMap) then
+                    lockedElevator = nil
+                end
+            end
+
+            task.wait(PRIVATE_SERVER_ELEVATOR_POLL_INTERVAL)
+        end
+
+        if isCurrentSelection() then
+            finish(false, "Private elevator selection stopped because the lobby changed.")
+        end
+    end)
+
+    return true, "Searching for " .. targetMap .. " and refreshing the private lobby until it appears."
+end
+
+function LyraMacro:CancelPrivateElevatorSelection(reason)
+    local activeMap = self._privateElevatorSelectionActiveMap
+
+    if not activeMap then
+        return false, "No manual elevator search is active."
+    end
+
+    self._privateElevatorSelectionToken += 1
+    self._privateElevatorSelectionActiveMap = nil
+    local message = reason or ("Stopped searching for " .. tostring(activeMap) .. ".")
+    print("[LyraMacro] " .. tostring(message))
+    return true, message
 end
 
 function LyraMacro:_autoEnterPendingReplay(replay)
@@ -5855,6 +6250,11 @@ function LyraMacro:_autoEnterPendingReplay(replay)
                     Elevator = lockedElevator,
                     TeleportImmediately = true,
                     UseTouch = false,
+                    IsCancelled = function()
+                        return self.PendingElevatorReplay ~= replay
+                            or self.AutoRecordTeleportArmed
+                            or game.PlaceId ~= LOBBY_PLACE_ID
+                    end,
                 })
 
                 if entered then
@@ -6095,12 +6495,12 @@ function LyraMacro:_queueStrategyReplayAfterTeleport(replay, mapTitle)
     return true, mapTitle
 end
 
-function LyraMacro:_observeElevatorEnter(args)
+function LyraMacro:_observeElevatorEnter(args, continuationOwner)
     if game.PlaceId ~= LOBBY_PLACE_ID then
         return
     end
 
-    if (not self.AutoRecordOnTeleport and not self.PendingElevatorReplay) or self.AutoRecordTeleportArmed then
+    if type(continuationOwner) ~= "table" or self.AutoRecordTeleportArmed then
         return
     end
 
@@ -6115,10 +6515,15 @@ function LyraMacro:_observeElevatorEnter(args)
         return
     end
 
-    self:_setDetectedMap(mapTitle, "elevator", true)
+    local replay = continuationOwner.Replay
 
-    if self.PendingElevatorReplay then
-        local queued, queueMessage = self:_queueStrategyReplayAfterTeleport(self.PendingElevatorReplay, mapTitle)
+    if replay then
+        if self.PendingElevatorReplay ~= replay then
+            return
+        end
+
+        self:_setDetectedMap(mapTitle, "elevator", true)
+        local queued, queueMessage = self:_queueStrategyReplayAfterTeleport(replay, mapTitle)
 
         if not queued then
             warn("[LyraMacro] " .. queueMessage)
@@ -6127,6 +6532,12 @@ function LyraMacro:_observeElevatorEnter(args)
         return
     end
 
+    if continuationOwner.AutoRecordSessionToken ~= self._autoRecordSessionToken
+        or not self.AutoRecordOnTeleport then
+        return
+    end
+
+    self:_setDetectedMap(mapTitle, "elevator", true)
     local queued, queueMessage = self:_queueAutoRecordAfterTeleport(mapTitle)
 
     if not queued then
@@ -6144,6 +6555,10 @@ function LyraMacro:QueueStrategyAfterElevator(strategy, expectedFingerprint, opt
     if type(strategy) ~= "table" then
         return false, "Strategy replay requires a table of recorded steps."
     end
+
+    self:CancelPrivateElevatorSelection(
+        "Strategy replay took control of the elevators; stopped the manual map search."
+    )
 
     -- A new queue request replaces any older replay immediately. If its
     -- preflight fails, an earlier strategy must not remain armed in the
@@ -6232,6 +6647,14 @@ function LyraMacro:SetAutoRecordOnTeleport(enabled, options)
 
     if enabled and game.PlaceId ~= LOBBY_PLACE_ID then
         return false, "Elevator auto-recording can only be armed in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
+    end
+
+    self._autoRecordSessionToken += 1
+
+    if enabled then
+        self:CancelPrivateElevatorSelection(
+            "Auto-record took control of the elevators; stopped the manual map search."
+        )
     end
 
     self.AutoRecordOnTeleport = enabled
@@ -7179,14 +7602,23 @@ function LyraMacro:_recordRemoteInvoke(args, remoteResults, observedAt, recordin
     end
 end
 
-function LyraMacro:_processRemoteObservation(args, remoteResults, observedAt, recordingSessionToken)
+function LyraMacro:_processRemoteObservation(
+    args,
+    remoteResults,
+    observedAt,
+    recordingSessionToken,
+    elevatorContinuationOwner
+)
     local categoryKey = normalizeLookupKey(args[1])
     local actionKey = normalizeLookupKey(args[2])
     local chainObservation = self:_prepareChainCOAObservation(args)
 
     -- Queue teleport continuation only after the elevator server confirms entry.
-    if categoryKey == "elevators" and actionKey == "enter" and remoteResults[1] == true then
-        self:_observeElevatorEnter(args)
+    if categoryKey == "elevators"
+        and actionKey == "enter"
+        and remoteResults[1] == true
+        and elevatorContinuationOwner then
+        self:_observeElevatorEnter(args, elevatorContinuationOwner)
     end
 
     self:_completeChainCOAObservation(chainObservation, remoteResults)
@@ -7207,10 +7639,29 @@ function LyraMacro:_processRemoteObservation(args, remoteResults, observedAt, re
 end
 
 function LyraMacro:_reserveRemoteObservation(args, observedAt, recordingSessionToken)
+    local elevatorContinuationOwner
+
+    -- Snapshot the workflow before InvokeServer yields. A later replay or
+    -- auto-record request must never claim an older manual elevator response.
+    if normalizeLookupKey(args[1]) == "elevators"
+        and normalizeLookupKey(args[2]) == "enter"
+        and not self.AutoRecordTeleportArmed then
+        if self.PendingElevatorReplay then
+            elevatorContinuationOwner = {
+                Replay = self.PendingElevatorReplay,
+            }
+        elseif self.AutoRecordOnTeleport then
+            elevatorContinuationOwner = {
+                AutoRecordSessionToken = self._autoRecordSessionToken,
+            }
+        end
+    end
+
     local observation = {
         Args = args,
         ObservedAt = observedAt,
         RecordingSessionToken = recordingSessionToken,
+        ElevatorContinuationOwner = elevatorContinuationOwner,
         Ready = false,
     }
     table.insert(self._remoteObservationQueue, observation)
@@ -7234,7 +7685,8 @@ function LyraMacro:_drainRemoteObservations()
                         observation.Args,
                         observation.Results,
                         observation.ObservedAt,
-                        observation.RecordingSessionToken
+                        observation.RecordingSessionToken,
+                        observation.ElevatorContinuationOwner
                     )
                 end)
 
@@ -8046,13 +8498,219 @@ function LyraMacro:CreateRecorderWindow(config)
         local serverStatusText, serverStatusSource = self:GetServerStatusText()
         local descriptionLabel = strategyTab:CreateLabel("Record mode votes, placements, upgrades, timed abilities, Chain COA, sells, and wave skips.")
         local serverStatusLabel = strategyTab:CreateLabel(serverStatusText)
+        local elevatorsTabCreated = false
+
+        local function recorderWindowIsAlive()
+            local screenGui = window.ScreenGui
+
+            if not screenGui then
+                return self.RecorderWindow == nil or self.RecorderWindow == window
+            end
+
+            local readable, parent = pcall(function()
+                return screenGui.Parent
+            end)
+            return readable and parent ~= nil
+        end
+
+        local function createElevatorsTab()
+            if elevatorsTabCreated or not recorderWindowIsAlive() then
+                return elevatorsTabCreated
+            end
+
+            local privateWorkflowEnabled = self:ShouldUsePrivateServerWorkflow()
+
+            if not privateWorkflowEnabled then
+                return false
+            end
+
+            local built, buildError = pcall(function()
+                local elevatorsTab = window:CreateTab({
+                    Name = "Elevators",
+                    Icon = "door-open",
+                })
+                local elevatorStatusLabel = elevatorsTab:CreateLabel(
+                    "Choose a map. Confirming will refresh this private lobby until it appears, enter its elevator, and send !start."
+                )
+                local mapOptions = self:GetElevatorMapOptions()
+
+                local function findMapOption(candidate, availableOptions)
+                    local candidateKey = normalizeLookupKey(candidate)
+
+                    if candidateKey == "" then
+                        return nil
+                    end
+
+                    for _, option in ipairs(availableOptions) do
+                        if normalizeLookupKey(option) == candidateKey then
+                            return option
+                        end
+                    end
+
+                    return nil
+                end
+
+                local selectedMap = findMapOption(self.SelectedElevatorMap, mapOptions)
+                    or findMapOption(self.SelectedMap, mapOptions)
+                    or mapOptions[1]
+
+                if selectedMap then
+                    self.SelectedElevatorMap = selectedMap
+                end
+
+                local mapDropdown = elevatorsTab:CreateDropdown({
+                    Name = "Map",
+                    Icon = "map-pinned",
+                    Options = mapOptions,
+                    CurrentOption = selectedMap,
+                    Callback = function(value)
+                        local normalizedMap = normalizeMapCandidate(value)
+
+                        if normalizedMap then
+                            self.SelectedElevatorMap = normalizedMap
+                        end
+                    end,
+                })
+
+                local function updateElevatorStatus(message)
+                    if recorderWindowIsAlive()
+                        and elevatorStatusLabel
+                        and type(elevatorStatusLabel.UpdateText) == "function" then
+                        pcall(elevatorStatusLabel.UpdateText, message)
+                    end
+                end
+
+                local function notifyElevator(title, message, duration)
+                    if recorderWindowIsAlive() then
+                        pcall(function()
+                            window:Notify(title, message, duration)
+                        end)
+                    end
+                end
+
+                elevatorsTab:CreateButton({
+                    Name = "Confirm Map",
+                    Icon = "circle-check",
+                    Callback = function()
+                        local requestedMap = normalizeMapCandidate(mapDropdown:GetValue())
+
+                        if not requestedMap then
+                            updateElevatorStatus("Select a valid map before confirming.")
+                            notifyElevator("Map Required", "Choose a map from the dropdown first.", 4)
+                            return
+                        end
+
+                        local started, message = self:RefreshAndEnterPrivateElevator(requestedMap, {
+                            OnStatus = function(statusMessage)
+                                updateElevatorStatus(statusMessage)
+                            end,
+                            OnComplete = function(success, completionMessage)
+                                updateElevatorStatus(completionMessage)
+                                notifyElevator(
+                                    success and "Elevator Started" or "Elevator Search Stopped",
+                                    completionMessage,
+                                    success and 4 or 6
+                                )
+                            end,
+                        })
+
+                        updateElevatorStatus(message)
+
+                        if started then
+                            notifyElevator("Elevator Search Started", message, 4)
+                        else
+                            notifyElevator("Elevator Search Unavailable", message, 5)
+                        end
+                    end,
+                })
+
+                elevatorsTab:CreateButton({
+                    Name = "Cancel Search",
+                    Icon = "circle-x",
+                    Callback = function()
+                        local cancelled, message = self:CancelPrivateElevatorSelection()
+                        updateElevatorStatus(message)
+                        notifyElevator(
+                            cancelled and "Elevator Search Cancelled" or "No Active Search",
+                            message,
+                            4
+                        )
+                    end,
+                })
+
+                if window.ScreenGui then
+                    pcall(function()
+                        window.ScreenGui.Destroying:Connect(function()
+                            self:CancelPrivateElevatorSelection(
+                                "Recorder UI closed; stopped the manual elevator search."
+                            )
+                        end)
+                    end)
+                end
+
+                task.spawn(function()
+                    local mapSignature = table.concat(mapOptions, "\0")
+
+                    while recorderWindowIsAlive() do
+                        task.wait(1)
+
+                        if not recorderWindowIsAlive() then
+                            return
+                        end
+
+                        local refreshedOptions = self:GetElevatorMapOptions()
+                        local refreshedSignature = table.concat(refreshedOptions, "\0")
+
+                        if refreshedSignature ~= mapSignature then
+                            mapSignature = refreshedSignature
+                            local currentSelection = findMapOption(mapDropdown:GetValue(), refreshedOptions)
+                            mapDropdown:Refresh(refreshedOptions)
+
+                            if not currentSelection and refreshedOptions[1] then
+                                mapDropdown:Select(refreshedOptions[1])
+                            elseif not currentSelection then
+                                mapDropdown:Select(nil)
+                            end
+                        end
+                    end
+                end)
+            end)
+
+            if not built then
+                warn("[LyraMacro] Could not create the private Elevators tab: " .. tostring(buildError))
+                return false
+            end
+
+            elevatorsTabCreated = true
+            return true
+        end
+
+        createElevatorsTab()
 
         task.spawn(function()
             self:WaitForServerContext(PRIVATE_SERVER_PUBLIC_SETTLE_TIMEOUT)
 
-            if serverStatusLabel and type(serverStatusLabel.UpdateText) == "function" then
-                local refreshedServerStatusText = self:GetServerStatusText()
-                serverStatusLabel.UpdateText(refreshedServerStatusText)
+            while recorderWindowIsAlive() and not elevatorsTabCreated do
+                if serverStatusLabel and type(serverStatusLabel.UpdateText) == "function" then
+                    local refreshedServerStatusText = self:GetServerStatusText()
+                    serverStatusLabel.UpdateText(refreshedServerStatusText)
+                end
+
+                if game.PlaceId ~= LOBBY_PLACE_ID then
+                    return
+                end
+
+                local currentServerType = self:GetServerType()
+
+                if currentServerType == "public" or currentServerType == "reserved" then
+                    return
+                end
+
+                if createElevatorsTab() then
+                    return
+                end
+
+                task.wait(1)
             end
         end)
 
