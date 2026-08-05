@@ -13,6 +13,7 @@ end
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -39,6 +40,11 @@ local PRIVATE_SERVER_RETURN_PERMISSION_KEY = "__LyraMacroPrivateServerReturnPerm
 local PRIVATE_SERVER_RETURN_ROUTE_SETTING = "__LyraMacroPrivateServerReturnRoute"
 local ACTIVE_REPLAY_LOCK_KEY = "__LyraMacroActiveReplay"
 local ANTI_AFK_STATE_KEY = "__LyraMacroAntiAFKState"
+local GPU_SAVER_ENV_KEY = "LyraMacroGpuSaverEnabled"
+local GPU_SAVER_RUNTIME_STATE_KEY = "__LyraMacroGpuSaverState"
+local GPU_SAVER_OVERLAY_NAME = "LyraGpuSaver"
+local SETTINGS_FILE_NAME = "LyraMacroSettings.json"
+local SETTINGS_VERSION = 1
 
 local MAP_NAME_KEYS = {
     currentmap = true,
@@ -212,6 +218,11 @@ local MODE_VOTE_RETRY_INTERVAL = 0.25
 local MODE_VOTE_RETRY_TIMEOUT = 10
 local RECORD_PLACEMENT_CONFIRM_TIMEOUT = 1
 local RECORD_STOP_DRAIN_TIMEOUT = 4
+local CLIENT_CACHE_READY_TIMEOUT = 30
+local CLIENT_CACHE_ATTEMPT_TIMEOUT = 1.5
+local CLIENT_CACHE_RETRY_DELAY = 0.1
+local SESSION_SEARCH_ATTEMPT_TIMEOUT = 2.5
+local LOBBY_LOADOUT_SYNC_TIMEOUT = 8
 local REPLAY_CONFIRM_TIMEOUT = 3
 local REPLAY_ACCEPTED_RECOVERY_TIMEOUT = 8
 local REPLAY_CONFIRM_POLL_INTERVAL = 0.05
@@ -338,30 +349,152 @@ end
 
 LocalPlayer:WaitForChild("PlayerGui")
 
-local AntiAFKSharedEnvironment
+local PersistedSettings = {}
+
+local function loadPersistedSettings()
+    if type(readfile) ~= "function" then
+        return {}
+    end
+
+    if type(isfile) == "function" then
+        local checked, exists = pcall(isfile, SETTINGS_FILE_NAME)
+
+        if checked and not exists then
+            return {}
+        end
+    end
+
+    local read, contents = pcall(readfile, SETTINGS_FILE_NAME)
+
+    if not read or type(contents) ~= "string" or contents == "" then
+        return {}
+    end
+
+    local decoded, settings = pcall(function()
+        return HttpService:JSONDecode(contents)
+    end)
+
+    if decoded and type(settings) == "table" then
+        return settings
+    end
+
+    return {}
+end
+
+local function savePersistedSettings()
+    if type(writefile) ~= "function" then
+        return false, "writefile is unavailable; the setting will last for this executor session only."
+    end
+
+    PersistedSettings.Version = SETTINGS_VERSION
+
+    local encoded, contents = pcall(function()
+        return HttpService:JSONEncode(PersistedSettings)
+    end)
+
+    if not encoded then
+        return false, "Could not encode " .. SETTINGS_FILE_NAME .. ": " .. tostring(contents)
+    end
+
+    local written, writeError = pcall(writefile, SETTINGS_FILE_NAME, contents)
+
+    if not written then
+        return false, "Could not save " .. SETTINGS_FILE_NAME .. ": " .. tostring(writeError)
+    end
+
+    return true
+end
+
+PersistedSettings = loadPersistedSettings()
+
+local SharedEnvironment
 
 if type(getgenv) == "function" then
     local gotEnvironment, environment = pcall(getgenv)
 
     if gotEnvironment and type(environment) == "table" then
-        AntiAFKSharedEnvironment = environment
+        SharedEnvironment = environment
     end
 end
 
-local AntiAFKState = AntiAFKSharedEnvironment and AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] or nil
+local AntiAFKState = SharedEnvironment and SharedEnvironment[ANTI_AFK_STATE_KEY] or nil
 
 if type(AntiAFKState) ~= "table" then
     AntiAFKState = {}
 end
 
-if AntiAFKSharedEnvironment and AntiAFKSharedEnvironment.LyraMacroAntiAFK ~= nil then
-    AntiAFKState.Enabled = AntiAFKSharedEnvironment.LyraMacroAntiAFK ~= false
+if SharedEnvironment and SharedEnvironment.LyraMacroAntiAFK ~= nil then
+    AntiAFKState.Enabled = SharedEnvironment.LyraMacroAntiAFK ~= false
 elseif AntiAFKState.Enabled == nil then
     AntiAFKState.Enabled = true
 end
 
-if AntiAFKSharedEnvironment then
-    AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
+if SharedEnvironment then
+    SharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
+end
+
+local InitialGpuSaverEnabled = type(PersistedSettings.GpuSaverEnabled) == "boolean"
+    and PersistedSettings.GpuSaverEnabled
+    or false
+
+if SharedEnvironment and type(SharedEnvironment[GPU_SAVER_ENV_KEY]) == "boolean" then
+    InitialGpuSaverEnabled = SharedEnvironment[GPU_SAVER_ENV_KEY]
+end
+
+local GpuSaverRuntimeState = SharedEnvironment
+    and SharedEnvironment[GPU_SAVER_RUNTIME_STATE_KEY]
+    or nil
+
+if type(GpuSaverRuntimeState) ~= "table" or GpuSaverRuntimeState.JobId ~= game.JobId then
+    local previousState = type(GpuSaverRuntimeState) == "table" and GpuSaverRuntimeState or nil
+    local previousRenderingRestored = true
+
+    if previousState then
+        previousState.Owner = nil
+
+        for _, connectionName in ipairs({ "OverlayConnection", "TeleportConnection" }) do
+            local connection = previousState[connectionName]
+
+            if connection then
+                pcall(function()
+                    connection:Disconnect()
+                end)
+                previousState[connectionName] = nil
+            end
+        end
+
+        if previousState.AppliedByLyra then
+            previousRenderingRestored = pcall(function()
+                RunService:Set3dRenderingEnabled(true)
+            end)
+        end
+
+        if previousRenderingRestored and previousState.Overlay then
+            pcall(function()
+                previousState.Overlay:Destroy()
+            end)
+        end
+    end
+
+    GpuSaverRuntimeState = {
+        JobId = game.JobId,
+        Desired = InitialGpuSaverEnabled,
+        AppliedByLyra = previousState ~= nil
+            and previousState.AppliedByLyra == true
+            and not previousRenderingRestored,
+        Overlay = not previousRenderingRestored and previousState and previousState.Overlay or nil,
+    }
+
+    if not previousRenderingRestored then
+        warn("[LyraMacro] Could not restore 3D rendering while changing servers; keeping the restore overlay available.")
+    end
+else
+    GpuSaverRuntimeState.Desired = InitialGpuSaverEnabled
+end
+
+if SharedEnvironment then
+    SharedEnvironment[GPU_SAVER_ENV_KEY] = InitialGpuSaverEnabled
+    SharedEnvironment[GPU_SAVER_RUNTIME_STATE_KEY] = GpuSaverRuntimeState
 end
 
 local RemoteFunction = ReplicatedStorage:WaitForChild("RemoteFunction")
@@ -381,6 +514,8 @@ local LyraMacro = {
     SelectedMap = "",
     ManualMapOverrideEnabled = true,
     AntiAFKEnabled = AntiAFKState.Enabled ~= false,
+    GpuSaverEnabled = InitialGpuSaverEnabled,
+    GpuSaverRuntimeState = GpuSaverRuntimeState,
     SelectedPrivateServerLinkCode = nil,
     SelectedPrivateServerLinkType = nil,
     PrivateServerStatusProvider = nil,
@@ -459,6 +594,7 @@ local LyraMacro = {
     _remoteObservationWorkerRunning = false,
     _replayOwnershipToken = nil,
     _antiAFKConnection = nil,
+    _gpuSaverOwner = {},
 }
 
 local function getValueKind(value)
@@ -1649,49 +1785,65 @@ local function readCacheValue(cacheKey, timeout)
     end
 
     local cacheFactory = cacheFactoryOrError
+    local lastError
 
-    local requested, cacheValue = pcall(function()
-        return cacheFactory(cacheKey):Get()
-    end)
-
-    if not requested then
-        return nil, "Could not request " .. tostring(cacheKey) .. ": " .. tostring(cacheValue)
-    end
-
-    if type(cacheValue) == "table" and type(cacheValue.andThen) ~= "function" then
-        return cacheValue
-    end
-
-    local resolvedValue
-    local resolvedError
-    local settled = false
-    local subscribed, subscribeError = pcall(function()
-        cacheValue:andThen(function(value)
-            resolvedValue = value
-            settled = true
-        end, function(reason)
-            resolvedError = reason
-            settled = true
+    repeat
+        local requested, cacheValue = pcall(function()
+            return cacheFactory(cacheKey):Get()
         end)
-    end)
 
-    if not subscribed then
-        return nil, "Could not read " .. tostring(cacheKey) .. ": " .. tostring(subscribeError)
-    end
+        if not requested then
+            lastError = "request failed: " .. tostring(cacheValue)
+        elseif type(cacheValue) == "table" and type(cacheValue.andThen) ~= "function" then
+            return cacheValue
+        elseif type(cacheValue) ~= "table" or type(cacheValue.andThen) ~= "function" then
+            lastError = "the cache returned no readable snapshot"
+        else
+            local resolvedValue
+            local resolvedError
+            local settled = false
+            local subscribed, subscribeError = pcall(function()
+                cacheValue:andThen(function(value)
+                    resolvedValue = value
+                    settled = true
+                end, function(reason)
+                    resolvedError = reason
+                    settled = true
+                end)
+            end)
 
-    while not settled and os.clock() < deadline do
-        task.wait()
-    end
+            if not subscribed then
+                lastError = "subscription failed: " .. tostring(subscribeError)
+            else
+                local attemptDeadline = math.min(
+                    deadline,
+                    os.clock() + CLIENT_CACHE_ATTEMPT_TIMEOUT
+                )
 
-    if not settled then
-        return nil, "Timed out waiting for " .. tostring(cacheKey) .. "."
-    end
+                while not settled and os.clock() < attemptDeadline do
+                    task.wait()
+                end
 
-    if resolvedError then
-        return nil, "Could not read " .. tostring(cacheKey) .. ": " .. tostring(resolvedError)
-    end
+                if settled and resolvedError == nil and resolvedValue ~= nil then
+                    return resolvedValue
+                elseif settled then
+                    lastError = resolvedError and ("read failed: " .. tostring(resolvedError))
+                        or "the cache resolved without data"
+                else
+                    lastError = "the cache request stayed pending"
+                end
+            end
+        end
 
-    return resolvedValue
+        if os.clock() < deadline then
+            task.wait(CLIENT_CACHE_RETRY_DELAY)
+        end
+    until os.clock() >= deadline
+
+    return nil,
+        "Timed out waiting for "
+            .. tostring(cacheKey)
+            .. (lastError and (" (" .. lastError .. ").") or ".")
 end
 
 local function resolveUnverifiedStrategyPerks(perkStates, troopInventory)
@@ -1752,24 +1904,307 @@ local function resolveUnverifiedStrategyPerks(perkStates, troopInventory)
     return true
 end
 
-local function readEquippedTroops(timeout)
-    return readCacheValue("Equipped.Troops", timeout)
+local function extractEquippedTroopsFromInventory(troopInventory)
+    if type(troopInventory) ~= "table" then
+        return nil, false
+    end
+
+    local equippedTroops = {}
+    local sawEquippedField = false
+
+    for troopName, inventoryEntry in pairs(troopInventory) do
+        if
+            type(troopName) == "string"
+            and type(inventoryEntry) == "table"
+            and inventoryEntry.Equipped ~= nil
+        then
+            sawEquippedField = true
+
+            if inventoryEntry.Equipped then
+                table.insert(equippedTroops, troopName)
+            end
+        end
+    end
+
+    if not sawEquippedField then
+        return nil, false
+    end
+
+    return getUniqueTroopNames(equippedTroops), true
 end
 
-local function waitForEquippedTroops(expectedLoadout, timeout)
-    local deadline = os.clock() + (timeout or 5)
+local function normalizeEquippedTroopSnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return nil, false
+    end
 
-    while os.clock() < deadline do
-        local currentLoadout = readEquippedTroops(1)
+    if next(snapshot) == nil then
+        return nil, false
+    end
 
-        if currentLoadout and loadoutsMatch(currentLoadout, expectedLoadout) then
-            return true
+    local equippedTroops = {}
+
+    for key, value in pairs(snapshot) do
+        if type(key) ~= "number" then
+            return nil, false
         end
 
-        task.wait(0.1)
+        local troopName = type(value) == "string" and value
+            or (type(value) == "table" and value.Name)
+
+        if type(troopName) ~= "string" or normalizeLookupKey(troopName) == "" then
+            return nil, false
+        end
+
+        table.insert(equippedTroops, troopName)
+    end
+
+    return getUniqueTroopNames(equippedTroops), #equippedTroops > 0
+end
+
+local SessionSearchInFlight = {}
+
+local function requestSessionSearch(cacheKey, timeout)
+    local deadline = os.clock() + math.max(0.1, tonumber(timeout) or CLIENT_CACHE_ATTEMPT_TIMEOUT)
+    local request = SessionSearchInFlight[cacheKey]
+
+    if not request then
+        request = {
+            Settled = false,
+        }
+        SessionSearchInFlight[cacheKey] = request
+
+        task.spawn(function()
+            request.Requested, request.Result = pcall(function()
+                return RemoteFunction:InvokeServer("Session", "Search", cacheKey)
+            end)
+            request.Settled = true
+        end)
+    elseif request.TimedOut and not request.Settled then
+        return nil, "Session/Search is still pending for " .. tostring(cacheKey) .. "."
+    end
+
+    while not request.Settled and os.clock() < deadline do
+        task.wait()
+    end
+
+    if not request.Settled then
+        request.TimedOut = true
+        return nil, "Session/Search timed out for " .. tostring(cacheKey) .. "."
+    end
+
+    if SessionSearchInFlight[cacheKey] == request then
+        SessionSearchInFlight[cacheKey] = nil
+    end
+
+    if not request.Requested then
+        return nil,
+            "Session/Search failed for "
+                .. tostring(cacheKey)
+                .. ": "
+                .. tostring(request.Result)
+    end
+
+    return request.Result
+end
+
+local function isTroopInventorySnapshot(snapshot)
+    if type(snapshot) ~= "table" then
+        return false
+    end
+
+    for troopName, inventoryEntry in pairs(snapshot) do
+        if type(troopName) == "string" then
+            if inventoryEntry == true then
+                return true
+            end
+
+            if
+                type(inventoryEntry) == "table"
+                and (inventoryEntry.Purchased ~= nil or inventoryEntry.Equipped ~= nil)
+            then
+                return true
+            end
+        end
     end
 
     return false
+end
+
+local function readTroopInventory(timeout)
+    local deadline = os.clock() + math.max(0.1, tonumber(timeout) or 5)
+    local retryDelay = CLIENT_CACHE_RETRY_DELAY
+    local lastError
+
+    local function remainingAttemptTime(maximum)
+        return math.max(0.1, math.min(maximum, deadline - os.clock()))
+    end
+
+    repeat
+        local cachedInventory, cachedError = readCacheValue(
+            "Inventory.Troops",
+            remainingAttemptTime(CLIENT_CACHE_ATTEMPT_TIMEOUT)
+        )
+
+        if isTroopInventorySnapshot(cachedInventory) then
+            return cachedInventory
+        end
+
+        lastError = cachedError
+            or (cachedInventory ~= nil and "Inventory.Troops cache returned an unknown shape.")
+            or lastError
+
+        if os.clock() < deadline then
+            local sessionInventory, sessionError = requestSessionSearch(
+                "Inventory.Troops",
+                remainingAttemptTime(SESSION_SEARCH_ATTEMPT_TIMEOUT)
+            )
+
+            if isTroopInventorySnapshot(sessionInventory) then
+                return sessionInventory
+            end
+
+            lastError = sessionError
+                or (sessionInventory ~= nil and "Session/Search Inventory.Troops returned an unknown shape.")
+                or lastError
+        end
+
+        if os.clock() < deadline then
+            task.wait(math.min(retryDelay, deadline - os.clock()))
+            retryDelay = math.min(1, retryDelay * 1.5)
+        end
+    until os.clock() >= deadline
+
+    return nil,
+        "Could not read Inventory.Troops"
+            .. (lastError and (": " .. tostring(lastError)) or ".")
+end
+
+local function readEquippedTroops(timeout, knownTroopInventory)
+    local equippedFromKnown, knownShape = extractEquippedTroopsFromInventory(knownTroopInventory)
+
+    if knownShape then
+        return equippedFromKnown
+    end
+
+    local deadline = os.clock() + math.max(0.1, tonumber(timeout) or 5)
+    local errors = {}
+    local retryDelay = CLIENT_CACHE_RETRY_DELAY
+
+    local function remainingAttemptTime(maximum)
+        return math.max(0.1, math.min(maximum, deadline - os.clock()))
+    end
+
+    repeat
+        local sessionInventory, sessionInventoryError = requestSessionSearch(
+            "Inventory.Troops",
+            remainingAttemptTime(SESSION_SEARCH_ATTEMPT_TIMEOUT)
+        )
+        local equippedFromSession, sessionShape = extractEquippedTroopsFromInventory(sessionInventory)
+
+        if sessionShape then
+            return equippedFromSession
+        end
+
+        if sessionInventoryError then
+            table.insert(errors, sessionInventoryError)
+        elseif sessionInventory ~= nil then
+            table.insert(errors, "Session/Search Inventory.Troops had no Equipped fields.")
+        end
+
+        if os.clock() < deadline then
+            local directSnapshot, directError = requestSessionSearch(
+                "Equipped.Troops",
+                remainingAttemptTime(SESSION_SEARCH_ATTEMPT_TIMEOUT)
+            )
+            local directLoadout, directShape = normalizeEquippedTroopSnapshot(directSnapshot)
+
+            if directShape then
+                return directLoadout
+            end
+
+            if directError then
+                table.insert(errors, directError)
+            elseif directSnapshot ~= nil then
+                table.insert(errors, "Session/Search Equipped.Troops returned an unknown shape.")
+            end
+        end
+
+        if os.clock() < deadline then
+            local cachedInventory, cachedInventoryError = readCacheValue(
+                "Inventory.Troops",
+                remainingAttemptTime(CLIENT_CACHE_ATTEMPT_TIMEOUT)
+            )
+            local equippedFromCache, cacheShape = extractEquippedTroopsFromInventory(cachedInventory)
+
+            if cacheShape then
+                return equippedFromCache
+            end
+
+            if cachedInventoryError then
+                table.insert(errors, cachedInventoryError)
+            elseif cachedInventory ~= nil then
+                table.insert(errors, "Inventory.Troops cache had no Equipped fields.")
+            end
+        end
+
+        if os.clock() < deadline then
+            local cachedSnapshot, cachedError = readCacheValue(
+                "Equipped.Troops",
+                remainingAttemptTime(CLIENT_CACHE_ATTEMPT_TIMEOUT)
+            )
+            local cachedLoadout, equippedCacheShape = normalizeEquippedTroopSnapshot(cachedSnapshot)
+
+            if equippedCacheShape then
+                return cachedLoadout
+            end
+
+            if cachedError then
+                table.insert(errors, cachedError)
+            elseif cachedSnapshot ~= nil then
+                table.insert(errors, "Equipped.Troops cache returned an unknown shape.")
+            end
+        end
+
+        if os.clock() < deadline then
+            task.wait(math.min(retryDelay, deadline - os.clock()))
+            retryDelay = math.min(1, retryDelay * 1.5)
+        end
+    until os.clock() >= deadline
+
+    local lastError = errors[#errors]
+    return nil,
+        "Could not read the equipped lobby loadout"
+            .. (lastError and (": " .. lastError) or ".")
+end
+
+local function waitForEquippedTroops(expectedLoadout, timeout)
+    local deadline = os.clock() + math.max(0.1, tonumber(timeout) or 5)
+    local lastLoadout
+    local lastError
+
+    while os.clock() < deadline do
+        local remaining = deadline - os.clock()
+        local currentLoadout, currentError = readEquippedTroops(
+            math.min(4, remaining)
+        )
+
+        if currentLoadout then
+            lastLoadout = currentLoadout
+
+            if loadoutsMatch(currentLoadout, expectedLoadout) then
+                return true, currentLoadout
+            end
+        elseif currentError then
+            lastError = currentError
+        end
+
+        if os.clock() < deadline then
+            task.wait(math.min(CLIENT_CACHE_RETRY_DELAY, deadline - os.clock()))
+        end
+    end
+
+    return false, lastLoadout, lastError
 end
 
 local function getCashValue()
@@ -2876,7 +3311,7 @@ function LyraMacro:CheckStrategyRequirements(strategy, options)
                 .. ". AutoStrategy aborted."
     end
 
-    local troopInventory, troopInventoryError = readCacheValue("Inventory.Troops")
+    local troopInventory, troopInventoryError = readTroopInventory(CLIENT_CACHE_READY_TIMEOUT)
 
     if not troopInventory then
         return false,
@@ -2907,7 +3342,10 @@ function LyraMacro:CheckStrategyRequirements(strategy, options)
 
     if #skinRequirements > 0 or #perkStates > 0 then
         local skinInventoryError
-        skinInventory, skinInventoryError = readCacheValue("Inventory.Skins")
+        skinInventory, skinInventoryError = readCacheValue(
+            "Inventory.Skins",
+            CLIENT_CACHE_READY_TIMEOUT
+        )
 
         if not skinInventory then
             return false,
@@ -2936,7 +3374,10 @@ function LyraMacro:CheckStrategyRequirements(strategy, options)
     local missingEquipped = {}
 
     if options.RequireEquipped == true then
-        local equippedTroops, equippedError = readEquippedTroops()
+        local equippedTroops, equippedError = readEquippedTroops(
+            CLIENT_CACHE_READY_TIMEOUT,
+            troopInventory
+        )
 
         if not equippedTroops then
             return false, "Could not verify the equipped strategy towers: " .. tostring(equippedError)
@@ -2970,6 +3411,7 @@ function LyraMacro:CheckStrategyRequirements(strategy, options)
     return true, {
         Loadout = loadout,
         PerkStates = perkStates,
+        TroopInventory = troopInventory,
     }
 end
 
@@ -3086,7 +3528,7 @@ function LyraMacro:ApplyStrategyPerks(strategy, perkStates)
     return true
 end
 
-function LyraMacro:SyncLobbyLoadout(loadout)
+function LyraMacro:SyncLobbyLoadout(loadout, knownTroopInventory)
     if game.PlaceId ~= LOBBY_PLACE_ID then
         return false, "Troop loadouts can only be changed in lobby place " .. tostring(LOBBY_PLACE_ID) .. "."
     end
@@ -3097,13 +3539,31 @@ function LyraMacro:SyncLobbyLoadout(loadout)
         return false, "This strategy uses " .. tostring(#desiredLoadout) .. " towers, but the lobby loadout only supports five."
     end
 
-    local equippedLoadout, equippedError = readEquippedTroops()
+    local _, usedKnownInventory = extractEquippedTroopsFromInventory(knownTroopInventory)
+    local equippedLoadout, equippedError = readEquippedTroops(
+        CLIENT_CACHE_READY_TIMEOUT,
+        knownTroopInventory
+    )
 
     if not equippedLoadout then
-        return false, equippedError
+        return false,
+            tostring(equippedError)
+                .. " AutoStrategy aborted without changing your lobby loadout."
     end
 
     local currentLoadout = getUniqueTroopNames(equippedLoadout)
+
+    if usedKnownInventory then
+        local freshInventory = requestSessionSearch(
+            "Inventory.Troops",
+            SESSION_SEARCH_ATTEMPT_TIMEOUT
+        )
+        local freshLoadout, freshShape = extractEquippedTroopsFromInventory(freshInventory)
+
+        if freshShape then
+            currentLoadout = freshLoadout
+        end
+    end
 
     if loadoutsMatch(currentLoadout, desiredLoadout) then
         self.SelectedLoadout = getUniqueTroopNames(desiredLoadout)
@@ -3111,34 +3571,85 @@ function LyraMacro:SyncLobbyLoadout(loadout)
         return true, self.SelectedLoadout
     end
 
-    for _, troopName in ipairs(currentLoadout) do
-        RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Remove", {
-            Name = troopName,
-        })
-        task.wait(0.15)
-    end
+    local extraTroops = getMissingTroopNames(currentLoadout, desiredLoadout)
+    local retainedLoadout = getMissingTroopNames(currentLoadout, extraTroops)
 
-    if #currentLoadout > 0 then
-        if not waitForEquippedTroops({}, 5) then
-            return false, "Timed out while clearing the current lobby loadout."
+    for _, troopName in ipairs(extraTroops) do
+        local removed, removeError = pcall(function()
+            RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Remove", {
+                Name = troopName,
+            })
+        end)
+
+        if not removed then
+            return false,
+                "Could not remove "
+                    .. troopName
+                    .. " from the lobby loadout: "
+                    .. tostring(removeError)
         end
-    end
 
-    for _, troopName in ipairs(desiredLoadout) do
-        RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Add", {
-            Name = troopName,
-        })
         task.wait(0.15)
     end
 
-    if not waitForEquippedTroops(desiredLoadout, 5) then
-        local currentAfterFailure = readEquippedTroops(1)
-        local missingAfterFailure = currentAfterFailure and getMissingTroopNames(desiredLoadout, currentAfterFailure) or desiredLoadout
+    if #extraTroops > 0 then
+        local removalsConfirmed, currentAfterRemoval, removalReadError = waitForEquippedTroops(
+            retainedLoadout,
+            LOBBY_LOADOUT_SYNC_TIMEOUT
+        )
+
+        if not removalsConfirmed then
+            local remainingExtras = currentAfterRemoval
+                    and getMissingTroopNames(currentAfterRemoval, retainedLoadout)
+                or extraTroops
+
+            return false,
+                "The server did not confirm removing lobby towers: "
+                    .. table.concat(remainingExtras, ", ")
+                    .. "."
+                    .. (removalReadError and (" " .. tostring(removalReadError)) or "")
+        end
+
+        currentLoadout = currentAfterRemoval
+    else
+        currentLoadout = retainedLoadout
+    end
+
+    local missingTroops = getMissingTroopNames(desiredLoadout, currentLoadout)
+
+    for _, troopName in ipairs(missingTroops) do
+        local added, addError = pcall(function()
+            RemoteEvent:FireServer("Inventory", "Execute", "Troops", "Add", {
+                Name = troopName,
+            })
+        end)
+
+        if not added then
+            return false,
+                "Could not add "
+                    .. troopName
+                    .. " to the lobby loadout: "
+                    .. tostring(addError)
+        end
+
+        task.wait(0.15)
+    end
+
+    local loadoutConfirmed, currentAfterSync, syncReadError = waitForEquippedTroops(
+        desiredLoadout,
+        LOBBY_LOADOUT_SYNC_TIMEOUT
+    )
+
+    if not loadoutConfirmed then
+        local missingAfterFailure = currentAfterSync
+                and getMissingTroopNames(desiredLoadout, currentAfterSync)
+            or missingTroops
 
         return false,
             "Could not equip required strategy towers: "
                 .. table.concat(missingAfterFailure, ", ")
                 .. "."
+                .. (syncReadError and (" " .. tostring(syncReadError)) or "")
     end
 
     self.SelectedLoadout = getUniqueTroopNames(desiredLoadout)
@@ -3159,7 +3670,10 @@ function LyraMacro:PrepareStrategyLoadout(strategy, options)
         return false, requirementsOrError
     end
 
-    local loadoutReady, loadoutOrError = self:SyncLobbyLoadout(requirementsOrError.Loadout)
+    local loadoutReady, loadoutOrError = self:SyncLobbyLoadout(
+        requirementsOrError.Loadout,
+        requirementsOrError.TroopInventory
+    )
 
     if not loadoutReady then
         return false, loadoutOrError
@@ -7033,9 +7547,9 @@ function LyraMacro:SetAntiAFK(enabled)
     self.AntiAFKEnabled = enabled
     AntiAFKState.Enabled = enabled
 
-    if AntiAFKSharedEnvironment then
-        AntiAFKSharedEnvironment.LyraMacroAntiAFK = enabled
-        AntiAFKSharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
+    if SharedEnvironment then
+        SharedEnvironment.LyraMacroAntiAFK = enabled
+        SharedEnvironment[ANTI_AFK_STATE_KEY] = AntiAFKState
     end
 
     if not enabled then
@@ -7075,8 +7589,8 @@ function LyraMacro:SetAntiAFK(enabled)
         self.AntiAFKEnabled = false
         AntiAFKState.Enabled = false
 
-        if AntiAFKSharedEnvironment then
-            AntiAFKSharedEnvironment.LyraMacroAntiAFK = false
+        if SharedEnvironment then
+            SharedEnvironment.LyraMacroAntiAFK = false
         end
 
         return false, "Could not enable Anti-AFK: " .. tostring(connectionOrError)
@@ -9689,6 +10203,7 @@ local STRATEGY_LOGGER_LUCIDE_ICONS = {
     ["arrow-right"] = { 18786021641, 48, 48, 845, 783 },
     ["chevron-up"] = { 18786022917, 48, 48, 294, 833 },
     ["circle-check"] = { 18786022917, 48, 48, 686, 539 },
+    eye = { 18786024251, 48, 48, 196, 441 },
     ["list-checks"] = { 18786025432, 48, 48, 98, 98 },
     ["mouse-pointer-click"] = { 18786025432, 48, 48, 392, 392 },
     play = { 18786025432, 48, 48, 784, 392 },
@@ -9851,7 +10366,15 @@ local function getStrategyLoggerViewportLayout()
     }
 end
 
-function LyraMacro:CreateStrategyLogger()
+local function getStrategyGuiParent()
+    if type(gethui) == "function" then
+        local gotHiddenUi, hiddenUi = pcall(gethui)
+
+        if gotHiddenUi and hiddenUi then
+            return hiddenUi
+        end
+    end
+
     local parent = game:GetService("CoreGui")
     local parentReady = pcall(function()
         return parent.Name
@@ -9860,6 +10383,347 @@ function LyraMacro:CreateStrategyLogger()
     if not parentReady then
         parent = LocalPlayer:WaitForChild("PlayerGui")
     end
+
+    return parent
+end
+
+function LyraMacro:_updateGpuSaverControls()
+    local logger = self.StrategyLogger
+
+    if not logger or not logger.GpuSaverButton or not logger.GpuSaverButton.Parent then
+        return
+    end
+
+    local enabled = self.GpuSaverEnabled == true
+    local limited = enabled and self.GpuSaverRuntimeState.NativeControlBlocked == true
+    logger.GpuSaverButton:SetAttribute("Enabled", enabled)
+    logger.GpuSaverButton:SetAttribute("Limited", limited)
+    logger.GpuSaverButton:SetAttribute(
+        "Action",
+        enabled and "Disable GPU Saver" or "Enable GPU Saver"
+    )
+    logger.GpuSaverButton.BackgroundColor3 = limited
+            and Color3.fromRGB(72, 57, 28)
+        or enabled and Color3.fromRGB(27, 67, 54)
+        or STRATEGY_LOGGER_COLORS.Card
+
+    if logger.GpuSaverIcon and logger.GpuSaverIcon.Parent then
+        logger.GpuSaverIcon.ImageColor3 = limited
+                and STRATEGY_LOGGER_COLORS.Amber
+            or enabled and STRATEGY_LOGGER_COLORS.Mint
+            or STRATEGY_LOGGER_COLORS.Muted
+    end
+
+    if logger.GpuSaverText and logger.GpuSaverText.Parent then
+        logger.GpuSaverText.Text = limited and "LIMIT" or enabled and "GPU ON" or "GPU"
+        logger.GpuSaverText.TextColor3 = limited
+                and STRATEGY_LOGGER_COLORS.Amber
+            or enabled and STRATEGY_LOGGER_COLORS.Mint
+            or STRATEGY_LOGGER_COLORS.Muted
+    end
+end
+
+function LyraMacro:_ensureGpuSaverOverlay()
+    local state = self.GpuSaverRuntimeState
+    local owner = self._gpuSaverOwner
+    local parent = getStrategyGuiParent()
+
+    state.Owner = owner
+
+    if state.OverlayConnection then
+        pcall(function()
+            state.OverlayConnection:Disconnect()
+        end)
+        state.OverlayConnection = nil
+    end
+
+    if state.TeleportConnection then
+        pcall(function()
+            state.TeleportConnection:Disconnect()
+        end)
+        state.TeleportConnection = nil
+    end
+
+    local existing = parent:FindFirstChild(GPU_SAVER_OVERLAY_NAME)
+
+    if existing then
+        existing:Destroy()
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = GPU_SAVER_OVERLAY_NAME
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.DisplayOrder = 1000001
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    screenGui.Enabled = state.Desired == true or state.AppliedByLyra == true
+    screenGui.Parent = parent
+
+    local blackout = Instance.new("Frame")
+    blackout.Name = "Blackout"
+    blackout.Size = UDim2.fromScale(1, 1)
+    blackout.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    blackout.BorderSizePixel = 0
+    blackout.Active = true
+    blackout.ZIndex = 2000
+    blackout.Parent = screenGui
+
+    local status = Instance.new("TextLabel")
+    status.Name = "Status"
+    status.AnchorPoint = Vector2.new(0.5, 1)
+    status.Position = UDim2.new(0.5, 0, 0.5, -12)
+    status.Size = UDim2.new(1, -32, 0, 54)
+    status.BackgroundTransparency = 1
+    status.Text = state.NativeControlBlocked
+            and "BLACK-SCREEN FALLBACK\n3D rendering control was blocked"
+        or "GPU SAVER ACTIVE\nPreparing 3D rendering control"
+    status.TextColor3 = state.NativeControlBlocked
+            and STRATEGY_LOGGER_COLORS.Amber
+        or Color3.fromRGB(178, 185, 196)
+    status.TextSize = 14
+    status.Font = Enum.Font.Code
+    status.TextWrapped = true
+    status.ZIndex = 2001
+    status.Parent = blackout
+
+    local restoreButton = Instance.new("TextButton")
+    restoreButton.Name = "RestoreScreen"
+    restoreButton.AnchorPoint = Vector2.new(0.5, 0)
+    restoreButton.Position = UDim2.new(0.5, 0, 0.5, 12)
+    restoreButton.Size = UDim2.fromOffset(220, 50)
+    restoreButton.BackgroundColor3 = Color3.fromRGB(28, 32, 39)
+    restoreButton.BorderSizePixel = 0
+    restoreButton.AutoButtonColor = true
+    restoreButton.Text = "RESTORE SCREEN"
+    restoreButton.TextColor3 = Color3.fromRGB(244, 246, 250)
+    restoreButton.TextSize = 13
+    restoreButton.Font = Enum.Font.MontserratBold
+    restoreButton.ZIndex = 2001
+    restoreButton.Parent = blackout
+    addStrategyLoggerCorner(restoreButton, 8)
+    addStrategyLoggerStroke(restoreButton, STRATEGY_LOGGER_COLORS.Mint, 0.15, 1)
+
+    local hint = Instance.new("TextLabel")
+    hint.Name = "Hint"
+    hint.AnchorPoint = Vector2.new(0.5, 0)
+    hint.Position = UDim2.new(0.5, 0, 0.5, 70)
+    hint.Size = UDim2.new(1, -32, 0, 36)
+    hint.BackgroundTransparency = 1
+    hint.Text = "This also turns the saved setting off."
+    hint.TextColor3 = Color3.fromRGB(111, 119, 132)
+    hint.TextSize = 11
+    hint.Font = Enum.Font.Code
+    hint.TextWrapped = true
+    hint.ZIndex = 2001
+    hint.Parent = blackout
+
+    restoreButton.MouseButton1Click:Connect(function()
+        self:SetGpuSaver(false)
+    end)
+
+    state.Overlay = screenGui
+    state.OverlayStatus = status
+    state.OverlayConnection = screenGui.AncestryChanged:Connect(function(_, nextParent)
+        if nextParent or state.Owner ~= owner or state.Overlay ~= screenGui then
+            return
+        end
+
+        state.Overlay = nil
+        state.OverlayStatus = nil
+
+        if state.AppliedByLyra then
+            local restored, restoreError = pcall(function()
+                RunService:Set3dRenderingEnabled(true)
+            end)
+
+            if restored then
+                state.AppliedByLyra = false
+                state.NativeControlBlocked = false
+                self.GpuSaverEnabled = false
+                self:_updateGpuSaverControls()
+            else
+                warn(
+                    "[LyraMacro] The GPU Saver overlay was removed and 3D rendering "
+                        .. "could not be restored; rebuilding the restore control: "
+                        .. tostring(restoreError)
+                )
+
+                task.defer(function()
+                    if state.Owner == owner and state.Overlay == nil then
+                        local replacement = self:_ensureGpuSaverOverlay()
+                        replacement.Enabled = true
+                    end
+                end)
+            end
+        end
+
+        if state.OverlayConnection then
+            state.OverlayConnection:Disconnect()
+            state.OverlayConnection = nil
+        end
+
+        if state.TeleportConnection then
+            state.TeleportConnection:Disconnect()
+            state.TeleportConnection = nil
+        end
+    end)
+
+    state.TeleportConnection = LocalPlayer.OnTeleport:Connect(function(teleportState)
+        if state.Owner ~= owner then
+            return
+        end
+
+        if teleportState == Enum.TeleportState.Failed then
+            if state.SuspendedForTeleport and state.Desired then
+                state.SuspendedForTeleport = false
+                local reapplied, reapplyError = self:SetGpuSaver(true, {
+                    Persist = false,
+                })
+
+                if not reapplied then
+                    warn("[LyraMacro] Could not resume GPU Saver after a failed teleport: " .. tostring(reapplyError))
+                end
+            end
+
+            return
+        end
+
+        if state.SuspendedForTeleport then
+            return
+        end
+
+        if state.AppliedByLyra then
+            local restored, restoreError = pcall(function()
+                RunService:Set3dRenderingEnabled(true)
+            end)
+
+            if not restored then
+                screenGui.Enabled = true
+                warn("[LyraMacro] Could not restore 3D rendering before teleport: " .. tostring(restoreError))
+                return
+            end
+
+            state.AppliedByLyra = false
+        end
+
+        state.SuspendedForTeleport = true
+        screenGui.Enabled = false
+    end)
+
+    return screenGui
+end
+
+function LyraMacro:SetGpuSaver(enabled, options)
+    if type(enabled) ~= "boolean" then
+        return false, "GPU Saver must be set to true or false."
+    end
+
+    options = type(options) == "table" and options or {}
+    local state = self.GpuSaverRuntimeState
+    local owner = self._gpuSaverOwner
+    local overlay = state.Overlay
+
+    if not overlay or not overlay.Parent or state.Owner ~= owner then
+        overlay = self:_ensureGpuSaverOverlay()
+    end
+
+    if not enabled and state.AppliedByLyra then
+        local restored, restoreError = pcall(function()
+            RunService:Set3dRenderingEnabled(true)
+        end)
+
+        if not restored then
+            overlay.Enabled = true
+            return false, "Could not restore 3D rendering: " .. tostring(restoreError)
+        end
+
+        state.AppliedByLyra = false
+    end
+
+    self.GpuSaverEnabled = enabled
+    state.Desired = enabled
+    state.Owner = owner
+    state.SuspendedForTeleport = false
+
+    if not enabled then
+        state.NativeControlBlocked = false
+    elseif state.OverlayStatus and state.OverlayStatus.Parent then
+        state.OverlayStatus.Text = "GPU SAVER ACTIVE\nPreparing 3D rendering control"
+        state.OverlayStatus.TextColor3 = Color3.fromRGB(178, 185, 196)
+    end
+
+    if SharedEnvironment then
+        SharedEnvironment[GPU_SAVER_ENV_KEY] = enabled
+        SharedEnvironment[GPU_SAVER_RUNTIME_STATE_KEY] = state
+    end
+
+    local persistenceMessage
+
+    if options.Persist ~= false then
+        PersistedSettings.GpuSaverEnabled = enabled
+        local saved, saveError = savePersistedSettings()
+
+        if not saved then
+            persistenceMessage = saveError
+            warn("[LyraMacro] " .. tostring(saveError))
+        end
+    end
+
+    overlay.Enabled = enabled
+    self:_updateGpuSaverControls()
+
+    if not enabled then
+        return true, persistenceMessage
+    end
+
+    task.defer(function()
+        if
+            state.Owner ~= owner
+            or state.Desired ~= true
+            or state.SuspendedForTeleport
+            or not overlay.Parent
+        then
+            return
+        end
+
+        local wasApplied = state.AppliedByLyra == true
+        local applied, applyError = pcall(function()
+            RunService:Set3dRenderingEnabled(false)
+        end)
+
+        if applied or wasApplied then
+            state.AppliedByLyra = true
+            state.NativeControlBlocked = false
+
+            if state.OverlayStatus and state.OverlayStatus.Parent then
+                state.OverlayStatus.Text = "GPU SAVER ACTIVE\n3D rendering is disabled"
+                state.OverlayStatus.TextColor3 = Color3.fromRGB(178, 185, 196)
+            end
+
+            self:_updateGpuSaverControls()
+        else
+            state.AppliedByLyra = false
+            state.NativeControlBlocked = true
+
+            if state.OverlayStatus and state.OverlayStatus.Parent then
+                state.OverlayStatus.Text = "BLACK-SCREEN FALLBACK\n3D rendering control was blocked"
+                state.OverlayStatus.TextColor3 = STRATEGY_LOGGER_COLORS.Amber
+            end
+
+            self:_updateGpuSaverControls()
+            warn(
+                "[LyraMacro] The executor blocked 3D rendering control; "
+                    .. "GPU Saver is using the reversible black-screen fallback: "
+                    .. tostring(applyError)
+            )
+        end
+    end)
+
+    return true, persistenceMessage
+end
+
+function LyraMacro:CreateStrategyLogger()
+    local parent = getStrategyGuiParent()
 
     local existing = parent:FindFirstChild("LyraAutoStrategies")
 
@@ -9963,7 +10827,7 @@ function LyraMacro:CreateStrategyLogger()
     local headerText = Instance.new("TextLabel")
     headerText.Name = "Title"
     headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
-    headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
+    headerText.Size = compactLayout and UDim2.new(1, -176, 0, 17) or UDim2.new(1, -252, 0, 17)
     headerText.BackgroundTransparency = 1
     headerText.Text = "LYRA AUTOSTRATEGIES"
     headerText.TextColor3 = STRATEGY_LOGGER_COLORS.Text
@@ -9977,7 +10841,7 @@ function LyraMacro:CreateStrategyLogger()
     local headerSubtitle = Instance.new("TextLabel")
     headerSubtitle.Name = "Subtitle"
     headerSubtitle.Position = UDim2.fromOffset(52, 28)
-    headerSubtitle.Size = UDim2.new(1, -190, 0, 14)
+    headerSubtitle.Size = UDim2.new(1, -252, 0, 14)
     headerSubtitle.BackgroundTransparency = 1
     headerSubtitle.Text = "EXECUTION CONSOLE"
     headerSubtitle.TextColor3 = STRATEGY_LOGGER_COLORS.Faint
@@ -9992,7 +10856,9 @@ function LyraMacro:CreateStrategyLogger()
     local liveStatus = Instance.new("Frame")
     liveStatus.Name = "LiveStatus"
     liveStatus.AnchorPoint = Vector2.new(1, 0.5)
-    liveStatus.Position = UDim2.new(1, -49, 0.5, 0)
+    liveStatus.Position = compactLayout
+            and UDim2.new(1, -92, 0.5, 0)
+        or UDim2.new(1, -110, 0.5, 0)
     liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
     liveStatus.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
     liveStatus.BorderSizePixel = 0
@@ -10023,6 +10889,44 @@ function LyraMacro:CreateStrategyLogger()
     liveText.Visible = not compactLayout
     liveText.ZIndex = 1003
     liveText.Parent = liveStatus
+
+    local gpuSaverButton = Instance.new("TextButton")
+    gpuSaverButton.Name = "GpuSaver"
+    gpuSaverButton.AnchorPoint = Vector2.new(1, 0.5)
+    gpuSaverButton.Position = compactLayout
+            and UDim2.new(1, -52, 0.5, 0)
+        or UDim2.new(1, -48, 0.5, 0)
+    gpuSaverButton.Size = compactLayout and UDim2.fromOffset(32, 32) or UDim2.fromOffset(54, 28)
+    gpuSaverButton.BackgroundColor3 = STRATEGY_LOGGER_COLORS.Card
+    gpuSaverButton.BorderSizePixel = 0
+    gpuSaverButton.AutoButtonColor = false
+    gpuSaverButton.Text = ""
+    gpuSaverButton.ZIndex = 1003
+    gpuSaverButton.Parent = header
+    addStrategyLoggerCorner(gpuSaverButton, 6)
+    addStrategyLoggerStroke(gpuSaverButton, STRATEGY_LOGGER_COLORS.CardStroke, 0.25, 1)
+
+    local gpuSaverIcon = createStrategyLoggerIcon(gpuSaverButton, "eye", {
+        Name = "Icon",
+        Position = compactLayout and UDim2.new(0.5, -7, 0.5, -7) or UDim2.fromOffset(7, 7),
+        Size = UDim2.fromOffset(14, 14),
+        ImageColor3 = STRATEGY_LOGGER_COLORS.Muted,
+        ZIndex = 1004,
+    })
+
+    local gpuSaverText = Instance.new("TextLabel")
+    gpuSaverText.Name = "Text"
+    gpuSaverText.Position = UDim2.fromOffset(24, 0)
+    gpuSaverText.Size = UDim2.new(1, -27, 1, 0)
+    gpuSaverText.BackgroundTransparency = 1
+    gpuSaverText.Text = "GPU"
+    gpuSaverText.TextColor3 = STRATEGY_LOGGER_COLORS.Muted
+    gpuSaverText.TextSize = 8
+    gpuSaverText.Font = Enum.Font.Code
+    gpuSaverText.TextXAlignment = Enum.TextXAlignment.Left
+    gpuSaverText.Visible = not compactLayout
+    gpuSaverText.ZIndex = 1004
+    gpuSaverText.Parent = gpuSaverButton
 
     local collapseButton = Instance.new("TextButton")
     collapseButton.Name = "Collapse"
@@ -10276,9 +11180,19 @@ function LyraMacro:CreateStrategyLogger()
     local function applyCompactLayout(nextCompactLayout)
         compactLayout = nextCompactLayout
         headerText.Position = UDim2.fromOffset(52, compactLayout and 18 or 10)
-        headerText.Size = compactLayout and UDim2.new(1, -130, 0, 17) or UDim2.new(1, -190, 0, 17)
+        headerText.Size = compactLayout and UDim2.new(1, -176, 0, 17)
+            or UDim2.new(1, -252, 0, 17)
+        headerSubtitle.Size = UDim2.new(1, -252, 0, 14)
         headerSubtitle.Visible = not compactLayout
+        liveStatus.Position = compactLayout
+                and UDim2.new(1, -92, 0.5, 0)
+            or UDim2.new(1, -110, 0.5, 0)
         liveStatus.Size = compactLayout and UDim2.fromOffset(24, 24) or UDim2.fromOffset(82, 24)
+        gpuSaverButton.Position = compactLayout
+                and UDim2.new(1, -52, 0.5, 0)
+            or UDim2.new(1, -48, 0.5, 0)
+        gpuSaverButton.Size = compactLayout and UDim2.fromOffset(32, 32)
+            or UDim2.fromOffset(54, 28)
         collapseButton.Size = compactLayout and UDim2.fromOffset(32, 32) or UDim2.fromOffset(28, 28)
 
         if liveIcon then
@@ -10286,6 +11200,9 @@ function LyraMacro:CreateStrategyLogger()
         end
 
         liveText.Visible = not compactLayout
+        gpuSaverIcon.Position = compactLayout and UDim2.new(0.5, -7, 0.5, -7)
+            or UDim2.fromOffset(7, 7)
+        gpuSaverText.Visible = not compactLayout
 
         for _, child in ipairs(scroll:GetChildren()) do
             if child:IsA("Frame") and string.match(child.Name, "^Action%d+$") then
@@ -10348,6 +11265,14 @@ function LyraMacro:CreateStrategyLogger()
         applyViewportLayout()
     end
 
+    gpuSaverButton.MouseButton1Click:Connect(function()
+        local changed, changeMessage = self:SetGpuSaver(self.GpuSaverEnabled ~= true)
+
+        if not changed then
+            warn("[LyraMacro] " .. tostring(changeMessage))
+        end
+    end)
+
     collapseButton.MouseButton1Click:Connect(function()
         setCollapsed(not collapsed, true)
     end)
@@ -10406,6 +11331,9 @@ function LyraMacro:CreateStrategyLogger()
         ProgressFill = progressFill,
         LiveText = liveText,
         LiveIcon = liveIcon,
+        GpuSaverButton = gpuSaverButton,
+        GpuSaverIcon = gpuSaverIcon,
+        GpuSaverText = gpuSaverText,
         CollapseButton = collapseButton,
         CollapseIcon = collapseIcon,
         Entries = 0,
@@ -10418,6 +11346,16 @@ function LyraMacro:CreateStrategyLogger()
 
     currentCameraConnection = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCurrentCamera)
     bindCurrentCamera()
+    self:_ensureGpuSaverOverlay()
+    self:_updateGpuSaverControls()
+
+    local gpuSaverApplied, gpuSaverMessage = self:SetGpuSaver(self.GpuSaverEnabled == true, {
+        Persist = false,
+    })
+
+    if not gpuSaverApplied then
+        warn("[LyraMacro] " .. tostring(gpuSaverMessage))
+    end
 
     ancestryConnection = screenGui.AncestryChanged:Connect(function(_, nextParent)
         if nextParent then
